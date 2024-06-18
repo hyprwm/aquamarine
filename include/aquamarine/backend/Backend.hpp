@@ -1,8 +1,11 @@
 #pragma once
 
 #include <hyprutils/memory/SharedPtr.hpp>
+#include <hyprutils/signal/Signal.hpp>
 #include <vector>
 #include <functional>
+#include <mutex>
+#include <condition_variable>
 
 namespace Aquamarine {
     enum eBackendType {
@@ -47,8 +50,13 @@ namespace Aquamarine {
 
     class IBackendImplementation {
       public:
-        virtual ~IBackendImplementation();
-        virtual eBackendType type() = 0;
+        virtual ~IBackendImplementation() {
+            ;
+        }
+        virtual eBackendType type()           = 0;
+        virtual bool         start()          = 0;
+        virtual int          pollFD()         = 0;
+        virtual bool         dispatchEvents() = 0;
     };
 
     class CBackend {
@@ -63,10 +71,33 @@ namespace Aquamarine {
 
         void log(eBackendLogLevel level, const std::string& msg);
 
+        /* Enters the event loop synchronously. For simple clients, this is probably what you want. For more complex ones,
+           see async methods further below */
+        void enterLoop();
+
+        struct {
+            Hyprutils::Signal::CSignal newOutput;
+            Hyprutils::Signal::CSignal newPointer;
+            Hyprutils::Signal::CSignal newKeyboard;
+            Hyprutils::Signal::CSignal newTouch;
+        } events;
+
       private:
         CBackend();
 
-        std::vector<IBackendImplementation> implementations;
-        SBackendOptions                     options;
+        bool                                                                   terminate = false;
+
+        std::vector<SBackendImplementationOptions>                             implementationOptions;
+        std::vector<Hyprutils::Memory::CSharedPointer<IBackendImplementation>> implementations;
+        SBackendOptions                                                        options;
+
+        //
+        struct {
+            std::condition_variable loopSignal;
+            std::mutex              loopMutex;
+            std::atomic<bool>       shouldProcess = false;
+            std::mutex              loopRequestMutex;
+            std::mutex              eventLock;
+        } m_sEventLoopInternals;
     };
 };

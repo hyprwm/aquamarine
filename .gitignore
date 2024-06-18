@@ -34,3 +34,6 @@
 build/
 .vscode/
 .cache/
+
+protocols/*.cpp
+protocols/*.hpp

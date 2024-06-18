@@ -16,7 +16,7 @@ set(INCLUDE ${CMAKE_INSTALL_FULL_INCLUDEDIR})
 set(LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(deps REQUIRED IMPORTED_TARGET wayland-client wayland-protocols hyprutils>=0.1.2)
+pkg_check_modules(deps REQUIRED IMPORTED_TARGET wayland-client wayland-protocols hyprutils>=0.1.2 pixman-1 wayland-client)
 
 configure_file(aquamarine.pc.in aquamarine.pc @ONLY)
 
@@ -36,13 +36,55 @@ file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS "include/*.hpp")
 add_library(aquamarine SHARED ${SRCFILES})
 target_include_directories( aquamarine
     PUBLIC "./include"
-    PRIVATE "./src"
+    PRIVATE "./src" "./src/include" "./protocols"
 )
 set_target_properties(aquamarine PROPERTIES
     VERSION ${AQUAMARINE_VERSION}
     SOVERSION 0
 )
 target_link_libraries(aquamarine PkgConfig::deps)
+
+# Protocols
+pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+message(STATUS "Found wayland-protocols at ${WAYLAND_PROTOCOLS_DIR}")
+pkg_get_variable(WAYLAND_CLIENT_DIR wayland-client pkgdatadir)
+message(STATUS "Found wayland-client at ${WAYLAND_CLIENT_DIR}")
+
+function(protocolNew protoPath protoName external)
+    if (external)
+        set(path ${CMAKE_SOURCE_DIR}/${protoPath})
+    else()
+        set(path ${WAYLAND_PROTOCOLS_DIR}/${protoPath})
+    endif()
+    add_custom_command(
+        OUTPUT ${CMAKE_SOURCE_DIR}/protocols/${protoName}.cpp
+               ${CMAKE_SOURCE_DIR}/protocols/${protoName}.hpp
+        COMMAND hyprwayland-scanner --client ${path}/${protoName}.xml ${CMAKE_SOURCE_DIR}/protocols/
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    target_sources(aquamarine PRIVATE protocols/${protoName}.cpp protocols/${protoName}.hpp)
+endfunction()
+function(protocolWayland)
+    add_custom_command(
+        OUTPUT ${CMAKE_SOURCE_DIR}/protocols/wayland.cpp
+               ${CMAKE_SOURCE_DIR}/protocols/wayland.hpp
+        COMMAND hyprwayland-scanner --wayland-enums --client ${WAYLAND_CLIENT_DIR}/wayland.xml ${CMAKE_SOURCE_DIR}/protocols/
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    target_sources(aquamarine PRIVATE protocols/wayland.cpp protocols/wayland.hpp)
+endfunction()
+
+protocolWayland()
+
+protocolNew("stable/xdg-shell" "xdg-shell" false)
+
+# tests
+add_custom_target(tests)
+
+add_executable(simpleWindow "tests/SimpleWindow.cpp")
+target_link_libraries(simpleWindow PRIVATE aquamarine PkgConfig::deps)
+add_test(NAME "simpleWindow" WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests COMMAND simpleWindow "simpleWindow")
+add_dependencies(tests simpleWindow)
 
 # Installation
 install(TARGETS aquamarine)
