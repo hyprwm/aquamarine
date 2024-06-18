@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+includedir=@INCLUDE@
+libdir=@LIBDIR@
+
+Name: aquamarine
+URL: https://github.com/hyprwm/aquamarine
+Description: A very light linux rendering backend library
+Version: @AQUAMARINE_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -laquamarine
