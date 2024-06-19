@@ -19,7 +19,7 @@ cmake --build ./build --config Release --target all -j`nproc 2>/dev/null || getc
 
 ## TODOs
 
- - [ ] Wayland backend
+ - [x] Wayland backend
  - [ ] DRM backend (DRM / KMS / libinput)
  - [ ] Virtual backend (aka. Headless)
  - [ ] Hardware plane support
