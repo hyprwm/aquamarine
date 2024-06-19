@@ -1,5 +1,6 @@
 #include <aquamarine/backend/Backend.hpp>
 #include <aquamarine/backend/Wayland.hpp>
+#include <aquamarine/allocator/GBM.hpp>
 #include <sys/poll.h>
 #include <thread>
 #include <chrono>
@@ -36,6 +37,10 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
 
     backend->options               = options;
     backend->implementationOptions = backends;
+    backend->self                  = backend;
+
+    if (backends.size() <= 0)
+        return nullptr;
 
     backend->log(AQ_LOG_DEBUG, "Creating an Aquamarine backend!");
 
@@ -86,6 +91,17 @@ bool Aquamarine::CBackend::start() {
 
     // erase failed impls
     std::erase_if(implementations, [](const auto& i) { return i->pollFD() < 0; });
+
+    // TODO: obviously change this when (if) we add different allocators.
+    for (auto& b : implementations) {
+        if (b->drmFD() >= 0) {
+            allocator = CGBMAllocator::create(b->drmFD(), self);
+            break;
+        }
+    }
+
+    if (!allocator)
+        return false;
 
     return true;
 }

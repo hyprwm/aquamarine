@@ -49,6 +49,7 @@ namespace Aquamarine {
         virtual eBufferType                            type()                                         = 0;
         virtual void                                   update(const Hyprutils::Math::CRegion& damage) = 0;
         virtual bool                                   isSynchronous() = 0; // whether the updates to this buffer are synchronous, aka happen over cpu
+        virtual bool                                   good()          = 0;
         virtual SDMABUFAttrs                           dmabuf();
         virtual SSHMAttrs                              shm();
         virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);

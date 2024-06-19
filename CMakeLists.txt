@@ -16,7 +16,7 @@ set(INCLUDE ${CMAKE_INSTALL_FULL_INCLUDEDIR})
 set(LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(deps REQUIRED IMPORTED_TARGET wayland-client wayland-protocols hyprutils>=0.1.2 pixman-1 wayland-client)
+pkg_check_modules(deps REQUIRED IMPORTED_TARGET wayland-client wayland-protocols hyprutils>=0.1.2 pixman-1 wayland-client libdrm gbm)
 
 configure_file(aquamarine.pc.in aquamarine.pc @ONLY)
 
@@ -77,6 +77,7 @@ endfunction()
 protocolWayland()
 
 protocolNew("stable/xdg-shell" "xdg-shell" false)
+protocolNew("stable/linux-dmabuf" "linux-dmabuf-v1" false)
 
 # tests
 add_custom_target(tests)

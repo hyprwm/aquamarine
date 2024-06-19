@@ -4,6 +4,9 @@
 #include <hyprutils/signal/Signal.hpp>
 #include <hyprutils/memory/SharedPtr.hpp>
 #include <hyprutils/math/Region.hpp>
+#include <drm_fourcc.h>
+#include "../allocator/Swapchain.hpp"
+#include "../buffer/Buffer.hpp"
 
 namespace Aquamarine {
     struct SOutputMode {
@@ -21,8 +24,6 @@ namespace Aquamarine {
 
     class COutputState {
       public:
-        COutputState(Hyprutils::Memory::CSharedPointer<IOutput> parent);
-
         Hyprutils::Math::CRegion                     damage;
         bool                                         enabled          = false;
         bool                                         adaptiveSync     = false;
@@ -30,6 +31,9 @@ namespace Aquamarine {
         std::vector<uint16_t>                        gammaLut;
         Hyprutils::Math::Vector2D                    lastModeSize;
         Hyprutils::Memory::CWeakPointer<SOutputMode> mode;
+        std::optional<SOutputMode>                   customMode;
+        uint32_t                                     drmFormat = DRM_FORMAT_INVALID;
+        Hyprutils::Memory::CSharedPointer<IBuffer>   buffer;
     };
 
     class IOutput {
@@ -38,7 +42,7 @@ namespace Aquamarine {
             ;
         }
 
-        virtual void              commit() = 0;
+        virtual bool              commit() = 0;
 
         std::string               name, description, make, model, serial;
         Hyprutils::Math::Vector2D physicalSize;
@@ -48,7 +52,8 @@ namespace Aquamarine {
 
         //
         std::vector<Hyprutils::Memory::CSharedPointer<SOutputMode>> modes;
-        Hyprutils::Memory::CSharedPointer<COutputState>             state;
+        Hyprutils::Memory::CSharedPointer<COutputState>             state = Hyprutils::Memory::makeShared<COutputState>();
+        Hyprutils::Memory::CSharedPointer<CSwapchain>               swapchain;
 
         //
         struct SStateEvent {

@@ -6,6 +6,7 @@
 #include <functional>
 #include <mutex>
 #include <condition_variable>
+#include "../allocator/Allocator.hpp"
 
 namespace Aquamarine {
     enum eBackendType {
@@ -56,6 +57,7 @@ namespace Aquamarine {
         virtual eBackendType type()           = 0;
         virtual bool         start()          = 0;
         virtual int          pollFD()         = 0;
+        virtual int          drmFD()          = 0;
         virtual bool         dispatchEvents() = 0;
     };
 
@@ -82,6 +84,8 @@ namespace Aquamarine {
             Hyprutils::Signal::CSignal newTouch;
         } events;
 
+        Hyprutils::Memory::CSharedPointer<IAllocator> allocator;
+
       private:
         CBackend();
 
@@ -90,6 +94,7 @@ namespace Aquamarine {
         std::vector<SBackendImplementationOptions>                             implementationOptions;
         std::vector<Hyprutils::Memory::CSharedPointer<IBackendImplementation>> implementations;
         SBackendOptions                                                        options;
+        Hyprutils::Memory::CWeakPointer<CBackend>                              self;
 
         //
         struct {
