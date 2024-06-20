@@ -103,6 +103,10 @@ bool Aquamarine::CBackend::start() {
     if (!allocator)
         return false;
 
+    for (auto& b : implementations) {
+        b->onReady();
+    }
+
     return true;
 }
 
@@ -167,8 +171,41 @@ void Aquamarine::CBackend::enterLoop() {
 
         std::lock_guard<std::mutex> lg(m_sEventLoopInternals.eventLock);
 
-        for (size_t i = 0; i < pollFDs.size(); ++i) {
-            implementations.at(i)->dispatchEvents();
-        }
+        dispatchEventsAsync();
     }
+}
+
+std::vector<int> Aquamarine::CBackend::getPollFDs() {
+    std::vector<int> result;
+    for (auto& i : implementations) {
+        int fd = i->pollFD();
+        if (fd < 0)
+            continue;
+
+        result.push_back(fd);
+    }
+
+    return result;
+}
+
+int Aquamarine::CBackend::drmFD() {
+    for (auto& i : implementations) {
+        int fd = i->drmFD();
+        if (fd < 0)
+            continue;
+
+        return fd;
+    }
+    return -1;
+}
+
+void Aquamarine::CBackend::dispatchEventsAsync() {
+    for (auto& i : implementations) {
+        i->dispatchEvents();
+    }
+}
+
+bool Aquamarine::CBackend::hasSession() {
+    // TODO:
+    return false;
 }

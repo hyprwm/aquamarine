@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <optional>
 #include <hyprutils/signal/Signal.hpp>
 #include <hyprutils/memory/SharedPtr.hpp>
 #include <hyprutils/math/Region.hpp>
@@ -9,6 +10,9 @@
 #include "../buffer/Buffer.hpp"
 
 namespace Aquamarine {
+
+    class IBackendImplementation;
+
     struct SOutputMode {
         Hyprutils::Math::Vector2D pixelSize;
         unsigned int              refreshRate = 0 /* in mHz */;
@@ -20,20 +24,30 @@ namespace Aquamarine {
         AQ_OUTPUT_PRESENTATION_IMMEDIATE, // likely tearing
     };
 
+    enum eSubpixelMode {
+        AQ_SUBPIXEL_UNKNOWN = 0,
+        AQ_SUBPIXEL_NONE,
+        AQ_SUBPIXEL_HORIZONTAL_RGB,
+        AQ_SUBPIXEL_HORIZONTAL_BGR,
+        AQ_SUBPIXEL_VERTICAL_RGB,
+        AQ_SUBPIXEL_VERTICAL_BGR,
+    };
+
     class IOutput;
 
     class COutputState {
       public:
-        Hyprutils::Math::CRegion                     damage;
-        bool                                         enabled          = false;
-        bool                                         adaptiveSync     = false;
-        eOutputPresentationMode                      presentationMode = AQ_OUTPUT_PRESENTATION_VSYNC;
-        std::vector<uint16_t>                        gammaLut;
-        Hyprutils::Math::Vector2D                    lastModeSize;
-        Hyprutils::Memory::CWeakPointer<SOutputMode> mode;
-        std::optional<SOutputMode>                   customMode;
-        uint32_t                                     drmFormat = DRM_FORMAT_INVALID;
-        Hyprutils::Memory::CSharedPointer<IBuffer>   buffer;
+        // TODO: make this state private, this sucks
+        Hyprutils::Math::CRegion                       damage;
+        bool                                           enabled          = false;
+        bool                                           adaptiveSync     = false;
+        eOutputPresentationMode                        presentationMode = AQ_OUTPUT_PRESENTATION_VSYNC;
+        std::vector<uint16_t>                          gammaLut;
+        Hyprutils::Math::Vector2D                      lastModeSize;
+        Hyprutils::Memory::CWeakPointer<SOutputMode>   mode;
+        Hyprutils::Memory::CSharedPointer<SOutputMode> customMode;
+        uint32_t                                       drmFormat = DRM_FORMAT_INVALID;
+        Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
     };
 
     class IOutput {
@@ -42,13 +56,20 @@ namespace Aquamarine {
             ;
         }
 
-        virtual bool              commit() = 0;
+        virtual bool                                                      commit()     = 0;
+        virtual bool                                                      test()       = 0;
+        virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend() = 0;
+        virtual Hyprutils::Memory::CSharedPointer<SOutputMode>            preferredMode();
+        virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
+        virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord); // includes the hotspot
+        virtual void                                                      scheduleFrame();
 
-        std::string               name, description, make, model, serial;
-        Hyprutils::Math::Vector2D physicalSize;
-        bool                      enabled      = false;
-        bool                      adaptiveSync = false;
-        bool                      nonDesktop   = false;
+        std::string                                                       name, description, make, model, serial;
+        Hyprutils::Math::Vector2D                                         physicalSize;
+        bool                                                              enabled      = false;
+        bool                                                              adaptiveSync = false;
+        bool                                                              nonDesktop   = false;
+        eSubpixelMode                                                     subpixel     = AQ_SUBPIXEL_NONE;
 
         //
         std::vector<Hyprutils::Memory::CSharedPointer<SOutputMode>> modes;

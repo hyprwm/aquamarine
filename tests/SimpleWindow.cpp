@@ -2,6 +2,7 @@
 #include <aquamarine/output/Output.hpp>
 #include <aquamarine/input/Input.hpp>
 #include <iostream>
+#include <wayland-server.h>
 
 using namespace Hyprutils::Signal;
 using namespace Hyprutils::Memory;
@@ -41,7 +42,7 @@ void onState(const Aquamarine::IOutput::SStateEvent& event) {
     std::cout << "[Client] onState with size " << std::format("{}", event.size) << "\n";
 
     output->state->enabled = true;
-    output->state->customMode = {.pixelSize = event.size};
+    output->state->customMode = makeShared<Aquamarine::SOutputMode>(Aquamarine::SOutputMode{.pixelSize = event.size});
     output->state->drmFormat = DRM_FORMAT_XRGB8888;
 
     output->commit();

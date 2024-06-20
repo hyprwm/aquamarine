@@ -26,7 +26,7 @@ namespace Aquamarine {
 
       private:
         struct {
-            Hyprutils::Memory::CSharedPointer<CWlBuffer> buffer;
+            Hyprutils::Memory::CSharedPointer<CCWlBuffer> buffer;
         } waylandState;
 
         Hyprutils::Memory::CWeakPointer<IBuffer>         buffer;
@@ -38,12 +38,18 @@ namespace Aquamarine {
     class CWaylandOutput : public IOutput {
       public:
         virtual ~CWaylandOutput();
-        virtual bool commit();
+        virtual bool                                                      commit();
+        virtual bool                                                      test();
+        virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend();
+        virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
+        virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord);
+        virtual void                                                      scheduleFrame();
+
+        Hyprutils::Memory::CWeakPointer<CWaylandOutput>                   self;
 
       private:
         CWaylandOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_);
 
-        std::string                                       name;
         Hyprutils::Memory::CWeakPointer<CWaylandBackend>  backend;
 
         Hyprutils::Memory::CSharedPointer<CWaylandBuffer> wlBufferFromBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
@@ -55,10 +61,10 @@ namespace Aquamarine {
         } backendState;
 
         struct {
-            Hyprutils::Memory::CSharedPointer<CWlSurface>   surface;
-            Hyprutils::Memory::CSharedPointer<CXdgSurface>  xdgSurface;
-            Hyprutils::Memory::CSharedPointer<CXdgToplevel> xdgToplevel;
-            Hyprutils::Memory::CSharedPointer<CWlCallback>  frameCallback;
+            Hyprutils::Memory::CSharedPointer<CCWlSurface>   surface;
+            Hyprutils::Memory::CSharedPointer<CCXdgSurface>  xdgSurface;
+            Hyprutils::Memory::CSharedPointer<CCXdgToplevel> xdgToplevel;
+            Hyprutils::Memory::CSharedPointer<CCWlCallback>  frameCallback;
         } waylandState;
 
         friend class CWaylandBackend;
@@ -67,12 +73,12 @@ namespace Aquamarine {
 
     class CWaylandKeyboard : public IKeyboard {
       public:
-        CWaylandKeyboard(Hyprutils::Memory::CSharedPointer<CWlKeyboard> keyboard_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_);
+        CWaylandKeyboard(Hyprutils::Memory::CSharedPointer<CCWlKeyboard> keyboard_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_);
         virtual ~CWaylandKeyboard();
 
         virtual const std::string&                       getName();
 
-        Hyprutils::Memory::CSharedPointer<CWlKeyboard>   keyboard;
+        Hyprutils::Memory::CSharedPointer<CCWlKeyboard>  keyboard;
         Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend;
 
       private:
@@ -81,12 +87,12 @@ namespace Aquamarine {
 
     class CWaylandPointer : public IPointer {
       public:
-        CWaylandPointer(Hyprutils::Memory::CSharedPointer<CWlPointer> pointer_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_);
+        CWaylandPointer(Hyprutils::Memory::CSharedPointer<CCWlPointer> pointer_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_);
         virtual ~CWaylandPointer();
 
         virtual const std::string&                       getName();
 
-        Hyprutils::Memory::CSharedPointer<CWlPointer>    pointer;
+        Hyprutils::Memory::CSharedPointer<CCWlPointer>   pointer;
         Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend;
 
       private:
@@ -101,6 +107,9 @@ namespace Aquamarine {
         virtual int                                      pollFD();
         virtual int                                      drmFD();
         virtual bool                                     dispatchEvents();
+        virtual uint32_t                                 capabilities();
+        virtual bool                                     setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
+        virtual void                                     onReady();
 
         Hyprutils::Memory::CWeakPointer<CWaylandBackend> self;
 
@@ -114,7 +123,7 @@ namespace Aquamarine {
 
         //
         Hyprutils::Memory::CWeakPointer<CBackend>                        backend;
-        std::vector<Hyprutils::Memory::CSharedPointer<CWaylandOutput>>   outputs;
+        std::vector<Hyprutils::Memory::CSharedPointer<CWaylandOutput>>   outputs, scheduledFrames;
         std::vector<Hyprutils::Memory::CSharedPointer<CWaylandKeyboard>> keyboards;
         std::vector<Hyprutils::Memory::CSharedPointer<CWaylandPointer>>  pointers;
 
@@ -126,12 +135,12 @@ namespace Aquamarine {
             wl_display* display = nullptr;
 
             // hw-s types
-            Hyprutils::Memory::CSharedPointer<CWlRegistry>               registry;
-            Hyprutils::Memory::CSharedPointer<CWlSeat>                   seat;
-            Hyprutils::Memory::CSharedPointer<CXdgWmBase>                xdg;
-            Hyprutils::Memory::CSharedPointer<CWlCompositor>             compositor;
-            Hyprutils::Memory::CSharedPointer<CZwpLinuxDmabufV1>         dmabuf;
-            Hyprutils::Memory::CSharedPointer<CZwpLinuxDmabufFeedbackV1> dmabufFeedback;
+            Hyprutils::Memory::CSharedPointer<CCWlRegistry>               registry;
+            Hyprutils::Memory::CSharedPointer<CCWlSeat>                   seat;
+            Hyprutils::Memory::CSharedPointer<CCXdgWmBase>                xdg;
+            Hyprutils::Memory::CSharedPointer<CCWlCompositor>             compositor;
+            Hyprutils::Memory::CSharedPointer<CCZwpLinuxDmabufV1>         dmabuf;
+            Hyprutils::Memory::CSharedPointer<CCZwpLinuxDmabufFeedbackV1> dmabufFeedback;
 
             // control
             bool dmabufFailed = false;
