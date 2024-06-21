@@ -7,3 +7,7 @@ libinput_device* Aquamarine::IPointer::getLibinputHandle() {
 libinput_device* Aquamarine::IKeyboard::getLibinputHandle() {
     return nullptr;
 }
+
+void Aquamarine::IKeyboard::updateLEDs(uint32_t leds) {
+    ;
+}

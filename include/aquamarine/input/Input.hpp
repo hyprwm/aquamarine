@@ -13,6 +13,7 @@ namespace Aquamarine {
         }
         virtual libinput_device*   getLibinputHandle();
         virtual const std::string& getName() = 0;
+        virtual void updateLEDs(uint32_t leds);
 
         struct SKeyEvent {
             uint32_t timeMs  = 0;
