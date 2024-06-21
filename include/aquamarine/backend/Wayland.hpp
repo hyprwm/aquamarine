@@ -16,6 +16,8 @@ namespace Aquamarine {
     class CWaylandBackend;
     class CWaylandOutput;
 
+    typedef std::function<void(void)> FIdleCallback;
+
     class CWaylandBuffer {
       public:
         CWaylandBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_);
@@ -55,6 +57,12 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<CWaylandBuffer> wlBufferFromBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
 
         void                                              sendFrameAndSetCallback();
+        void                                              onFrameDone();
+
+        // frame loop
+        bool frameScheduledWhileWaiting = false;
+        bool readyForFrameCallback      = false; // true after attaching a buffer
+        bool frameScheduled             = false;
 
         struct {
             std::vector<std::pair<Hyprutils::Memory::CWeakPointer<IBuffer>, Hyprutils::Memory::CSharedPointer<CWaylandBuffer>>> buffers;
@@ -123,9 +131,10 @@ namespace Aquamarine {
 
         //
         Hyprutils::Memory::CWeakPointer<CBackend>                        backend;
-        std::vector<Hyprutils::Memory::CSharedPointer<CWaylandOutput>>   outputs, scheduledFrames;
+        std::vector<Hyprutils::Memory::CSharedPointer<CWaylandOutput>>   outputs;
         std::vector<Hyprutils::Memory::CSharedPointer<CWaylandKeyboard>> keyboards;
         std::vector<Hyprutils::Memory::CSharedPointer<CWaylandPointer>>  pointers;
+        std::vector<FIdleCallback>                                       idleCallbacks;
 
         // pointer focus
         Hyprutils::Memory::CWeakPointer<CWaylandOutput> focusedOutput;

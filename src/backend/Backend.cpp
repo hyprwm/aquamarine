@@ -103,6 +103,7 @@ bool Aquamarine::CBackend::start() {
     if (!allocator)
         return false;
 
+    ready = true;
     for (auto& b : implementations) {
         b->onReady();
     }

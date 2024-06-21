@@ -88,7 +88,7 @@ int Aquamarine::CWaylandBackend::drmFD() {
 void Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
     auto o  = outputs.emplace_back(SP<CWaylandOutput>(new CWaylandOutput(szName, self)));
     o->self = o;
-    backend->events.newOutput.emit(SP<IOutput>(o));
+    idleCallbacks.emplace_back([this, o]() { backend->events.newOutput.emit(SP<IOutput>(o)); });
 }
 
 int Aquamarine::CWaylandBackend::pollFD() {
@@ -114,11 +114,12 @@ bool Aquamarine::CWaylandBackend::dispatchEvents() {
     } while (ret > 0);
 
     // dispatch frames
-    for (auto& f : scheduledFrames) {
-        f->events.frame.emit();
+    if (backend->ready) {
+        for (auto& f : idleCallbacks) {
+            f();
+        }
+        idleCallbacks.clear();
     }
-
-    scheduledFrames.clear();
 
     return true;
 }
@@ -189,7 +190,11 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
         Vector2D       local = {wl_fixed_to_double(x), wl_fixed_to_double(y)};
         local                = local / size;
 
+        timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+
         events.warp.emit(SWarpEvent{
+            .timeMs   = (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000),
             .absolute = local,
         });
     });
@@ -219,7 +224,7 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
         events.axis.emit(SAxisEvent{
             .timeMs = timeMs,
             .axis   = axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? AQ_POINTER_AXIS_HORIZONTAL : AQ_POINTER_AXIS_VERTICAL,
-            .value  = wl_fixed_to_double(value),
+            .delta  = wl_fixed_to_double(value),
         });
     });
 
@@ -241,13 +246,13 @@ void Aquamarine::CWaylandBackend::initSeat() {
 
         if (HAS_KEYBOARD && keyboards.empty()) {
             auto k = keyboards.emplace_back(makeShared<CWaylandKeyboard>(makeShared<CCWlKeyboard>(waylandState.seat->sendGetKeyboard()), self));
-            backend->events.newKeyboard.emit(SP<IKeyboard>(k));
+            idleCallbacks.emplace_back([this, k]() { backend->events.newKeyboard.emit(SP<IKeyboard>(k)); });
         } else if (!HAS_KEYBOARD && !keyboards.empty())
             keyboards.clear();
 
         if (HAS_POINTER && pointers.empty()) {
             auto p = pointers.emplace_back(makeShared<CWaylandPointer>(makeShared<CCWlPointer>(waylandState.seat->sendGetPointer()), self));
-            backend->events.newPointer.emit(SP<IPointer>(p));
+            idleCallbacks.emplace_back([this, p]() { backend->events.newPointer.emit(SP<IPointer>(p)); });
         } else if (!HAS_POINTER && !pointers.empty())
             pointers.clear();
     });
@@ -436,6 +441,8 @@ bool Aquamarine::CWaylandOutput::commit() {
     waylandState.surface->sendDamageBuffer(0, 0, INT32_MAX, INT32_MAX);
     waylandState.surface->sendCommit();
 
+    readyForFrameCallback = true;
+
     return true;
 }
 
@@ -466,14 +473,24 @@ SP<CWaylandBuffer> Aquamarine::CWaylandOutput::wlBufferFromBuffer(SP<IBuffer> bu
 
 void Aquamarine::CWaylandOutput::sendFrameAndSetCallback() {
     events.frame.emit();
-    if (waylandState.frameCallback)
+    frameScheduled = false;
+    if (waylandState.frameCallback || !readyForFrameCallback)
         return;
 
     waylandState.frameCallback = makeShared<CCWlCallback>(waylandState.surface->sendFrame());
-    waylandState.frameCallback->setDone([this](CCWlCallback* r, uint32_t ms) {
+    waylandState.frameCallback->setDone([this](CCWlCallback* r, uint32_t ms) { onFrameDone(); });
+}
+
+void Aquamarine::CWaylandOutput::onFrameDone() {
+    waylandState.frameCallback.reset();
+    readyForFrameCallback = false;
+
+    if (frameScheduledWhileWaiting)
+        sendFrameAndSetCallback();
+    else
         events.frame.emit();
-        waylandState.frameCallback.reset();
-    });
+
+    frameScheduledWhileWaiting = false;
 }
 
 bool Aquamarine::CWaylandOutput::setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot) {
@@ -485,10 +502,15 @@ void Aquamarine::CWaylandOutput::moveCursor(const Hyprutils::Math::Vector2D& coo
 }
 
 void Aquamarine::CWaylandOutput::scheduleFrame() {
-    if (std::find(backend->scheduledFrames.begin(), backend->scheduledFrames.end(), self.lock()) != backend->scheduledFrames.end())
+    if (frameScheduled)
         return;
 
-    backend->scheduledFrames.emplace_back(self.lock());
+    frameScheduled = true;
+
+    if (waylandState.frameCallback)
+        frameScheduledWhileWaiting = true;
+    else
+        backend->idleCallbacks.emplace_back([this]() { sendFrameAndSetCallback(); });
 }
 
 Aquamarine::CWaylandBuffer::CWaylandBuffer(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_) : buffer(buffer_), backend(backend_) {

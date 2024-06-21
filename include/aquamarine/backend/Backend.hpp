@@ -104,6 +104,7 @@ namespace Aquamarine {
         } events;
 
         Hyprutils::Memory::CSharedPointer<IAllocator> allocator;
+        bool                                          ready = false;
 
       private:
         CBackend();

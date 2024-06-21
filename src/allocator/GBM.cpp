@@ -48,7 +48,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     auto modName = drmGetFormatModifierName(attrs.modifier);
 
     allocator->backend->log(
-        AQ_LOG_ERROR,
+        AQ_LOG_DEBUG,
         std::format("GBM: Allocated a new buffer with size {} and format {} with modifier {}", attrs.size, fourccToName(attrs.format), modName ? modName : "Unknown"));
 
     free(modName);
