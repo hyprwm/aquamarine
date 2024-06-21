@@ -443,6 +443,8 @@ bool Aquamarine::CWaylandOutput::commit() {
 
     readyForFrameCallback = true;
 
+    events.commit.emit();
+
     return true;
 }
 

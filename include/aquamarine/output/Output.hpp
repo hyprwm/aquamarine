@@ -86,6 +86,7 @@ namespace Aquamarine {
             Hyprutils::Signal::CSignal frame;
             Hyprutils::Signal::CSignal needsFrame;
             Hyprutils::Signal::CSignal present;
+            Hyprutils::Signal::CSignal commit;
             Hyprutils::Signal::CSignal state;
         } events;
     };
