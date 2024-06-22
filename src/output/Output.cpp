@@ -22,3 +22,7 @@ bool Aquamarine::IOutput::setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> b
 void Aquamarine::IOutput::scheduleFrame() {
     ;
 }
+
+Hyprutils::Math::Vector2D Aquamarine::IOutput::maxCursorSize() {
+    return {}; // error
+}

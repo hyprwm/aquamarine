@@ -15,6 +15,7 @@ namespace Aquamarine {
     class CBackend;
     class CWaylandBackend;
     class CWaylandOutput;
+    class CWaylandPointer;
 
     typedef std::function<void(void)> FIdleCallback;
 
@@ -46,6 +47,7 @@ namespace Aquamarine {
         virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
         virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord);
         virtual void                                                      scheduleFrame();
+        virtual Hyprutils::Math::Vector2D                                 maxCursorSize();
 
         Hyprutils::Memory::CWeakPointer<CWaylandOutput>                   self;
 
@@ -58,6 +60,7 @@ namespace Aquamarine {
 
         void                                              sendFrameAndSetCallback();
         void                                              onFrameDone();
+        void                                              onEnter(Hyprutils::Memory::CSharedPointer<CCWlPointer> pointer, uint32_t serial);
 
         // frame loop
         bool frameScheduledWhileWaiting = false;
@@ -67,6 +70,14 @@ namespace Aquamarine {
         struct {
             std::vector<std::pair<Hyprutils::Memory::CWeakPointer<IBuffer>, Hyprutils::Memory::CSharedPointer<CWaylandBuffer>>> buffers;
         } backendState;
+
+        struct {
+            Hyprutils::Memory::CSharedPointer<IBuffer>     cursorBuffer;
+            Hyprutils::Memory::CSharedPointer<CCWlSurface> cursorSurface;
+            Hyprutils::Memory::CSharedPointer<CCWlBuffer>  cursorWlBuffer;
+            uint32_t                                       serial = 0;
+            Hyprutils::Math::Vector2D                      hotspot;
+        } cursorState;
 
         struct {
             Hyprutils::Memory::CSharedPointer<CCWlSurface>   surface;
@@ -118,6 +129,8 @@ namespace Aquamarine {
         virtual uint32_t                                 capabilities();
         virtual bool                                     setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
         virtual void                                     onReady();
+        virtual std::vector<SDRMFormat>                  getRenderFormats();
+        virtual std::vector<SDRMFormat>                  getCursorFormats();
 
         Hyprutils::Memory::CWeakPointer<CWaylandBackend> self;
 
@@ -140,12 +153,16 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CWaylandOutput> focusedOutput;
         uint32_t                                        lastEnterSerial = 0;
 
+        // dmabuf formats
+        std::vector<SDRMFormat> dmabufFormats;
+
         struct {
             wl_display* display = nullptr;
 
             // hw-s types
             Hyprutils::Memory::CSharedPointer<CCWlRegistry>               registry;
             Hyprutils::Memory::CSharedPointer<CCWlSeat>                   seat;
+            Hyprutils::Memory::CSharedPointer<CCWlShm>                    shm;
             Hyprutils::Memory::CSharedPointer<CCXdgWmBase>                xdg;
             Hyprutils::Memory::CSharedPointer<CCWlCompositor>             compositor;
             Hyprutils::Memory::CSharedPointer<CCZwpLinuxDmabufV1>         dmabuf;

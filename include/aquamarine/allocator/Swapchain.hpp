@@ -18,6 +18,7 @@ namespace Aquamarine {
 
         bool                                       contains(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
         Hyprutils::Memory::CSharedPointer<IBuffer> next(int* age);
+        const SSwapchainOptions&                   currentOptions();
 
       private:
         bool fullReconfigure(const SSwapchainOptions& options_);

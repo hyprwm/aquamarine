@@ -91,3 +91,7 @@ bool Aquamarine::CSwapchain::resize(size_t newSize) {
 bool Aquamarine::CSwapchain::contains(Hyprutils::Memory::CSharedPointer<IBuffer> buffer) {
     return std::find(buffers.begin(), buffers.end(), buffer) != buffers.end();
 }
+
+const SSwapchainOptions& Aquamarine::CSwapchain::currentOptions() {
+    return options;
+}

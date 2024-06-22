@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include "../allocator/Allocator.hpp"
+#include "Misc.hpp"
 
 namespace Aquamarine {
     enum eBackendType {
@@ -59,13 +60,15 @@ namespace Aquamarine {
             AQ_BACKEND_CAPABILITY_POINTER = (1 << 0),
         };
 
-        virtual eBackendType type()           = 0;
-        virtual bool         start()          = 0;
-        virtual int          pollFD()         = 0;
-        virtual int          drmFD()          = 0;
-        virtual bool         dispatchEvents() = 0;
-        virtual uint32_t     capabilities()   = 0;
-        virtual void         onReady()        = 0;
+        virtual eBackendType            type()             = 0;
+        virtual bool                    start()            = 0;
+        virtual int                     pollFD()           = 0;
+        virtual int                     drmFD()            = 0;
+        virtual bool                    dispatchEvents()   = 0;
+        virtual uint32_t                capabilities()     = 0;
+        virtual void                    onReady()          = 0;
+        virtual std::vector<SDRMFormat> getRenderFormats() = 0;
+        virtual std::vector<SDRMFormat> getCursorFormats() = 0;
     };
 
     class CBackend {
