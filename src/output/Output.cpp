@@ -27,6 +27,10 @@ Hyprutils::Math::Vector2D Aquamarine::IOutput::maxCursorSize() {
     return {}; // error
 }
 
+size_t Aquamarine::IOutput::getGammaSize() {
+    return 0;
+}
+
 const Aquamarine::COutputState::SInternalState& Aquamarine::COutputState::state() {
     return internalState;
 }
@@ -62,7 +66,7 @@ void Aquamarine::COutputState::setGammaLut(const std::vector<uint16_t>& lut) {
 }
 
 void Aquamarine::COutputState::setMode(Hyprutils::Memory::CSharedPointer<SOutputMode> mode) {
-    internalState.mode = mode;
+    internalState.mode       = mode;
     internalState.customMode = nullptr;
     internalState.committed |= AQ_OUTPUT_STATE_MODE;
 }

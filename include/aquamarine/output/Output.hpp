@@ -79,7 +79,7 @@ namespace Aquamarine {
       private:
         SInternalState internalState;
 
-        void onCommit(); // clears a few props like damage and committed.
+        void           onCommit(); // clears a few props like damage and committed.
 
         friend class IOutput;
         friend class CWaylandOutput;
@@ -99,12 +99,13 @@ namespace Aquamarine {
         virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord); // includes the hotspot
         virtual Hyprutils::Math::Vector2D                                 maxCursorSize();                                    // -1, -1 means no limit, 0, 0 means error
         virtual void                                                      scheduleFrame();
+        virtual size_t                                                    getGammaSize();
 
         std::string                                                       name, description, make, model, serial;
         Hyprutils::Math::Vector2D                                         physicalSize;
-        bool                                                              enabled      = false;
-        bool                                                              nonDesktop   = false;
-        eSubpixelMode                                                     subpixel     = AQ_SUBPIXEL_NONE;
+        bool                                                              enabled    = false;
+        bool                                                              nonDesktop = false;
+        eSubpixelMode                                                     subpixel   = AQ_SUBPIXEL_NONE;
 
         //
         std::vector<Hyprutils::Memory::CSharedPointer<SOutputMode>> modes;
