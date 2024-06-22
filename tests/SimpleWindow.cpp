@@ -34,16 +34,16 @@ void onFrame() {
 
     auto buf = output->swapchain->next(nullptr);
 
-    output->state->buffer = buf;
+    output->state->setBuffer(buf);
     output->commit();
 }
 
 void onState(const Aquamarine::IOutput::SStateEvent& event) {
     std::cout << "[Client] onState with size " << std::format("{}", event.size) << "\n";
 
-    output->state->enabled = true;
-    output->state->customMode = makeShared<Aquamarine::SOutputMode>(Aquamarine::SOutputMode{.pixelSize = event.size});
-    output->state->drmFormat = DRM_FORMAT_XRGB8888;
+    output->state->setEnabled(true);
+    output->state->setCustomMode(makeShared<Aquamarine::SOutputMode>(Aquamarine::SOutputMode{.pixelSize = event.size}));
+    output->state->setFormat(DRM_FORMAT_XRGB8888);
 
     output->commit();
 }

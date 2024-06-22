@@ -37,17 +37,52 @@ namespace Aquamarine {
 
     class COutputState {
       public:
-        // TODO: make this state private, this sucks
-        Hyprutils::Math::CRegion                       damage;
-        bool                                           enabled          = false;
-        bool                                           adaptiveSync     = false;
-        eOutputPresentationMode                        presentationMode = AQ_OUTPUT_PRESENTATION_VSYNC;
-        std::vector<uint16_t>                          gammaLut;
-        Hyprutils::Math::Vector2D                      lastModeSize;
-        Hyprutils::Memory::CWeakPointer<SOutputMode>   mode;
-        Hyprutils::Memory::CSharedPointer<SOutputMode> customMode;
-        uint32_t                                       drmFormat = DRM_FORMAT_INVALID;
-        Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
+        enum eOutputStateProperties : uint32_t {
+            AQ_OUTPUT_STATE_DAMAGE            = (1 << 0),
+            AQ_OUTPUT_STATE_ENABLED           = (1 << 1),
+            AQ_OUTPUT_STATE_ADAPTIVE_SYNC     = (1 << 2),
+            AQ_OUTPUT_STATE_PRESENTATION_MODE = (1 << 3),
+            AQ_OUTPUT_STATE_GAMMA_LUT         = (1 << 4),
+            AQ_OUTPUT_STATE_MODE              = (1 << 5),
+            AQ_OUTPUT_STATE_FORMAT            = (1 << 6),
+            AQ_OUTPUT_STATE_BUFFER            = (1 << 7),
+        };
+
+        struct SInternalState {
+            uint32_t                                       committed = 0; // enum eOutputStateProperties
+
+            Hyprutils::Math::CRegion                       damage;
+            bool                                           enabled          = false;
+            bool                                           adaptiveSync     = false;
+            eOutputPresentationMode                        presentationMode = AQ_OUTPUT_PRESENTATION_VSYNC;
+            std::vector<uint16_t>                          gammaLut;
+            Hyprutils::Math::Vector2D                      lastModeSize;
+            Hyprutils::Memory::CWeakPointer<SOutputMode>   mode;
+            Hyprutils::Memory::CSharedPointer<SOutputMode> customMode;
+            uint32_t                                       drmFormat = DRM_FORMAT_INVALID;
+            Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
+        };
+
+        const SInternalState& state();
+
+        void                  addDamage(const Hyprutils::Math::CRegion& region);
+        void                  clearDamage();
+        void                  setEnabled(bool enabled);
+        void                  setAdaptiveSync(bool enabled);
+        void                  setPresentationMode(eOutputPresentationMode mode);
+        void                  setGammaLut(const std::vector<uint16_t>& lut);
+        void                  setMode(Hyprutils::Memory::CSharedPointer<SOutputMode> mode);
+        void                  setCustomMode(Hyprutils::Memory::CSharedPointer<SOutputMode> mode);
+        void                  setFormat(uint32_t drmFormat);
+        void                  setBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
+
+      private:
+        SInternalState internalState;
+
+        void onCommit(); // clears a few props like damage and committed.
+
+        friend class IOutput;
+        friend class CWaylandOutput;
     };
 
     class IOutput {
@@ -68,7 +103,6 @@ namespace Aquamarine {
         std::string                                                       name, description, make, model, serial;
         Hyprutils::Math::Vector2D                                         physicalSize;
         bool                                                              enabled      = false;
-        bool                                                              adaptiveSync = false;
         bool                                                              nonDesktop   = false;
         eSubpixelMode                                                     subpixel     = AQ_SUBPIXEL_NONE;
 

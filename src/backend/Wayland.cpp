@@ -231,10 +231,12 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
     backend->backend->log(AQ_LOG_DEBUG, "New wayland pointer wl_pointer");
 
     pointer->setMotion([this](CCWlPointer* r, uint32_t serial, wl_fixed_t x, wl_fixed_t y) {
-        if (!backend->focusedOutput || (!backend->focusedOutput->state->mode && !backend->focusedOutput->state->customMode))
+        const auto STATE = backend->focusedOutput->state->state();
+
+        if (!backend->focusedOutput || (!STATE.mode && !STATE.customMode))
             return;
 
-        const Vector2D size = backend->focusedOutput->state->customMode ? backend->focusedOutput->state->customMode->pixelSize : backend->focusedOutput->state->mode->pixelSize;
+        const Vector2D size = STATE.customMode ? STATE.customMode->pixelSize : STATE.mode->pixelSize;
 
         Vector2D       local = {wl_fixed_to_double(x), wl_fixed_to_double(y)};
         local                = local / size;
@@ -496,16 +498,16 @@ bool Aquamarine::CWaylandOutput::commit() {
     Vector2D pixelSize   = {};
     uint32_t refreshRate = 0;
 
-    if (state->customMode)
-        pixelSize = state->customMode->pixelSize;
-    else if (state->mode)
-        pixelSize = state->mode->pixelSize;
+    if (state->internalState.customMode)
+        pixelSize = state->internalState.customMode->pixelSize;
+    else if (state->internalState.mode)
+        pixelSize = state->internalState.mode->pixelSize;
     else {
         backend->backend->log(AQ_LOG_ERROR, std::format("Output {}: pending state rejected: invalid mode", name));
         return false;
     }
 
-    uint32_t format = state->drmFormat;
+    uint32_t format = state->internalState.drmFormat;
 
     if (format == DRM_FORMAT_INVALID) {
         backend->backend->log(AQ_LOG_ERROR, std::format("Output {}: pending state rejected: invalid format", name));
@@ -522,12 +524,19 @@ bool Aquamarine::CWaylandOutput::commit() {
         return false;
     }
 
-    if (!state->buffer) {
-        backend->backend->log(AQ_LOG_ERROR, std::format("Output {}: pending state rejected: no buffer", name));
-        return false;
+    if (!state->internalState.buffer) {
+        // if the consumer explicitly committed a null buffer, that's a violation.
+        if (state->internalState.committed & COutputState::AQ_OUTPUT_STATE_BUFFER) {
+            backend->backend->log(AQ_LOG_ERROR, std::format("Output {}: pending state rejected: no buffer", name));
+            return false;
+        }
+
+        events.commit.emit();
+        state->onCommit();
+        return true;
     }
 
-    auto wlBuffer = wlBufferFromBuffer(state->buffer);
+    auto wlBuffer = wlBufferFromBuffer(state->internalState.buffer);
 
     if (!wlBuffer) {
         backend->backend->log(AQ_LOG_ERROR, std::format("Output {}: pending state rejected: no wlBuffer??", name));
@@ -546,6 +555,8 @@ bool Aquamarine::CWaylandOutput::commit() {
     readyForFrameCallback = true;
 
     events.commit.emit();
+
+    state->onCommit();
 
     return true;
 }
