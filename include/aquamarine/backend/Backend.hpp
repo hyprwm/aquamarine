@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include "../allocator/Allocator.hpp"
 #include "Misc.hpp"
+#include "Session.hpp"
 
 namespace Aquamarine {
     enum eBackendType {
@@ -108,6 +109,7 @@ namespace Aquamarine {
 
         Hyprutils::Memory::CSharedPointer<IAllocator> allocator;
         bool                                          ready = false;
+        Hyprutils::Memory::CSharedPointer<CSession>   session;
 
       private:
         CBackend();
@@ -118,6 +120,7 @@ namespace Aquamarine {
         std::vector<Hyprutils::Memory::CSharedPointer<IBackendImplementation>> implementations;
         SBackendOptions                                                        options;
         Hyprutils::Memory::CWeakPointer<CBackend>                              self;
+        std::vector<int>                                                       sessionFDs;
 
         //
         struct {

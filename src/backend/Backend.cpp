@@ -1,5 +1,6 @@
 #include <aquamarine/backend/Backend.hpp>
 #include <aquamarine/backend/Wayland.hpp>
+#include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 #include <sys/poll.h>
 #include <thread>
@@ -47,6 +48,14 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
     for (auto& b : backends) {
         if (b.backendType == AQ_BACKEND_WAYLAND) {
             auto ref = SP<CWaylandBackend>(new CWaylandBackend(backend));
+            backend->implementations.emplace_back(ref);
+            ref->self = ref;
+        } else if (b.backendType == AQ_BACKEND_DRM) {
+            auto ref = CDRMBackend::attempt(backend);
+            if (!ref) {
+                backend->log(AQ_LOG_ERROR, "DRM Backend failed");
+                continue;
+            }
             backend->implementations.emplace_back(ref);
             ref->self = ref;
         } else {
@@ -107,6 +116,8 @@ bool Aquamarine::CBackend::start() {
     for (auto& b : implementations) {
         b->onReady();
     }
+
+    sessionFDs = session->pollFDs();
 
     return true;
 }
@@ -186,6 +197,10 @@ std::vector<int> Aquamarine::CBackend::getPollFDs() {
         result.push_back(fd);
     }
 
+    for (auto& sfd : sessionFDs) {
+        result.push_back(sfd);
+    }
+
     return result;
 }
 
@@ -204,6 +219,9 @@ void Aquamarine::CBackend::dispatchEventsAsync() {
     for (auto& i : implementations) {
         i->dispatchEvents();
     }
+
+    if (session)
+        session->dispatchPendingEventsAsync();
 }
 
 bool Aquamarine::CBackend::hasSession() {

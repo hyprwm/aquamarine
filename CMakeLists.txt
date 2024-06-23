@@ -16,7 +16,7 @@ set(INCLUDE ${CMAKE_INSTALL_FULL_INCLUDEDIR})
 set(LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(deps REQUIRED IMPORTED_TARGET wayland-client wayland-protocols hyprutils>=0.1.2 pixman-1 wayland-client libdrm gbm)
+pkg_check_modules(deps REQUIRED IMPORTED_TARGET libseat libinput wayland-client wayland-protocols hyprutils>=0.1.2 pixman-1 wayland-client libdrm gbm libudev)
 
 configure_file(aquamarine.pc.in aquamarine.pc @ONLY)
 
@@ -83,7 +83,7 @@ protocolNew("stable/linux-dmabuf" "linux-dmabuf-v1" false)
 add_custom_target(tests)
 
 add_executable(simpleWindow "tests/SimpleWindow.cpp")
-target_link_libraries(simpleWindow PRIVATE aquamarine PkgConfig::deps)
+target_link_libraries(simpleWindow PRIVATE PkgConfig::deps aquamarine)
 add_test(NAME "simpleWindow" WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests COMMAND simpleWindow "simpleWindow")
 add_dependencies(tests simpleWindow)
 
