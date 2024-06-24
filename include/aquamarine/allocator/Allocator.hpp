@@ -9,7 +9,8 @@ namespace Aquamarine {
 
     struct SAllocatorBufferParams {
         Hyprutils::Math::Vector2D size;
-        uint32_t                  format = DRM_FORMAT_INVALID;
+        uint32_t                  format  = DRM_FORMAT_INVALID;
+        bool                      scanout = false;
     };
 
     class IAllocator {

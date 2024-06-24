@@ -15,10 +15,38 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     attrs.size   = params.size;
     attrs.format = params.format;
 
-    // FIXME: proper modifier support? This might implode on some GPUs on the Wayland backend
-    // for sure.
+    const auto            FORMATS = allocator->backend->getPrimaryRenderFormats();
 
-    bo = gbm_bo_create(allocator->gbmDevice, params.size.x, params.size.y, params.format, GBM_BO_USE_RENDERING);
+    std::vector<uint64_t> explicitModifiers;
+
+    // check if we can use modifiers. If the requested support has any explicit modifier
+    // supported by the primary backend, we can.
+    allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Searching for modifiers. Format len: {}", FORMATS.size()));
+    for (auto& f : FORMATS) {
+        if (f.drmFormat != params.format)
+            continue;
+
+        allocator->backend->log(AQ_LOG_TRACE, "GBM: Format matched");
+
+        for (auto& m : f.modifiers) {
+            if (m == DRM_FORMAT_MOD_LINEAR || m == DRM_FORMAT_MOD_INVALID)
+                continue;
+
+            explicitModifiers.push_back(m);
+
+            allocator->backend->log(AQ_LOG_TRACE, "GBM: Modifier matched");
+        }
+    }
+
+    uint32_t flags = GBM_BO_USE_RENDERING;
+    if (params.scanout)
+        flags |= GBM_BO_USE_SCANOUT;
+
+    if (explicitModifiers.empty()) {
+        allocator->backend->log(AQ_LOG_WARNING, "GBM: Using modifier-less allocation");
+        bo = gbm_bo_create(allocator->gbmDevice, params.size.x, params.size.y, params.format, flags);
+    } else
+        bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, params.size.x, params.size.y, params.format, explicitModifiers.data(), explicitModifiers.size(), flags);
 
     if (!bo) {
         allocator->backend->log(AQ_LOG_ERROR, "GBM: Failed to allocate a GBM buffer: bo null");

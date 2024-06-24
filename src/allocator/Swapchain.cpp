@@ -4,6 +4,7 @@
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
+using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
 Aquamarine::CSwapchain::CSwapchain(SP<IAllocator> allocator_) : allocator(allocator_) {
@@ -14,6 +15,14 @@ Aquamarine::CSwapchain::CSwapchain(SP<IAllocator> allocator_) : allocator(alloca
 bool Aquamarine::CSwapchain::reconfigure(const SSwapchainOptions& options_) {
     if (!allocator)
         return false;
+
+    if (options_.size == Vector2D{} || options_.length == 0) {
+        // clear the swapchain
+        allocator->getBackend()->log(AQ_LOG_DEBUG, "Swapchain: Clearing");
+        buffers.clear();
+        options = options_;
+        return true;
+    }
 
     if (options_.format == options.format && options_.size == options.size && options_.length == options.length)
         return true; // no need to reconfigure

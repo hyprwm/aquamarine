@@ -6,6 +6,7 @@
 #include <hyprutils/memory/SharedPtr.hpp>
 #include <hyprutils/math/Region.hpp>
 #include <drm_fourcc.h>
+#include <xf86drmMode.h>
 #include "../allocator/Swapchain.hpp"
 #include "../buffer/Buffer.hpp"
 
@@ -14,9 +15,10 @@ namespace Aquamarine {
     class IBackendImplementation;
 
     struct SOutputMode {
-        Hyprutils::Math::Vector2D pixelSize;
-        unsigned int              refreshRate = 0 /* in mHz */;
-        bool                      preferred   = false;
+        Hyprutils::Math::Vector2D      pixelSize;
+        unsigned int                   refreshRate = 0 /* in mHz */;
+        bool                           preferred   = false;
+        std::optional<drmModeModeInfo> modeInfo; // if this is a drm mode, this will be populated.
     };
 
     enum eOutputPresentationMode {
@@ -83,6 +85,7 @@ namespace Aquamarine {
 
         friend class IOutput;
         friend class CWaylandOutput;
+        friend class CDRMOutput;
     };
 
     class IOutput {
@@ -106,6 +109,8 @@ namespace Aquamarine {
         bool                                                              enabled    = false;
         bool                                                              nonDesktop = false;
         eSubpixelMode                                                     subpixel   = AQ_SUBPIXEL_NONE;
+        bool                                                              vrrCapable = false;
+        bool                                                              needsFrame = false;
 
         //
         std::vector<Hyprutils::Memory::CSharedPointer<SOutputMode>> modes;
@@ -113,8 +118,23 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<CSwapchain>               swapchain;
 
         //
+
+        enum eOutputPresentFlags : uint32_t {
+            AQ_OUTPUT_PRESENT_VSYNC         = (1 << 0),
+            AQ_OUTPUT_PRESENT_HW_CLOCK      = (1 << 1),
+            AQ_OUTPUT_PRESENT_HW_COMPLETION = (1 << 2),
+            AQ_OUTPUT_PRESENT_ZEROCOPY      = (1 << 3),
+        };
         struct SStateEvent {
             Hyprutils::Math::Vector2D size;
+        };
+
+        struct SPresentEvent {
+            bool         presented = true;
+            timespec*    when      = nullptr;
+            unsigned int seq       = 0;
+            int          refresh   = 0;
+            uint32_t     flags     = 0;
         };
 
         struct {

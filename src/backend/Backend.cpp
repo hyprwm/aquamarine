@@ -99,7 +99,12 @@ bool Aquamarine::CBackend::start() {
     }
 
     // erase failed impls
-    std::erase_if(implementations, [](const auto& i) { return i->pollFD() < 0; });
+    std::erase_if(implementations, [this](const auto& i) {
+        bool failed = i->pollFD() < 0;
+        if (failed)
+            log(AQ_LOG_ERROR, std::format("Implementation {} failed, erasing.", backendTypeToName(i->type())));
+        return failed;
+    });
 
     // TODO: obviously change this when (if) we add different allocators.
     for (auto& b : implementations) {
@@ -225,6 +230,20 @@ void Aquamarine::CBackend::dispatchEventsAsync() {
 }
 
 bool Aquamarine::CBackend::hasSession() {
-    // TODO:
-    return false;
+    return session;
+}
+
+std::vector<SDRMFormat> Aquamarine::CBackend::getPrimaryRenderFormats() {
+    for (auto& b : implementations) {
+        if (b->type() != AQ_BACKEND_DRM && b->type() != AQ_BACKEND_WAYLAND)
+            continue;
+
+        return b->getRenderFormats();
+    }
+
+    for (auto& b : implementations) {
+        return b->getRenderFormats();
+    }
+
+    return {};
 }

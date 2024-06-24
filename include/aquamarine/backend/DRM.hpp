@@ -10,16 +10,51 @@
 
 namespace Aquamarine {
     class CDRMBackend;
+    class CDRMFB;
     struct SDRMConnector;
 
-    struct SDRMFB {
+    typedef std::function<void(void)> FIdleCallback;
+
+    class CDRMBufferUnimportable : public IAttachment {
+      public:
+        CDRMBufferUnimportable() {
+            ;
+        }
+        virtual ~CDRMBufferUnimportable() {
+            ;
+        }
+        virtual eAttachmentType type() {
+            return AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE;
+        }
+    };
+
+    class CDRMFB {
+      public:
+        ~CDRMFB();
+
+        static Hyprutils::Memory::CSharedPointer<CDRMFB> create(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_);
+
+        void                                             closeHandles();
+        // drops the buffer from KMS
+        void                                         drop();
+
         uint32_t                                     id = 0;
         Hyprutils::Memory::CSharedPointer<IBuffer>   buffer;
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
+
+      private:
+        CDRMFB(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_);
+        uint32_t                submitBuffer();
+
+        bool                    dropped = false, handlesClosed = false;
+
+        std::array<uint32_t, 4> boHandles = {0};
     };
 
     struct SDRMLayer {
-        Hyprutils::Memory::CSharedPointer<SDRMFB>    current /* displayed */, queued /* submitted */, pending /* to be submitted */;
+        // we expect the consumers to use double-buffering, so we keep the 2 last FBs around. If any of these goes out of
+        // scope, the DRM FB will be destroyed, but the IBuffer will stay, as long as it's ref'd somewhere.
+        Hyprutils::Memory::CSharedPointer<CDRMFB>    front /* currently displaying */, back;
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
     };
 
@@ -30,7 +65,7 @@ namespace Aquamarine {
         uint32_t                                     id        = 0;
         uint32_t                                     initialID = 0;
 
-        Hyprutils::Memory::CSharedPointer<SDRMFB>    current /* displayed */, queued /* submitted */;
+        Hyprutils::Memory::CSharedPointer<CDRMFB>    front /* currently displaying */, back /* submitted */;
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
         Hyprutils::Memory::CWeakPointer<SDRMPlane>   self;
         std::vector<SDRMFormat>                      formats;
@@ -108,10 +143,27 @@ namespace Aquamarine {
       private:
         CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, Hyprutils::Memory::CSharedPointer<SDRMConnector> connector_);
 
+        bool                                             commitState(bool onlyTest = false);
+
         Hyprutils::Memory::CWeakPointer<CDRMBackend>     backend;
         Hyprutils::Memory::CSharedPointer<SDRMConnector> connector;
 
         friend struct SDRMConnector;
+    };
+
+    struct SDRMPageFlip {
+        Hyprutils::Memory::CWeakPointer<SDRMConnector> connector;
+    };
+
+    struct SDRMConnectorCommitData {
+        Hyprutils::Memory::CSharedPointer<CDRMFB> mainFB, cursorFB;
+        bool                                      modeset  = false;
+        bool                                      blocking = false;
+        uint32_t                                  flags    = 0;
+        bool                                      test     = false;
+        drmModeModeInfo                           modeInfo;
+
+        void                                      calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
     };
 
     struct SDRMConnector {
@@ -123,6 +175,10 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<SDRMCRTC>    getCurrentCRTC(const drmModeConnector* connector);
         drmModeModeInfo*                               getCurrentMode();
         void                                           parseEDID(std::vector<uint8_t> data);
+        bool                                           commitState(const SDRMConnectorCommitData& data);
+        void                                           applyCommit(const SDRMConnectorCommitData& data);
+        void                                           rollbackCommit(const SDRMConnectorCommitData& data);
+        void                                           onPresent();
 
         Hyprutils::Memory::CSharedPointer<CDRMOutput>  output;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>   backend;
@@ -135,10 +191,16 @@ namespace Aquamarine {
         int32_t                                        refresh       = 0;
         uint32_t                                       possibleCrtcs = 0;
         std::string                                    make, serial, model;
+        bool                                           canDoVrr = false;
 
         bool                                           cursorEnabled = false;
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
-        Hyprutils::Memory::CSharedPointer<SDRMFB>      pendingCursorFB;
+        Hyprutils::Memory::CSharedPointer<CDRMFB>      pendingCursorFB;
+
+        bool                                           isPageFlipPending = false;
+        SDRMPageFlip                                   pendingPageFlip;
+
+        drmModeModeInfo                                fallbackModeInfo;
 
         union UDRMConnectorProps {
             struct {
@@ -162,6 +224,11 @@ namespace Aquamarine {
         UDRMConnectorProps props;
     };
 
+    class IDRMImplementation {
+      public:
+        virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) = 0;
+    };
+
     class CDRMBackend : public IBackendImplementation {
       public:
         virtual ~CDRMBackend();
@@ -178,6 +245,11 @@ namespace Aquamarine {
 
         Hyprutils::Memory::CWeakPointer<CDRMBackend> self;
 
+        void                                         log(eBackendLogLevel, const std::string&);
+        bool                                         sessionActive();
+
+        std::vector<FIdleCallback>                   idleCallbacks;
+
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
 
@@ -189,6 +261,7 @@ namespace Aquamarine {
         void scanConnectors();
 
         Hyprutils::Memory::CSharedPointer<CSessionDevice>             gpu;
+        Hyprutils::Memory::CSharedPointer<IDRMImplementation>         impl;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                  primary;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
@@ -205,10 +278,13 @@ namespace Aquamarine {
         } drmProps;
 
         friend class CBackend;
-        friend struct SDRMFB;
+        friend class CDRMFB;
+        friend class CDRMFBAttachment;
         friend struct SDRMConnector;
         friend struct SDRMCRTC;
         friend struct SDRMPlane;
-        friend struct CDRMOutput;
+        friend class CDRMOutput;
+        friend struct SDRMPageFlip;
+        friend class CDRMLegacyImpl;
     };
 };

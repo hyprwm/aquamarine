@@ -100,6 +100,9 @@ namespace Aquamarine {
         /* Get the primary DRM FD */
         int drmFD();
 
+        /* Get the render formats the primary backend supports */
+        std::vector<SDRMFormat> getPrimaryRenderFormats();
+
         struct {
             Hyprutils::Signal::CSignal newOutput;
             Hyprutils::Signal::CSignal newPointer;

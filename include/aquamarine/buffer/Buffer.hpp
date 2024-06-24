@@ -4,6 +4,7 @@
 #include <tuple>
 #include <hyprutils/signal/Signal.hpp>
 #include <hyprutils/math/Region.hpp>
+#include "../misc/Attachment.hpp"
 
 namespace Aquamarine {
     enum eBufferCapability {
@@ -61,6 +62,8 @@ namespace Aquamarine {
 
         Hyprutils::Math::Vector2D                      size;
         bool                                           opaque = false;
+
+        CAttachmentManager attachments;
 
         struct {
             Hyprutils::Signal::CSignal destroy;

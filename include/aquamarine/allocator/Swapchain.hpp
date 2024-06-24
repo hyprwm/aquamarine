@@ -7,7 +7,8 @@ namespace Aquamarine {
     struct SSwapchainOptions {
         size_t                    length = 0;
         Hyprutils::Math::Vector2D size;
-        uint32_t                  format = DRM_FORMAT_INVALID;
+        uint32_t                  format  = DRM_FORMAT_INVALID;
+        bool                      scanout = false;
     };
 
     class CSwapchain {
