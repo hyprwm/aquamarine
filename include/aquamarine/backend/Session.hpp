@@ -3,16 +3,21 @@
 #include <sys/types.h>
 #include <hyprutils/signal/Signal.hpp>
 #include <hyprutils/memory/SharedPtr.hpp>
+#include "../input/Input.hpp"
 #include <vector>
 
 struct udev;
 struct udev_monitor;
 struct udev_device;
 struct libseat;
+struct libinput;
+struct libinput_event;
+struct libinput_device;
 
 namespace Aquamarine {
     class CBackend;
     class CSession;
+    class CLibinputDevice;
 
     class CSessionDevice {
       public:
@@ -50,25 +55,73 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CSession> session;
     };
 
+    class CLibinputKeyboard : public IKeyboard {
+      public:
+        CLibinputKeyboard(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev);
+        virtual ~CLibinputKeyboard() {
+            ;
+        }
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName();
+        virtual void               updateLEDs(uint32_t leds);
+
+      private:
+        Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+    };
+
+    class CLibinputMouse : public IPointer {
+      public:
+        CLibinputMouse(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev);
+        virtual ~CLibinputMouse() {
+            ;
+        }
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName();
+
+      private:
+        Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+    };
+
+    class CLibinputDevice {
+      public:
+        CLibinputDevice(libinput_device* device, Hyprutils::Memory::CWeakPointer<CSession> session_);
+        ~CLibinputDevice();
+
+        void                                                 init();
+
+        libinput_device*                                     device;
+        Hyprutils::Memory::CWeakPointer<CLibinputDevice>     self;
+        Hyprutils::Memory::CWeakPointer<CSession>            session;
+        std::string                                          name;
+
+        Hyprutils::Memory::CSharedPointer<CLibinputKeyboard> keyboard;
+        Hyprutils::Memory::CSharedPointer<CLibinputMouse>    mouse;
+    };
     class CSession {
       public:
         ~CSession();
 
-        static Hyprutils::Memory::CSharedPointer<CSession>             attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend_);
+        static Hyprutils::Memory::CSharedPointer<CSession>              attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend_);
 
-        bool                                                           active = true; // whether the current vt is ours
-        uint32_t                                                       vt     = 0;    // 0 means unsupported
-        std::string                                                    seatName;
+        bool                                                            active = true; // whether the current vt is ours
+        uint32_t                                                        vt     = 0;    // 0 means unsupported
+        std::string                                                     seatName;
+        Hyprutils::Memory::CWeakPointer<CSession>                       self;
 
-        std::vector<Hyprutils::Memory::CSharedPointer<CSessionDevice>> sessionDevices;
+        std::vector<Hyprutils::Memory::CSharedPointer<CSessionDevice>>  sessionDevices;
+        std::vector<Hyprutils::Memory::CSharedPointer<CLibinputDevice>> libinputDevices;
 
-        udev*                                                          udevHandle    = nullptr;
-        udev_monitor*                                                  udevMonitor   = nullptr;
-        libseat*                                                       libseatHandle = nullptr;
+        udev*                                                           udevHandle     = nullptr;
+        udev_monitor*                                                   udevMonitor    = nullptr;
+        libseat*                                                        libseatHandle  = nullptr;
+        libinput*                                                       libinputHandle = nullptr;
 
-        std::vector<int>                                               pollFDs();
-        void                                                           dispatchPendingEventsAsync();
-        bool                                                           switchVT(uint32_t vt);
+        std::vector<int>                                                pollFDs();
+        void                                                            dispatchPendingEventsAsync();
+        bool                                                            switchVT(uint32_t vt);
+        void                                                            onReady();
 
         struct SAddDrmCardEvent {
             std::string path;
@@ -84,7 +137,10 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CBackend> backend;
 
         void                                      dispatchUdevEvents();
+        void                                      dispatchLibinputEvents();
+        void                                      handleLibinputEvent(libinput_event* e);
 
         friend class CSessionDevice;
+        friend class CLibinputDevice;
     };
 };
