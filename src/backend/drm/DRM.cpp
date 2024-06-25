@@ -23,7 +23,12 @@ using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
 Aquamarine::CDRMBackend::CDRMBackend(SP<CBackend> backend_) : backend(backend_) {
-    ;
+    listeners.sessionActivate = backend->session->events.changeActive.registerListener([this](std::any d) {
+        if (backend->session->active) {
+            // session got activated, we need to restore
+            restoreAfterVT();
+        }
+    });
 }
 
 static udev_enumerate* enumDRMCards(udev* udev) {
@@ -204,6 +209,45 @@ void Aquamarine::CDRMBackend::log(eBackendLogLevel l, const std::string& s) {
 
 bool Aquamarine::CDRMBackend::sessionActive() {
     return backend->session->active;
+}
+
+void Aquamarine::CDRMBackend::restoreAfterVT() {
+    backend->log(AQ_LOG_DEBUG, "drm: Restoring after VT switch");
+
+    for (auto& c : connectors) {
+        if (!c->crtc)
+            continue;
+
+        backend->log(AQ_LOG_DEBUG, std::format("drm: Resetting crtc {}", c->crtc->id));
+
+        if (!impl->reset(c))
+            backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed reset", c->crtc->id));
+    }
+
+    for (auto& c : connectors) {
+        if (!c->crtc)
+            continue;
+
+        SDRMConnectorCommitData data = {
+            .mainFB   = nullptr,
+            .modeset  = true,
+            .blocking = true,
+            .flags    = 0,
+            .test     = false,
+        };
+
+        if (c->output->state->state().mode && c->output->state->state().mode->modeInfo.has_value())
+            data.modeInfo = *c->output->state->state().mode->modeInfo;
+        else
+            data.calculateMode(c);
+
+        backend->log(AQ_LOG_DEBUG,
+                     std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, data.modeInfo.clock, data.modeInfo.hdisplay,
+                                 data.modeInfo.vdisplay, data.modeInfo.vrefresh));
+
+        if (!impl->commit(c, data))
+            backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
+    }
 }
 
 bool Aquamarine::CDRMBackend::checkFeatures() {

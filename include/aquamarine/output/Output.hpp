@@ -57,7 +57,7 @@ namespace Aquamarine {
             bool                                           enabled          = false;
             bool                                           adaptiveSync     = false;
             eOutputPresentationMode                        presentationMode = AQ_OUTPUT_PRESENTATION_VSYNC;
-            std::vector<uint16_t>                          gammaLut;
+            std::vector<uint16_t>                          gammaLut; // Gamma lut in the format [r,g,b]+
             Hyprutils::Math::Vector2D                      lastModeSize;
             Hyprutils::Memory::CWeakPointer<SOutputMode>   mode;
             Hyprutils::Memory::CSharedPointer<SOutputMode> customMode;
@@ -109,7 +109,7 @@ namespace Aquamarine {
         bool                                                              enabled    = false;
         bool                                                              nonDesktop = false;
         eSubpixelMode                                                     subpixel   = AQ_SUBPIXEL_NONE;
-        bool                                                              vrrCapable = false;
+        bool                                                              vrrCapable = false, vrrActive = false;
         bool                                                              needsFrame = false;
 
         //

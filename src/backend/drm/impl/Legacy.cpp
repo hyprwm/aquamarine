@@ -41,7 +41,6 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
             mode = (drmModeModeInfo*)&data.modeInfo;
         }
 
-        connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: Modesetting CRTC, connectors: {}", connectors.size()));
         connector->backend->backend->log(
             AQ_LOG_DEBUG,
             std::format("legacy drm: Modesetting CRTC, mode: clock {} hdisplay {} vdisplay {} vrefresh {}", mode->clock, mode->hdisplay, mode->vdisplay, mode->vrefresh));
@@ -52,9 +51,25 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
         }
     }
 
-    // TODO: gamma
+    if (STATE.committed & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_ADAPTIVE_SYNC) {
+        if (STATE.adaptiveSync && !connector->canDoVrr) {
+            connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: connector {} can't do vrr", connector->id));
+            return false;
+        }
 
-    // TODO: Adaptive sync
+        if (connector->crtc->props.vrr_enabled) {
+            if (auto ret = drmModeObjectSetProperty(backend->gpu->fd, connector->crtc->id, DRM_MODE_OBJECT_CRTC, connector->crtc->props.vrr_enabled, (uint64_t)STATE.adaptiveSync);
+                ret) {
+                connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModeObjectSetProperty: vrr -> {} failed: {}", STATE.adaptiveSync, strerror(-ret)));
+                return false;
+            }
+        }
+
+        connector->output->vrrActive = STATE.adaptiveSync;
+        connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: connector {} vrr -> {}", connector->id, STATE.adaptiveSync));
+    }
+
+    // TODO: gamma
 
     // TODO: cursor plane
     if (drmModeSetCursor(connector->backend->gpu->fd, connector->crtc->id, 0, 0, 0))
@@ -85,4 +100,16 @@ bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
         return false;
 
     return commitInternal(connector, data);
+}
+
+bool Aquamarine::CDRMLegacyImpl::reset(SP<SDRMConnector> connector) {
+    if (!connector->crtc)
+        return true;
+
+    if (int ret = drmModeSetCrtc(backend->gpu->fd, connector->crtc->id, 0, 0, 0, nullptr, 0, nullptr); ret) {
+        connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: reset failed: {}", strerror(-ret)));
+        return false;
+    }
+
+    return true;
 }

@@ -7,6 +7,7 @@ namespace Aquamarine {
       public:
         CDRMLegacyImpl(Hyprutils::Memory::CSharedPointer<CDRMBackend> backend_);
         virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data);
+        virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
 
       private:
 

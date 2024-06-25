@@ -227,6 +227,7 @@ namespace Aquamarine {
     class IDRMImplementation {
       public:
         virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) = 0;
+        virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) = 0;
     };
 
     class CDRMBackend : public IBackendImplementation {
@@ -259,6 +260,7 @@ namespace Aquamarine {
         bool initResources();
         bool grabFormats();
         void scanConnectors();
+        void restoreAfterVT();
 
         Hyprutils::Memory::CSharedPointer<CSessionDevice>             gpu;
         Hyprutils::Memory::CSharedPointer<IDRMImplementation>         impl;
@@ -276,6 +278,10 @@ namespace Aquamarine {
             bool                      supportsAsyncCommit     = false;
             bool                      supportsAddFb2Modifiers = false;
         } drmProps;
+
+        struct {
+            Hyprutils::Signal::CHyprSignalListener sessionActivate;
+        } listeners;
 
         friend class CBackend;
         friend class CDRMFB;
