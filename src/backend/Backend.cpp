@@ -122,7 +122,7 @@ bool Aquamarine::CBackend::start() {
         b->onReady();
     }
 
-    sessionFDs = session->pollFDs();
+    sessionFDs = session ? session->pollFDs() : std::vector<int>{};
 
     return true;
 }
