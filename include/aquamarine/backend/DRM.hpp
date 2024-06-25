@@ -54,7 +54,7 @@ namespace Aquamarine {
     struct SDRMLayer {
         // we expect the consumers to use double-buffering, so we keep the 2 last FBs around. If any of these goes out of
         // scope, the DRM FB will be destroyed, but the IBuffer will stay, as long as it's ref'd somewhere.
-        Hyprutils::Memory::CSharedPointer<CDRMFB>    front /* currently displaying */, back;
+        Hyprutils::Memory::CSharedPointer<CDRMFB>    front /* currently displaying */, back /* submitted */, last /* keep just in case */;
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
     };
 
@@ -65,7 +65,7 @@ namespace Aquamarine {
         uint32_t                                     id        = 0;
         uint32_t                                     initialID = 0;
 
-        Hyprutils::Memory::CSharedPointer<CDRMFB>    front /* currently displaying */, back /* submitted */;
+        Hyprutils::Memory::CSharedPointer<CDRMFB>    front /* currently displaying */, back /* submitted */, last /* keep just in case */;
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
         Hyprutils::Memory::CWeakPointer<SDRMPlane>   self;
         std::vector<SDRMFormat>                      formats;

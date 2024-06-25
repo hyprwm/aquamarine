@@ -894,12 +894,9 @@ bool Aquamarine::SDRMConnector::commitState(const SDRMConnectorCommitData& data)
 }
 
 void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data) {
-    crtc->primary->back  = crtc->primary->front;
-    crtc->primary->front = data.mainFB;
-    if (crtc->cursor) {
-        crtc->cursor->back  = crtc->cursor->front;
-        crtc->cursor->front = data.cursorFB;
-    }
+    crtc->primary->back = data.mainFB;
+    if (crtc->cursor)
+        crtc->cursor->back = data.cursorFB;
 
     pendingCursorFB.reset();
 
@@ -912,7 +909,12 @@ void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& da
 }
 
 void Aquamarine::SDRMConnector::onPresent() {
-    ;
+    crtc->primary->last  = crtc->primary->front;
+    crtc->primary->front = crtc->primary->back;
+    if (crtc->cursor) {
+        crtc->cursor->last  = crtc->cursor->front;
+        crtc->cursor->front = crtc->cursor->back;
+    }
 }
 
 Aquamarine::CDRMOutput::~CDRMOutput() {
@@ -1004,11 +1006,14 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         auto       buf = STATE.buffer;
         // try to find the buffer in its layer
         if (connector->crtc->primary->back && connector->crtc->primary->back->buffer == buf) {
-            backend->backend->log(AQ_LOG_TRACE, "drm: CRTC's back buffer matches committed :D");
+            backend->backend->log(AQ_LOG_TRACE, "drm: CRTC's back buffer matches committed");
             drmFB = connector->crtc->primary->back;
         } else if (connector->crtc->primary->front && connector->crtc->primary->front->buffer == buf) {
             backend->backend->log(AQ_LOG_TRACE, "drm: CRTC's front buffer matches committed");
             drmFB = connector->crtc->primary->front;
+        } else if (connector->crtc->primary->last && connector->crtc->primary->last->buffer == buf) {
+            backend->backend->log(AQ_LOG_TRACE, "drm: CRTC's last buffer matches committed :D"); // best case scenario and what is expected
+            drmFB = connector->crtc->primary->last;
         }
 
         if (!drmFB)
