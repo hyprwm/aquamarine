@@ -66,14 +66,16 @@ static void libinputLog(libinput*, libinput_log_priority level, const char* fmt,
 static void libseatEnableSeat(struct libseat* seat, void* data) {
     auto PSESSION    = (Aquamarine::CSession*)data;
     PSESSION->active = true;
-    libinput_resume(PSESSION->libinputHandle);
+    if (PSESSION->libinputHandle)
+        libinput_resume(PSESSION->libinputHandle);
     PSESSION->events.changeActive.emit();
 }
 
 static void libseatDisableSeat(struct libseat* seat, void* data) {
     auto PSESSION    = (Aquamarine::CSession*)data;
     PSESSION->active = false;
-    libinput_suspend(PSESSION->libinputHandle);
+    if (PSESSION->libinputHandle)
+        libinput_suspend(PSESSION->libinputHandle);
     PSESSION->events.changeActive.emit();
     libseat_disable_seat(PSESSION->libseatHandle);
 }
@@ -269,6 +271,9 @@ void Aquamarine::CSession::onReady() {
 }
 
 void Aquamarine::CSession::dispatchUdevEvents() {
+    if (!udevHandle || !udevMonitor)
+        return;
+
     auto device = udev_monitor_receive_device(udevMonitor);
 
     if (!device)
@@ -332,6 +337,9 @@ void Aquamarine::CSession::dispatchUdevEvents() {
 }
 
 void Aquamarine::CSession::dispatchLibinputEvents() {
+    if (!libinputHandle)
+        return;
+
     if (int ret = libinput_dispatch(libinputHandle); ret) {
         backend->log(AQ_LOG_ERROR, std::format("Couldn't dispatch libinput events: {}", strerror(-ret)));
         return;
