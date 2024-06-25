@@ -21,7 +21,7 @@ namespace Aquamarine {
 
         static Hyprutils::Memory::CSharedPointer<CSessionDevice> openIfKMS(Hyprutils::Memory::CSharedPointer<CSession> session_, const std::string& path_);
 
-        bool supportsKMS();
+        bool                                                     supportsKMS();
 
         int                                                      fd       = -1;
         int                                                      deviceID = -1;
@@ -67,8 +67,8 @@ namespace Aquamarine {
         libseat*                                                       libseatHandle = nullptr;
 
         std::vector<int>                                               pollFDs();
-
         void                                                           dispatchPendingEventsAsync();
+        bool                                                           switchVT(uint32_t vt);
 
         struct SAddDrmCardEvent {
             std::string path;

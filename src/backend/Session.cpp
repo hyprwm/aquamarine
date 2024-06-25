@@ -256,3 +256,7 @@ std::vector<int> Aquamarine::CSession::pollFDs() {
 
     return {libseat_get_fd(libseatHandle), udev_monitor_get_fd(udevMonitor)};
 }
+
+bool Aquamarine::CSession::switchVT(uint32_t vt) {
+    return libseat_switch_session(libseatHandle, vt) == 0;
+}
