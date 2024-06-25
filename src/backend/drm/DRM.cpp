@@ -214,6 +214,10 @@ bool Aquamarine::CDRMBackend::sessionActive() {
 void Aquamarine::CDRMBackend::restoreAfterVT() {
     backend->log(AQ_LOG_DEBUG, "drm: Restoring after VT switch");
 
+    scanConnectors();
+
+    backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
+
     for (auto& c : connectors) {
         if (!c->crtc)
             continue;
@@ -387,11 +391,22 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     auto drmName = drmGetDeviceNameFromFd2(gpu->fd);
     auto drmVer  = drmGetVersion(gpu->fd);
 
+    gpuName = drmName;
+
     backend->log(AQ_LOG_DEBUG, std::format("drm: Starting backend for {}, with driver {}", drmName ? drmName : "unknown", drmVer->name ? drmVer->name : "unknown"));
 
     drmFreeVersion(drmVer);
 
-    // FIXME: listen to change and remove events from session
+    listeners.gpuChange = gpu->events.change.registerListener([this](std::any d) {
+        auto E = std::any_cast<CSessionDevice::SChangeEvent>(d);
+        if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
+            scanConnectors();
+        }
+    });
+
+    listeners.gpuRemove = gpu->events.remove.registerListener(
+        [this](std::any d) { backend->log(AQ_LOG_ERROR, std::format("drm: !!!!FIXME: Got a remove event for {}, this is not handled properly!!!!!", gpuName)); });
 
     return true;
 }

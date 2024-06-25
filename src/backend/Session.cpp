@@ -208,11 +208,34 @@ void Aquamarine::CSession::dispatchUdevEvents() {
 
             if (action == std::string{"change"}) {
                 backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} changed", sysname ? sysname : "unknown"));
-                backend->log(AQ_LOG_ERROR, "udev: FIXME: change event is a STUB");
+
+                CSessionDevice::SChangeEvent event;
+
+                auto                         prop = udev_device_get_property_value(device, "HOTPLUG");
+                if (prop && prop == std::string{"1"}) {
+                    event.type = CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG;
+
+                    prop = udev_device_get_property_value(device, "CONNECTOR");
+                    if (prop)
+                        event.hotplug.connectorID = std::stoull(prop);
+
+                    prop = udev_device_get_property_value(device, "PROPERTY");
+                    if (prop)
+                        event.hotplug.propID = std::stoull(prop);
+                } else if (prop = udev_device_get_property_value(device, "LEASE"); prop && prop == std::string{"1"}) {
+                    event.type = CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE;
+                } else {
+                    backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} change event unrecognized", sysname ? sysname : "unknown"));
+                    break;
+                }
+
+                d->events.change.emit(event);
             } else if (action == std::string{"remove"}) {
                 backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} removed", sysname ? sysname : "unknown"));
-                backend->log(AQ_LOG_ERROR, "udev: FIXME: remove event is a STUB");
+                d->events.remove.emit();
             }
+
+            break;
         }
     }
 

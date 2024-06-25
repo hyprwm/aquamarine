@@ -227,7 +227,7 @@ namespace Aquamarine {
     class IDRMImplementation {
       public:
         virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) = 0;
-        virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) = 0;
+        virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector)                                       = 0;
     };
 
     class CDRMBackend : public IBackendImplementation {
@@ -265,6 +265,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<CSessionDevice>             gpu;
         Hyprutils::Memory::CSharedPointer<IDRMImplementation>         impl;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                  primary;
+        std::string                                                   gpuName;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
 
@@ -281,6 +282,8 @@ namespace Aquamarine {
 
         struct {
             Hyprutils::Signal::CHyprSignalListener sessionActivate;
+            Hyprutils::Signal::CHyprSignalListener gpuChange;
+            Hyprutils::Signal::CHyprSignalListener gpuRemove;
         } listeners;
 
         friend class CBackend;
