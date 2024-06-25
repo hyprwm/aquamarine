@@ -41,9 +41,12 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
             mode = (drmModeModeInfo*)&data.modeInfo;
         }
 
-        connector->backend->backend->log(
-            AQ_LOG_DEBUG,
-            std::format("legacy drm: Modesetting CRTC, mode: clock {} hdisplay {} vdisplay {} vrefresh {}", mode->clock, mode->hdisplay, mode->vdisplay, mode->vrefresh));
+        if (mode) {
+            connector->backend->backend->log(
+                AQ_LOG_DEBUG,
+                std::format("legacy drm: Modesetting CRTC, mode: clock {} hdisplay {} vdisplay {} vrefresh {}", mode->clock, mode->hdisplay, mode->vdisplay, mode->vrefresh));
+        } else
+            connector->backend->backend->log(AQ_LOG_DEBUG, "legacy drm: Modesetting CRTC, mode null");
 
         if (auto ret = drmModeSetCrtc(connector->backend->gpu->fd, connector->crtc->id, mainFB ? mainFB->id : -1, 0, 0, connectors.data(), connectors.size(), mode); ret) {
             connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModeSetCrtc failed: {}", strerror(-ret)));
