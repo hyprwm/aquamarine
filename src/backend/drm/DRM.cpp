@@ -451,7 +451,10 @@ void Aquamarine::CDRMBackend::scanConnectors() {
         } else
             conn = *it;
 
-        backend->log(AQ_LOG_DEBUG, std::format("drm: Connectors size {}", connectors.size()));
+        if (!conn->crtc) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Ignoring connector {} because it has no CRTC", connectorID));
+            continue;
+        }
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connection state: {}", connectorID, (int)drmConn->connection));
 
