@@ -21,9 +21,6 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
     const bool CURSOR = params.cursor && params.scanout;
 
-    if (CURSOR)
-        allocator->backend->log(AQ_LOG_WARNING, "GBM: Allocating a cursor buffer");
-
     const auto            FORMATS = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
 
     std::vector<uint64_t> explicitModifiers;
@@ -31,15 +28,25 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     // check if we can use modifiers. If the requested support has any explicit modifier
     // supported by the primary backend, we can.
     for (auto& f : FORMATS) {
-        if (f.drmFormat != params.format)
+        if (f.drmFormat != attrs.format && attrs.format != DRM_FORMAT_INVALID)
             continue;
 
         for (auto& m : f.modifiers) {
-            if (m == DRM_FORMAT_MOD_LINEAR || m == DRM_FORMAT_MOD_INVALID)
+            if (m == DRM_FORMAT_MOD_INVALID)
                 continue;
 
             explicitModifiers.push_back(m);
         }
+
+        if (attrs.format == DRM_FORMAT_INVALID) {
+            allocator->backend->log(AQ_LOG_WARNING, std::format("GBM: Automatically selected format {} for new GBM buffer", fourccToName(f.drmFormat)));
+            attrs.format = f.drmFormat;
+        }
+    }
+
+    if (attrs.format == DRM_FORMAT_INVALID) {
+        allocator->backend->log(AQ_LOG_ERROR, "GBM: Failed to allocate a GBM buffer: no format found");
+        return;
     }
 
     if (explicitModifiers.empty()) {
@@ -160,11 +167,6 @@ Aquamarine::CGBMAllocator::CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointe
 SP<IBuffer> Aquamarine::CGBMAllocator::acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain_) {
     if (params.size.x < 1 || params.size.y < 1) {
         backend->log(AQ_LOG_ERROR, std::format("Couldn't allocate a gbm buffer with invalid size {}", params.size));
-        return nullptr;
-    }
-
-    if (params.format == DRM_FORMAT_INVALID) {
-        backend->log(AQ_LOG_ERROR, "Couldn't allocate a gbm buffer with invalid format");
         return nullptr;
     }
 

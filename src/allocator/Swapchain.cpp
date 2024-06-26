@@ -30,10 +30,10 @@ bool Aquamarine::CSwapchain::reconfigure(const SSwapchainOptions& options_) {
         return true;
     }
 
-    if (options_.format == options.format && options_.size == options.size && options_.length == options.length)
+    if ((options_.format == options.format || options_.format == DRM_FORMAT_INVALID) && options_.size == options.size && options_.length == options.length)
         return true; // no need to reconfigure
 
-    if (options_.format == options.format && options_.size == options.size) {
+    if ((options_.format == options.format || options_.format == DRM_FORMAT_INVALID) && options_.size == options.size) {
         bool ok = resize(options_.length);
         if (!ok)
             return false;
@@ -49,6 +49,8 @@ bool Aquamarine::CSwapchain::reconfigure(const SSwapchainOptions& options_) {
         return false;
 
     options = options_;
+    if (options.format == DRM_FORMAT_INVALID)
+        options.format = buffers.at(0)->dmabuf().format;
 
     allocator->getBackend()->log(AQ_LOG_DEBUG,
                                  std::format("Swapchain: Reconfigured a swapchain to {} {} of length {}", options.size, fourccToName(options.format), options.length));
