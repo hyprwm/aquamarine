@@ -1008,7 +1008,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Disabling output {}", name));
         }
 
-        if (!BLOCKING && connector->isPageFlipPending) {
+        if ((NEEDS_RECONFIG || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) && connector->isPageFlipPending) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
             return false;
         }
