@@ -982,6 +982,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER && STATE.buffer->attachments.has(AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE)) {
+        backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer.");
+        return false;
+    }
+
     // If we are changing the rendering format, we may need to reconfigure the output (aka modeset)
     // which may result in some glitches
     const bool NEEDS_RECONFIG = COMMITTED &
