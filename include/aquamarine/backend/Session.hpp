@@ -18,6 +18,7 @@ namespace Aquamarine {
     class CBackend;
     class CSession;
     class CLibinputDevice;
+    struct SPollFD;
 
     class CSessionDevice {
       public:
@@ -118,7 +119,7 @@ namespace Aquamarine {
         libseat*                                                        libseatHandle  = nullptr;
         libinput*                                                       libinputHandle = nullptr;
 
-        std::vector<int>                                                pollFDs();
+        std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>         pollFDs();
         void                                                            dispatchPendingEventsAsync();
         bool                                                            switchVT(uint32_t vt);
         void                                                            onReady();
@@ -134,11 +135,13 @@ namespace Aquamarine {
         } events;
 
       private:
-        Hyprutils::Memory::CWeakPointer<CBackend> backend;
+        Hyprutils::Memory::CWeakPointer<CBackend>               backend;
+        std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> polls;
 
-        void                                      dispatchUdevEvents();
-        void                                      dispatchLibinputEvents();
-        void                                      handleLibinputEvent(libinput_event* e);
+        void                                                    dispatchUdevEvents();
+        void                                                    dispatchLibinputEvents();
+        void                                                    dispatchLibseatEvents();
+        void                                                    handleLibinputEvent(libinput_event* e);
 
         friend class CSessionDevice;
         friend class CLibinputDevice;

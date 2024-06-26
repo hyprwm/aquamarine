@@ -51,6 +51,11 @@ namespace Aquamarine {
         std::function<void(eBackendLogLevel, std::string)> logFunction;
     };
 
+    struct SPollFD {
+        int                       fd = -1;
+        std::function<void(void)> onSignal; /* call this when signaled */
+    };
+
     class IBackendImplementation {
       public:
         virtual ~IBackendImplementation() {
@@ -61,15 +66,15 @@ namespace Aquamarine {
             AQ_BACKEND_CAPABILITY_POINTER = (1 << 0),
         };
 
-        virtual eBackendType            type()             = 0;
-        virtual bool                    start()            = 0;
-        virtual int                     pollFD()           = 0;
-        virtual int                     drmFD()            = 0;
-        virtual bool                    dispatchEvents()   = 0;
-        virtual uint32_t                capabilities()     = 0;
-        virtual void                    onReady()          = 0;
-        virtual std::vector<SDRMFormat> getRenderFormats() = 0;
-        virtual std::vector<SDRMFormat> getCursorFormats() = 0;
+        virtual eBackendType                                            type()             = 0;
+        virtual bool                                                    start()            = 0;
+        virtual std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> pollFDs()          = 0;
+        virtual int                                                     drmFD()            = 0;
+        virtual bool                                                    dispatchEvents()   = 0;
+        virtual uint32_t                                                capabilities()     = 0;
+        virtual void                                                    onReady()          = 0;
+        virtual std::vector<SDRMFormat>                                 getRenderFormats() = 0;
+        virtual std::vector<SDRMFormat>                                 getCursorFormats() = 0;
     };
 
     class CBackend {
@@ -84,15 +89,8 @@ namespace Aquamarine {
 
         void log(eBackendLogLevel level, const std::string& msg);
 
-        /* Enters the event loop synchronously. For simple clients, this is probably what you want. For more complex ones,
-           see the async methods further below */
-        void enterLoop();
-
-        /* Gets all the FDs you have to poll. When any single one fires, call dispatchEventsAsync */
-        std::vector<int> getPollFDs();
-
-        /* Dispatches all pending events on all queues then returns */
-        void dispatchEventsAsync();
+        /* Gets all the FDs you have to poll. When any single one fires, call its onPoll */
+        std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> getPollFDs();
 
         /* Checks if the backend has a session - iow if it's a DRM backend */
         bool hasSession();
@@ -126,7 +124,7 @@ namespace Aquamarine {
         std::vector<Hyprutils::Memory::CSharedPointer<IBackendImplementation>> implementations;
         SBackendOptions                                                        options;
         Hyprutils::Memory::CWeakPointer<CBackend>                              self;
-        std::vector<int>                                                       sessionFDs;
+        std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>                sessionFDs;
 
         //
         struct {

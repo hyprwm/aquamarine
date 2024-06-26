@@ -476,8 +476,8 @@ bool Aquamarine::CDRMBackend::start() {
     return true;
 }
 
-int Aquamarine::CDRMBackend::pollFD() {
-    return gpu->fd;
+std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CDRMBackend::pollFDs() {
+    return {makeShared<SPollFD>(gpu->fd, [this]() { dispatchEvents(); })};
 }
 
 int Aquamarine::CDRMBackend::drmFD() {

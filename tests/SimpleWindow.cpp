@@ -90,7 +90,8 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
-    aqBackend->enterLoop();
+    // FIXME: write an event loop.
+    // aqBackend->enterLoop();
 
     return 0;
 }

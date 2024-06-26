@@ -100,7 +100,7 @@ bool Aquamarine::CBackend::start() {
 
     // erase failed impls
     std::erase_if(implementations, [this](const auto& i) {
-        bool failed = i->pollFD() < 0;
+        bool failed = i->pollFDs().empty();
         if (failed)
             log(AQ_LOG_ERROR, std::format("Implementation {} failed, erasing.", backendTypeToName(i->type())));
         return failed;
@@ -122,7 +122,7 @@ bool Aquamarine::CBackend::start() {
         b->onReady();
     }
 
-    sessionFDs = session ? session->pollFDs() : std::vector<int>{};
+    sessionFDs = session ? session->pollFDs() : std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>{};
 
     return true;
 }
@@ -134,76 +134,17 @@ void Aquamarine::CBackend::log(eBackendLogLevel level, const std::string& msg) {
     options.logFunction(level, msg);
 }
 
-void Aquamarine::CBackend::enterLoop() {
-    std::vector<pollfd> pollFDs;
-
+std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CBackend::getPollFDs() {
+    std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> result;
     for (auto& i : implementations) {
-        auto fd = i->pollFD();
-
-        pollFDs.emplace_back(pollfd{.fd = fd, .events = POLLIN, .revents = 0});
-    }
-
-    std::thread pollThr([this, &pollFDs]() {
-        int ret = 0;
-        while (1) {
-            ret = poll(pollFDs.data(), pollFDs.size(), 5000 /* 5 seconds, reasonable. It's because we might need to terminate */);
-            if (ret < 0) {
-                log(AQ_LOG_CRITICAL, std::format("Polling fds failed with {}", errno));
-                terminate = true;
-                exit(1);
-            }
-
-            for (size_t i = 0; i < pollFDs.size(); ++i) {
-                if (pollFDs[i].revents & POLLHUP) {
-                    log(AQ_LOG_CRITICAL, std::format("disconnected from pollfd {}", i));
-                    terminate = true;
-                    exit(1);
-                }
-            }
-
-            if (terminate)
-                break;
-
-            if (ret != 0) {
-                std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
-                m_sEventLoopInternals.shouldProcess = true;
-                m_sEventLoopInternals.loopSignal.notify_all();
-            }
+        auto pollfds = i->pollFDs();
+        for (auto& p : pollfds) {
+            result.emplace_back(p);
         }
-    });
-
-    while (1) {
-        m_sEventLoopInternals.loopRequestMutex.unlock(); // unlock, we are ready to take events
-
-        std::unique_lock lk(m_sEventLoopInternals.loopMutex);
-        if (m_sEventLoopInternals.shouldProcess == false) // avoid a lock if a thread managed to request something already since we .unlock()ed
-            m_sEventLoopInternals.loopSignal.wait_for(lk, std::chrono::seconds(5), [this] { return m_sEventLoopInternals.shouldProcess == true; }); // wait for events
-
-        m_sEventLoopInternals.loopRequestMutex.lock(); // lock incoming events
-
-        if (terminate)
-            break;
-
-        m_sEventLoopInternals.shouldProcess = false;
-
-        std::lock_guard<std::mutex> lg(m_sEventLoopInternals.eventLock);
-
-        dispatchEventsAsync();
-    }
-}
-
-std::vector<int> Aquamarine::CBackend::getPollFDs() {
-    std::vector<int> result;
-    for (auto& i : implementations) {
-        int fd = i->pollFD();
-        if (fd < 0)
-            continue;
-
-        result.push_back(fd);
     }
 
     for (auto& sfd : sessionFDs) {
-        result.push_back(sfd);
+        result.emplace_back(sfd);
     }
 
     return result;
@@ -218,15 +159,6 @@ int Aquamarine::CBackend::drmFD() {
         return fd;
     }
     return -1;
-}
-
-void Aquamarine::CBackend::dispatchEventsAsync() {
-    for (auto& i : implementations) {
-        i->dispatchEvents();
-    }
-
-    if (session)
-        session->dispatchPendingEventsAsync();
 }
 
 bool Aquamarine::CBackend::hasSession() {

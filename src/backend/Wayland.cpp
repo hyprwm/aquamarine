@@ -140,11 +140,11 @@ void Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
     idleCallbacks.emplace_back([this, o]() { backend->events.newOutput.emit(SP<IOutput>(o)); });
 }
 
-int Aquamarine::CWaylandBackend::pollFD() {
+std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CWaylandBackend::pollFDs() {
     if (!waylandState.display)
-        return -1;
+        return {};
 
-    return wl_display_get_fd(waylandState.display);
+    return {makeShared<SPollFD>(wl_display_get_fd(waylandState.display), [this]() { dispatchEvents(); })};
 }
 
 bool Aquamarine::CWaylandBackend::dispatchEvents() {

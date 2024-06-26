@@ -253,23 +253,23 @@ namespace Aquamarine {
     class CDRMBackend : public IBackendImplementation {
       public:
         virtual ~CDRMBackend();
-        virtual eBackendType                         type();
-        virtual bool                                 start();
-        virtual int                                  pollFD();
-        virtual int                                  drmFD();
-        virtual bool                                 dispatchEvents();
-        virtual uint32_t                             capabilities();
-        virtual bool                                 setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
-        virtual void                                 onReady();
-        virtual std::vector<SDRMFormat>              getRenderFormats();
-        virtual std::vector<SDRMFormat>              getCursorFormats();
+        virtual eBackendType                                            type();
+        virtual bool                                                    start();
+        virtual std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> pollFDs();
+        virtual int                                                     drmFD();
+        virtual bool                                                    dispatchEvents();
+        virtual uint32_t                                                capabilities();
+        virtual bool                                                    setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
+        virtual void                                                    onReady();
+        virtual std::vector<SDRMFormat>                                 getRenderFormats();
+        virtual std::vector<SDRMFormat>                                 getCursorFormats();
 
-        Hyprutils::Memory::CWeakPointer<CDRMBackend> self;
+        Hyprutils::Memory::CWeakPointer<CDRMBackend>                    self;
 
-        void                                         log(eBackendLogLevel, const std::string&);
-        bool                                         sessionActive();
+        void                                                            log(eBackendLogLevel, const std::string&);
+        bool                                                            sessionActive();
 
-        std::vector<FIdleCallback>                   idleCallbacks;
+        std::vector<FIdleCallback>                                      idleCallbacks;
 
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);

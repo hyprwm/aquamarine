@@ -353,19 +353,25 @@ void Aquamarine::CSession::dispatchLibinputEvents() {
     }
 }
 
-void Aquamarine::CSession::dispatchPendingEventsAsync() {
+void Aquamarine::CSession::dispatchLibseatEvents() {
     if (libseat_dispatch(libseatHandle, 0) == -1)
         backend->log(AQ_LOG_ERROR, "Couldn't dispatch libseat events");
+}
 
+void Aquamarine::CSession::dispatchPendingEventsAsync() {
+    dispatchLibseatEvents();
     dispatchUdevEvents();
     dispatchLibinputEvents();
 }
 
-std::vector<int> Aquamarine::CSession::pollFDs() {
-    if (!libseatHandle || !udevMonitor || !udevHandle)
-        return {};
-
-    return {libseat_get_fd(libseatHandle), udev_monitor_get_fd(udevMonitor), libinput_get_fd(libinputHandle)};
+std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CSession::pollFDs() {
+    // clang-format off
+    return {
+        makeShared<SPollFD>(libseat_get_fd(libseatHandle), [this](){    dispatchLibseatEvents();  }),
+        makeShared<SPollFD>(udev_monitor_get_fd(udevMonitor), [this](){ dispatchUdevEvents();     }),
+        makeShared<SPollFD>(libinput_get_fd(libinputHandle), [this](){  dispatchLibinputEvents(); })
+    };
+    // clang-format on
 }
 
 bool Aquamarine::CSession::switchVT(uint32_t vt) {
