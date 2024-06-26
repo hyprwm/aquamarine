@@ -7,8 +7,14 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
-Aquamarine::CSwapchain::CSwapchain(SP<IAllocator> allocator_) : allocator(allocator_) {
-    if (!allocator)
+SP<CSwapchain> Aquamarine::CSwapchain::create(SP<IAllocator> allocator_, SP<IBackendImplementation> backendImpl_) {
+    auto p  = SP<CSwapchain>(new CSwapchain(allocator_, backendImpl_));
+    p->self = p;
+    return p;
+}
+
+Aquamarine::CSwapchain::CSwapchain(SP<IAllocator> allocator_, SP<IBackendImplementation> backendImpl_) : allocator(allocator_), backendImpl(backendImpl_) {
+    if (!allocator || !backendImpl)
         return;
 }
 
@@ -64,7 +70,8 @@ SP<IBuffer> Aquamarine::CSwapchain::next(int* age) {
 bool Aquamarine::CSwapchain::fullReconfigure(const SSwapchainOptions& options_) {
     buffers.clear();
     for (size_t i = 0; i < options_.length; ++i) {
-        auto buf = allocator->acquire(SAllocatorBufferParams{.size = options_.size, .format = options_.format});
+        auto buf =
+            allocator->acquire(SAllocatorBufferParams{.size = options_.size, .format = options_.format, .scanout = options_.scanout, .cursor = options_.cursor}, self.lock());
         if (!buf) {
             allocator->getBackend()->log(AQ_LOG_ERROR, "Swapchain: Failed acquiring a buffer");
             return false;
@@ -85,7 +92,8 @@ bool Aquamarine::CSwapchain::resize(size_t newSize) {
         }
     } else {
         while (buffers.size() < newSize) {
-            auto buf = allocator->acquire(SAllocatorBufferParams{.size = options.size, .format = options.format});
+            auto buf =
+                allocator->acquire(SAllocatorBufferParams{.size = options.size, .format = options.format, .scanout = options.scanout, .cursor = options.cursor}, self.lock());
             if (!buf) {
                 allocator->getBackend()->log(AQ_LOG_ERROR, "Swapchain: Failed acquiring a buffer");
                 return false;

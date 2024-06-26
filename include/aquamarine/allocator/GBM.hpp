@@ -8,6 +8,7 @@ struct gbm_bo;
 namespace Aquamarine {
     class CGBMAllocator;
     class CBackend;
+    class CSwapchain;
 
     class CGBMBuffer : public IBuffer {
       public:
@@ -21,7 +22,7 @@ namespace Aquamarine {
         virtual SDMABUFAttrs      dmabuf();
 
       private:
-        CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_);
+        CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain);
 
         Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator;
 
@@ -36,8 +37,8 @@ namespace Aquamarine {
       public:
         static Hyprutils::Memory::CSharedPointer<CGBMAllocator> create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
 
-        virtual Hyprutils::Memory::CSharedPointer<IBuffer>      acquire(const SAllocatorBufferParams& params);
-        virtual Hyprutils::Memory::CSharedPointer<CBackend> getBackend();
+        virtual Hyprutils::Memory::CSharedPointer<IBuffer>      acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain_);
+        virtual Hyprutils::Memory::CSharedPointer<CBackend>     getBackend();
 
         //
         Hyprutils::Memory::CWeakPointer<CGBMAllocator> self;

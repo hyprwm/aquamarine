@@ -100,7 +100,8 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CSharedPointer<SOutputMode>            preferredMode();
         virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
         virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord); // includes the hotspot
-        virtual Hyprutils::Math::Vector2D                                 maxCursorSize();                                    // -1, -1 means no limit, 0, 0 means error
+        virtual void                                                      setCursorVisible(bool visible); // moving the cursor will make it visible again without this util
+        virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();              // -1, -1 means no set size, 0, 0 means error
         virtual void                                                      scheduleFrame();
         virtual size_t                                                    getGammaSize();
 

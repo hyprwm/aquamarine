@@ -525,12 +525,16 @@ bool Aquamarine::CDRMBackend::dispatchEvents() {
         .page_flip_handler2 = ::handlePF,
     };
 
+    // we will call this asynchronously and not only when drm fd polls, so we
+    // ignore the errors (from e.g. a partial read)
+    // TODO: is this ok?
     if (drmHandleEvent(gpu->fd, &event) != 0)
-        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to handle event on fd {}", gpu->fd));
+        ; // backend->log(AQ_LOG_ERROR, std::format("drm: Failed to handle event on fd {}", gpu->fd));
 
     if (!idleCallbacks.empty()) {
         for (auto& c : idleCallbacks) {
-            c();
+            if (c)
+                c();
         }
         idleCallbacks.clear();
     }
@@ -557,7 +561,7 @@ void Aquamarine::CDRMBackend::onReady() {
         backend->log(AQ_LOG_DEBUG, std::format("drm: onReady: connector {} has output name {}", c->id, c->output->name));
 
         // swapchain has to be created here because allocator is absent in connect if not ready
-        c->output->swapchain = makeShared<CSwapchain>(backend->allocator);
+        c->output->swapchain = CSwapchain::create(backend->allocator, self.lock());
         c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true}); // mark the swapchain for scanout
         c->output->needsFrame = true;
 
@@ -868,7 +872,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (!backend->backend->ready)
         return;
 
-    output->swapchain = makeShared<CSwapchain>(backend->backend->allocator);
+    output->swapchain = CSwapchain::create(backend->backend->allocator, backend->self.lock());
     backend->backend->events.newOutput.emit(output);
     output->scheduleFrame();
 }
@@ -898,7 +902,7 @@ bool Aquamarine::SDRMConnector::commitState(const SDRMConnectorCommitData& data)
 
 void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data) {
     crtc->primary->back = data.mainFB;
-    if (crtc->cursor)
+    if (crtc->cursor && data.cursorFB)
         crtc->cursor->back = data.cursorFB;
 
     pendingCursorFB.reset();
@@ -908,13 +912,17 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
 }
 
 void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
-    ;
+    // cursors are applied regardless.
+    if (crtc->cursor && data.cursorFB)
+        crtc->cursor->back = data.cursorFB;
+
+    crtc->pendingCursor.reset();
 }
 
 void Aquamarine::SDRMConnector::onPresent() {
     crtc->primary->last  = crtc->primary->front;
     crtc->primary->front = crtc->primary->back;
-    if (crtc->cursor) {
+    if (crtc->cursor && crtc->cursor->back /* Don't shift if it hasn't updated */) {
         crtc->cursor->last  = crtc->cursor->front;
         crtc->cursor->front = crtc->cursor->back;
     }
@@ -930,6 +938,12 @@ bool Aquamarine::CDRMOutput::commit() {
 
 bool Aquamarine::CDRMOutput::test() {
     return commitState(true);
+}
+
+void Aquamarine::CDRMOutput::setCursorVisible(bool visible) {
+    cursorVisible = visible;
+    needsFrame    = true;
+    scheduleFrame();
 }
 
 bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
@@ -994,9 +1008,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             return false;
         }
 
-        if (STATE.enabled)
+        if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
             flags |= DRM_MODE_PAGE_FLIP_EVENT;
-        if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE)
+        if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
             flags |= DRM_MODE_PAGE_FLIP_ASYNC;
     }
 
@@ -1007,20 +1021,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
         SP<CDRMFB> drmFB;
         auto       buf = STATE.buffer;
-        // try to find the buffer in its layer
-        if (connector->crtc->primary->back && connector->crtc->primary->back->buffer == buf) {
-            backend->backend->log(AQ_LOG_TRACE, "drm: CRTC's back buffer matches committed");
-            drmFB = connector->crtc->primary->back;
-        } else if (connector->crtc->primary->front && connector->crtc->primary->front->buffer == buf) {
-            backend->backend->log(AQ_LOG_TRACE, "drm: CRTC's front buffer matches committed");
-            drmFB = connector->crtc->primary->front;
-        } else if (connector->crtc->primary->last && connector->crtc->primary->last->buffer == buf) {
-            backend->backend->log(AQ_LOG_TRACE, "drm: CRTC's last buffer matches committed :D"); // best case scenario and what is expected
-            drmFB = connector->crtc->primary->last;
-        }
 
-        if (!drmFB)
-            drmFB = CDRMFB::create(buf, backend);
+        drmFB = CDRMFB::create(buf, backend); // will return attachment if present
 
         if (!drmFB) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
@@ -1029,6 +1031,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
         data.mainFB = drmFB;
     }
+
+    if (connector->crtc->pendingCursor)
+        data.cursorFB = connector->crtc->pendingCursor;
 
     data.blocking = BLOCKING;
     data.modeset  = NEEDS_RECONFIG;
@@ -1053,11 +1058,29 @@ SP<IBackendImplementation> Aquamarine::CDRMOutput::getBackend() {
 }
 
 bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotspot) {
-    return false; // FIXME:
+    if (!buffer)
+        setCursorVisible(false);
+    else {
+        cursorHotspot = hotspot;
+        auto fb       = CDRMFB::create(buffer, backend);
+        if (!fb) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer failed to import to KMS");
+            return false;
+        }
+
+        backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Cursor buffer imported into KMS with id {}", fb->id));
+
+        connector->crtc->pendingCursor = fb;
+    }
+
+    needsFrame = true;
+    scheduleFrame();
+    return true;
 }
 
 void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord) {
-    ; // FIXME:
+    cursorPos = coord;
+    backend->impl->moveCursor(connector);
 }
 
 void Aquamarine::CDRMOutput::scheduleFrame() {
@@ -1067,7 +1090,7 @@ void Aquamarine::CDRMOutput::scheduleFrame() {
     backend->idleCallbacks.emplace_back([this]() { events.frame.emit(); });
 }
 
-Vector2D Aquamarine::CDRMOutput::maxCursorSize() {
+Vector2D Aquamarine::CDRMOutput::cursorPlaneSize() {
     return backend->drmProps.cursorSize;
 }
 
@@ -1077,10 +1100,24 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
 }
 
 SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) {
-    auto fb = SP<CDRMFB>(new CDRMFB(buffer_, backend_));
+
+    SP<CDRMFB> fb;
+
+    if (buffer_->attachments.has(AQ_ATTACHMENT_DRM_BUFFER)) {
+        auto at = (CDRMBufferAttachment*)buffer_->attachments.get(AQ_ATTACHMENT_DRM_BUFFER).get();
+        fb      = at->fb;
+        backend_->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: buffer has drmfb attachment with fb {:x}", (uintptr_t)fb.get()));
+    }
+
+    if (fb)
+        return fb;
+
+    fb = SP<CDRMFB>(new CDRMFB(buffer_, backend_));
 
     if (!fb->id)
         return nullptr;
+
+    buffer_->attachments.add(makeShared<CDRMBufferAttachment>(fb));
 
     return fb;
 }
@@ -1100,7 +1137,7 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
     // TODO: check format
 
     for (int i = 0; i < attrs.planes; ++i) {
-        int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles.at(i));
+        int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles[i]);
         if (ret) {
             backend->backend->log(AQ_LOG_ERROR, "drm: drmPrimeFDToHandle failed");
             drop();
@@ -1120,7 +1157,7 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
 
     backend->backend->log(AQ_LOG_TRACE, std::format("drm: new buffer {}", id));
 
-    // FIXME: wlroots does this, I am unsure why, but if I do, the gpu driver will kill us.
+    // FIXME: why does this implode when it doesnt on wlroots or kwin?
     // closeHandles();
 }
 
@@ -1134,13 +1171,24 @@ void Aquamarine::CDRMFB::closeHandles() {
 
     handlesClosed = true;
 
-    for (auto& h : boHandles) {
-        if (h == 0)
+    std::vector<uint32_t> closed;
+
+    for (size_t i = 0; i < 4; ++i) {
+        if (boHandles.at(i) == 0)
             continue;
 
-        if (drmCloseBufferHandle(backend->gpu->fd, h))
+        bool exists = false;
+        for (size_t j = 0; j < i; ++j) {
+            if (boHandles.at(i) == boHandles.at(j)) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists)
+            continue;
+
+        if (drmCloseBufferHandle(backend->gpu->fd, boHandles.at(i)))
             backend->backend->log(AQ_LOG_ERROR, "drm: drmCloseBufferHandle failed");
-        h = 0;
     }
 }
 
@@ -1166,9 +1214,9 @@ void Aquamarine::CDRMFB::drop() {
 uint32_t Aquamarine::CDRMFB::submitBuffer() {
     auto                    attrs = buffer->dmabuf();
     uint32_t                newID = 0;
-    std::array<uint64_t, 4> mods  = {0};
+    std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
     for (size_t i = 0; i < attrs.planes; ++i) {
-        mods.at(i) = attrs.modifier;
+        mods[i] = attrs.modifier;
     }
 
     if (backend->drmProps.supportsAddFb2Modifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
@@ -1177,7 +1225,7 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
                                           fourccToName(attrs.format), attrs.modifier));
         if (drmModeAddFB2WithModifiers(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), mods.data(),
                                        &newID, DRM_MODE_FB_MODIFIERS)) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with AddFB2");
+            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2WithModifiers");
             return 0;
         }
     } else {
@@ -1191,7 +1239,7 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
             std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod {}", attrs.size, fourccToName(attrs.format), attrs.modifier));
 
         if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), &newID, 0)) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: drmModeAddFB2 failed");
+            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2");
             return 0;
         }
     }
@@ -1232,4 +1280,8 @@ void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CShar
         .flags       = DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_PVSYNC,
     };
     snprintf(modeInfo.name, sizeof(modeInfo.name), "%dx%d", (int)MODE->pixelSize.x, (int)MODE->pixelSize.y);
+}
+
+Aquamarine::CDRMBufferAttachment::CDRMBufferAttachment(SP<CDRMFB> fb_) : fb(fb_) {
+    ;
 }

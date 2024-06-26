@@ -47,7 +47,7 @@ namespace Aquamarine {
         virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
         virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord);
         virtual void                                                      scheduleFrame();
-        virtual Hyprutils::Math::Vector2D                                 maxCursorSize();
+        virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
 
         Hyprutils::Memory::CWeakPointer<CWaylandOutput>                   self;
 

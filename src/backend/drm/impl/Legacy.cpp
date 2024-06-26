@@ -13,6 +13,18 @@ Aquamarine::CDRMLegacyImpl::CDRMLegacyImpl(Hyprutils::Memory::CSharedPointer<CDR
     ;
 }
 
+bool Aquamarine::CDRMLegacyImpl::moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+    Vector2D cursorPos = connector->output->cursorPos;
+    if (int ret2 = drmModeMoveCursor(connector->backend->gpu->fd, connector->crtc->id, cursorPos.x, cursorPos.y)) {
+        connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModeMoveCursor failed: {}", strerror(-ret2)));
+        return false;
+    }
+
+    connector->backend->backend->log(AQ_LOG_DEBUG, "legacy drm: cursor move");
+
+    return true;
+}
+
 bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) {
     const auto& STATE = connector->output->state->state();
     SP<CDRMFB>  mainFB;
@@ -69,13 +81,48 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
         }
 
         connector->output->vrrActive = STATE.adaptiveSync;
-        connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: connector {} vrr -> {}", connector->id, STATE.adaptiveSync));
+        connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: connector {} vrr -> {}", connector->id, STATE.adaptiveSync));
     }
 
     // TODO: gamma
 
-    // TODO: cursor plane
-    if (drmModeSetCursor(connector->backend->gpu->fd, connector->crtc->id, 0, 0, 0))
+    if (data.cursorFB && connector->crtc->cursor && connector->output->cursorVisible && enable) {
+        uint32_t boHandle = 0;
+        auto     attrs    = data.cursorFB->buffer->dmabuf();
+
+        if (int ret = drmPrimeFDToHandle(connector->backend->gpu->fd, attrs.fds.at(0), &boHandle); ret) {
+            connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmPrimeFDToHandle failed: {}", strerror(-ret)));
+            return false;
+        }
+
+        connector->backend->backend->log(AQ_LOG_DEBUG,
+                                         std::format("legacy drm: cursor fb: {} with bo handle {} from fd {}, size {}", connector->backend->gpu->fd, boHandle,
+                                                     data.cursorFB->buffer->dmabuf().fds.at(0), data.cursorFB->buffer->size));
+
+        Vector2D                cursorPos = connector->output->cursorPos;
+
+        struct drm_mode_cursor2 request = {
+            .flags   = DRM_MODE_CURSOR_BO | DRM_MODE_CURSOR_MOVE,
+            .crtc_id = connector->crtc->id,
+            .x       = (int32_t)cursorPos.x,
+            .y       = (int32_t)cursorPos.y,
+            .width   = (uint32_t)data.cursorFB->buffer->size.x,
+            .height  = (uint32_t)data.cursorFB->buffer->size.y,
+            .handle  = boHandle,
+            .hot_x   = (int32_t)connector->output->cursorHotspot.x,
+            .hot_y   = (int32_t)connector->output->cursorHotspot.y,
+        };
+
+        int ret = drmIoctl(connector->backend->gpu->fd, DRM_IOCTL_MODE_CURSOR2, &request);
+
+        if (boHandle && drmCloseBufferHandle(connector->backend->gpu->fd, boHandle))
+            connector->backend->backend->log(AQ_LOG_ERROR, "legacy drm: drmCloseBufferHandle in cursor failed");
+
+        if (ret) {
+            connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: cursor drmIoctl failed: {}", strerror(errno)));
+            return false;
+        }
+    } else if (drmModeSetCursor(connector->backend->gpu->fd, connector->crtc->id, 0, 0, 0))
         connector->backend->backend->log(AQ_LOG_ERROR, "legacy drm: cursor null failed");
 
     if (!enable)

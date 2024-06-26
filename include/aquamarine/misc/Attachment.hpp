@@ -25,6 +25,7 @@ namespace Aquamarine {
         void                                           add(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
         void                                           remove(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
         void                                           removeByType(eAttachmentType type);
+        void                                           clear();
 
       private:
         std::vector<Hyprutils::Memory::CSharedPointer<IAttachment>> attachments;

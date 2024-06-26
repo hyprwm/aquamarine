@@ -31,3 +31,7 @@ void Aquamarine::CAttachmentManager::remove(SP<IAttachment> attachment) {
 void Aquamarine::CAttachmentManager::removeByType(eAttachmentType type) {
     std::erase_if(attachments, [type](const auto& e) { return e->type() == type; });
 }
+
+void Aquamarine::CAttachmentManager::clear() {
+    attachments.clear();
+}

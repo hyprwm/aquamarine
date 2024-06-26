@@ -184,7 +184,7 @@ bool Aquamarine::CWaylandBackend::setCursor(Hyprutils::Memory::CSharedPointer<IB
 
 void Aquamarine::CWaylandBackend::onReady() {
     for (auto& o : outputs) {
-        o->swapchain = makeShared<CSwapchain>(backend->allocator);
+        o->swapchain = CSwapchain::create(backend->allocator, self.lock());
         if (!o->swapchain) {
             backend->log(AQ_LOG_ERROR, std::format("Output {} failed: swapchain creation failed", o->name));
             continue;
@@ -703,7 +703,7 @@ void Aquamarine::CWaylandOutput::onEnter(SP<CCWlPointer> pointer, uint32_t seria
     pointer->sendSetCursor(serial, cursorState.cursorSurface.get(), cursorState.hotspot.x, cursorState.hotspot.y);
 }
 
-Hyprutils::Math::Vector2D Aquamarine::CWaylandOutput::maxCursorSize() {
+Hyprutils::Math::Vector2D Aquamarine::CWaylandOutput::cursorPlaneSize() {
     return {-1, -1}; // no limit
 }
 

@@ -15,6 +15,19 @@ namespace Aquamarine {
 
     typedef std::function<void(void)> FIdleCallback;
 
+    class CDRMBufferAttachment : public IAttachment {
+      public:
+        CDRMBufferAttachment(Hyprutils::Memory::CSharedPointer<CDRMFB> fb_);
+        virtual ~CDRMBufferAttachment() {
+            ;
+        }
+        virtual eAttachmentType type() {
+            return AQ_ATTACHMENT_DRM_BUFFER;
+        }
+
+        Hyprutils::Memory::CSharedPointer<CDRMFB> fb;
+    };
+
     class CDRMBufferUnimportable : public IAttachment {
       public:
         CDRMBufferUnimportable() {
@@ -39,16 +52,15 @@ namespace Aquamarine {
         void                                         drop();
 
         uint32_t                                     id = 0;
-        Hyprutils::Memory::CSharedPointer<IBuffer>   buffer;
+        Hyprutils::Memory::CWeakPointer<IBuffer>     buffer;
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
+        std::array<uint32_t, 4>                      boHandles = {0, 0, 0, 0};
 
       private:
         CDRMFB(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_);
-        uint32_t                submitBuffer();
+        uint32_t submitBuffer();
 
-        bool                    dropped = false, handlesClosed = false;
-
-        std::array<uint32_t, 4> boHandles = {0};
+        bool     dropped = false, handlesClosed = false;
     };
 
     struct SDRMLayer {
@@ -109,6 +121,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
         Hyprutils::Memory::CSharedPointer<SDRMPlane> cursor;
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
+        Hyprutils::Memory::CSharedPointer<CDRMFB>    pendingCursor;
 
         union UDRMCRTCProps {
             struct {
@@ -136,9 +149,13 @@ namespace Aquamarine {
         virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
         virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord);
         virtual void                                                      scheduleFrame();
-        virtual Hyprutils::Math::Vector2D                                 maxCursorSize();
+        virtual void                                                      setCursorVisible(bool visible);
+        virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
 
         Hyprutils::Memory::CWeakPointer<CDRMOutput>                       self;
+        bool                                                              cursorVisible = true;
+        Hyprutils::Math::Vector2D                                         cursorPos; // without hotspot
+        Hyprutils::Math::Vector2D                                         cursorHotspot;
 
       private:
         CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, Hyprutils::Memory::CSharedPointer<SDRMConnector> connector_);
@@ -228,6 +245,9 @@ namespace Aquamarine {
       public:
         virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) = 0;
         virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector)                                       = 0;
+
+        // moving a cursor IIRC is almost instant on most hardware so we don't have to wait for a commit.
+        virtual bool moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) = 0;
     };
 
     class CDRMBackend : public IBackendImplementation {

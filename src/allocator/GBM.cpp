@@ -1,5 +1,6 @@
 #include <aquamarine/allocator/GBM.hpp>
 #include <aquamarine/backend/Backend.hpp>
+#include <aquamarine/allocator/Swapchain.hpp>
 #include "FormatUtils.hpp"
 #include <xf86drm.h>
 #include <gbm.h>
@@ -8,34 +9,43 @@ using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 #define SP CSharedPointer
 
-Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_) : allocator(allocator_) {
+Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
+                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
+    allocator(allocator_) {
     if (!allocator)
         return;
 
     attrs.size   = params.size;
     attrs.format = params.format;
+    size         = attrs.size;
 
-    const auto            FORMATS = allocator->backend->getPrimaryRenderFormats();
+    const bool CURSOR = params.cursor && params.scanout;
+
+    if (CURSOR)
+        allocator->backend->log(AQ_LOG_WARNING, "GBM: Allocating a cursor buffer");
+
+    const auto            FORMATS = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
 
     std::vector<uint64_t> explicitModifiers;
 
     // check if we can use modifiers. If the requested support has any explicit modifier
     // supported by the primary backend, we can.
-    allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Searching for modifiers. Format len: {}", FORMATS.size()));
     for (auto& f : FORMATS) {
         if (f.drmFormat != params.format)
             continue;
-
-        allocator->backend->log(AQ_LOG_TRACE, "GBM: Format matched");
 
         for (auto& m : f.modifiers) {
             if (m == DRM_FORMAT_MOD_LINEAR || m == DRM_FORMAT_MOD_INVALID)
                 continue;
 
             explicitModifiers.push_back(m);
-
-            allocator->backend->log(AQ_LOG_TRACE, "GBM: Modifier matched");
         }
+    }
+
+    if (explicitModifiers.empty()) {
+        // fall back to using a linear buffer.
+        // FIXME: Nvidia cannot render to linear buffers.
+        explicitModifiers.push_back(DRM_FORMAT_MOD_LINEAR);
     }
 
     uint32_t flags = GBM_BO_USE_RENDERING;
@@ -46,7 +56,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         allocator->backend->log(AQ_LOG_WARNING, "GBM: Using modifier-less allocation");
         bo = gbm_bo_create(allocator->gbmDevice, params.size.x, params.size.y, params.format, flags);
     } else
-        bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, params.size.x, params.size.y, params.format, explicitModifiers.data(), explicitModifiers.size(), flags);
+        bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, params.size.x, params.size.y, params.format, explicitModifiers.data(), explicitModifiers.size());
 
     if (!bo) {
         allocator->backend->log(AQ_LOG_ERROR, "GBM: Failed to allocate a GBM buffer: bo null");
@@ -147,7 +157,7 @@ Aquamarine::CGBMAllocator::CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointe
     free(drmName_);
 }
 
-SP<IBuffer> Aquamarine::CGBMAllocator::acquire(const SAllocatorBufferParams& params) {
+SP<IBuffer> Aquamarine::CGBMAllocator::acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain_) {
     if (params.size.x < 1 || params.size.y < 1) {
         backend->log(AQ_LOG_ERROR, std::format("Couldn't allocate a gbm buffer with invalid size {}", params.size));
         return nullptr;
@@ -158,7 +168,7 @@ SP<IBuffer> Aquamarine::CGBMAllocator::acquire(const SAllocatorBufferParams& par
         return nullptr;
     }
 
-    auto newBuffer = SP<CGBMBuffer>(new CGBMBuffer(params, self));
+    auto newBuffer = SP<CGBMBuffer>(new CGBMBuffer(params, self, swapchain_));
 
     if (!newBuffer->good()) {
         backend->log(AQ_LOG_ERROR, std::format("Couldn't allocate a gbm buffer with size {} and format {}", params.size, fourccToName(params.format)));

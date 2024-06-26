@@ -19,11 +19,15 @@ bool Aquamarine::IOutput::setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> b
     return false;
 }
 
+void Aquamarine::IOutput::setCursorVisible(bool visible) {
+    ;
+}
+
 void Aquamarine::IOutput::scheduleFrame() {
     ;
 }
 
-Hyprutils::Math::Vector2D Aquamarine::IOutput::maxCursorSize() {
+Hyprutils::Math::Vector2D Aquamarine::IOutput::cursorPlaneSize() {
     return {}; // error
 }
 

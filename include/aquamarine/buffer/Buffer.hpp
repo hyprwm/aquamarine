@@ -43,7 +43,7 @@ namespace Aquamarine {
     class IBuffer {
       public:
         virtual ~IBuffer() {
-            ;
+            attachments.clear();
         };
 
         virtual eBufferCapability                      caps()                                         = 0;
