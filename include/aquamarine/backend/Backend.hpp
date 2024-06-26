@@ -103,6 +103,9 @@ namespace Aquamarine {
         /* Get the render formats the primary backend supports */
         std::vector<SDRMFormat> getPrimaryRenderFormats();
 
+        /* get a vector of the backend implementations available */
+        const std::vector<Hyprutils::Memory::CSharedPointer<IBackendImplementation>>& getImplementations();
+
         struct {
             Hyprutils::Signal::CSignal newOutput;
             Hyprutils::Signal::CSignal newPointer;

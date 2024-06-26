@@ -247,3 +247,7 @@ std::vector<SDRMFormat> Aquamarine::CBackend::getPrimaryRenderFormats() {
 
     return {};
 }
+
+const std::vector<Hyprutils::Memory::CSharedPointer<IBackendImplementation>>& Aquamarine::CBackend::getImplementations() {
+    return implementations;
+}
