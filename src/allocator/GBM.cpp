@@ -9,6 +9,47 @@ using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 #define SP CSharedPointer
 
+static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) {
+    if (formats.empty())
+        return SDRMFormat{};
+
+    if (!cursor) {
+        /*
+            Try to find 10bpp formats first, as they offer better color precision.
+            For cursors, don't, as these almost never support that.
+        */
+        if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB2101010; }); it != formats.end())
+            return *it;
+
+        if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB2101010; }); it != formats.end())
+            return *it;
+    }
+
+    if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB8888; }); it != formats.end())
+        return *it;
+
+    if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB8888; }); it != formats.end())
+        return *it;
+
+    for (auto& f : formats) {
+        auto name = fourccToName(f.drmFormat);
+
+        /* 10 bpp RGB */
+        if (name.contains("30"))
+            return f;
+    }
+
+    for (auto& f : formats) {
+        auto name = fourccToName(f.drmFormat);
+
+        /* 8 bpp RGB */
+        if (name.contains("24"))
+            return f;
+    }
+
+    return formats.at(0);
+}
+
 Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
                                    Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
     allocator(allocator_) {
@@ -19,16 +60,27 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     attrs.format = params.format;
     size         = attrs.size;
 
-    const bool CURSOR = params.cursor && params.scanout;
+    const bool            CURSOR = params.cursor && params.scanout;
 
     const auto            FORMATS = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
 
     std::vector<uint64_t> explicitModifiers;
 
+    if (attrs.format == DRM_FORMAT_INVALID) {
+        attrs.format = guessFormatFrom(FORMATS, CURSOR).drmFormat;
+        if (attrs.format != DRM_FORMAT_INVALID)
+            allocator->backend->log(AQ_LOG_WARNING, std::format("GBM: Automatically selected format {} for new GBM buffer", fourccToName(attrs.format)));
+    }
+
+    if (attrs.format == DRM_FORMAT_INVALID) {
+        allocator->backend->log(AQ_LOG_ERROR, "GBM: Failed to allocate a GBM buffer: no format found");
+        return;
+    }
+
     // check if we can use modifiers. If the requested support has any explicit modifier
     // supported by the primary backend, we can.
     for (auto& f : FORMATS) {
-        if (f.drmFormat != attrs.format && attrs.format != DRM_FORMAT_INVALID)
+        if (f.drmFormat != attrs.format)
             continue;
 
         for (auto& m : f.modifiers) {
@@ -37,16 +89,6 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
             explicitModifiers.push_back(m);
         }
-
-        if (attrs.format == DRM_FORMAT_INVALID) {
-            allocator->backend->log(AQ_LOG_WARNING, std::format("GBM: Automatically selected format {} for new GBM buffer", fourccToName(f.drmFormat)));
-            attrs.format = f.drmFormat;
-        }
-    }
-
-    if (attrs.format == DRM_FORMAT_INVALID) {
-        allocator->backend->log(AQ_LOG_ERROR, "GBM: Failed to allocate a GBM buffer: no format found");
-        return;
     }
 
     if (explicitModifiers.empty()) {
