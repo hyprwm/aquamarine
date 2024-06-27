@@ -69,7 +69,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     if (attrs.format == DRM_FORMAT_INVALID) {
         attrs.format = guessFormatFrom(FORMATS, CURSOR).drmFormat;
         if (attrs.format != DRM_FORMAT_INVALID)
-            allocator->backend->log(AQ_LOG_WARNING, std::format("GBM: Automatically selected format {} for new GBM buffer", fourccToName(attrs.format)));
+            allocator->backend->log(AQ_LOG_DEBUG, std::format("GBM: Automatically selected format {} for new GBM buffer", fourccToName(attrs.format)));
     }
 
     if (attrs.format == DRM_FORMAT_INVALID) {

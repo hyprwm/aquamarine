@@ -1,5 +1,6 @@
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/backend/drm/Legacy.hpp>
+#include <aquamarine/backend/drm/Atomic.hpp>
 #include <chrono>
 #include <thread>
 #include <deque>
@@ -16,6 +17,7 @@ extern "C" {
 
 #include "Props.hpp"
 #include "FormatUtils.hpp"
+#include "Shared.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -287,10 +289,21 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
     drmProps.supportsAsyncCommit     = drmGetCap(gpu->fd, DRM_CAP_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
     drmProps.supportsAddFb2Modifiers = drmGetCap(gpu->fd, DRM_CAP_ADDFB2_MODIFIERS, &cap) == 0 && cap == 1;
 
+    // FIXME: move to NO_ATOMIC when this piece of shit works
+    if (!envEnabled("AQ_ATOMIC")) {
+        backend->log(AQ_LOG_WARNING, "drm: AQ_ATOMIC not enabled, using the legacy drm iface");
+        impl = makeShared<CDRMLegacyImpl>(self.lock());
+    } else if (drmSetClientCap(gpu->fd, DRM_CLIENT_CAP_ATOMIC, 1)) {
+        backend->log(AQ_LOG_WARNING, "drm: failed to set DRM_CLIENT_CAP_ATOMIC, falling back to legacy");
+        impl = makeShared<CDRMLegacyImpl>(self.lock());
+    } else {
+        backend->log(AQ_LOG_DEBUG, "drm: Atomic supported, using atomic for modesetting");
+        impl                         = makeShared<CDRMAtomicImpl>(self.lock());
+        drmProps.supportsAsyncCommit = drmGetCap(gpu->fd, DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
+    }
+
     backend->log(AQ_LOG_DEBUG, std::format("drm: drmProps.supportsAsyncCommit: {}", drmProps.supportsAsyncCommit));
     backend->log(AQ_LOG_DEBUG, std::format("drm: drmProps.supportsAddFb2Modifiers: {}", drmProps.supportsAddFb2Modifiers));
-
-    impl = makeShared<CDRMLegacyImpl>(self.lock());
 
     // TODO: allow no-modifiers?
 

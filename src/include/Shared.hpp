@@ -4,6 +4,10 @@
 #include <format>
 #include <signal.h>
 
+namespace Aquamarine {
+    bool envEnabled(const std::string& env);
+};
+
 #define RASSERT(expr, reason, ...)                                                                                                                                                 \
     if (!(expr)) {                                                                                                                                                                 \
         std::cout << std::format("\n==========================================================================================\nASSERTION FAILED! \n\n{}\n\nat: line {} in {}",    \

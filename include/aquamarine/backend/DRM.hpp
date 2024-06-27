@@ -118,6 +118,12 @@ namespace Aquamarine {
             int gammaSize = 0;
         } legacy;
 
+        struct {
+            bool     ownModeID = false;
+            uint32_t modeID    = 0;
+            uint32_t gammaLut  = 0;
+        } atomic;
+
         Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
         Hyprutils::Memory::CSharedPointer<SDRMPlane> cursor;
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
@@ -219,6 +225,13 @@ namespace Aquamarine {
 
         drmModeModeInfo                                fallbackModeInfo;
 
+        struct {
+            uint32_t modeID     = 0;
+            uint32_t gammaLut   = 0;
+            uint32_t fbDamage   = 0;
+            bool     vrrEnabled = false;
+        } atomic;
+
         union UDRMConnectorProps {
             struct {
                 uint32_t edid;
@@ -315,5 +328,7 @@ namespace Aquamarine {
         friend class CDRMOutput;
         friend struct SDRMPageFlip;
         friend class CDRMLegacyImpl;
+        friend class CDRMAtomicImpl;
+        friend class CDRMAtomicRequest;
     };
 };
