@@ -1170,6 +1170,8 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Cursor buffer imported into KMS with id {}", fb->id));
 
         connector->crtc->pendingCursor = fb;
+
+        cursorVisible = true;
     }
 
     needsFrame = true;
@@ -1178,7 +1180,8 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
 }
 
 void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord) {
-    cursorPos = coord;
+    cursorPos     = coord;
+    cursorVisible = true;
     backend->impl->moveCursor(connector);
 }
 
