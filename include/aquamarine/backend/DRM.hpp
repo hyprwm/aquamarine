@@ -45,11 +45,14 @@ namespace Aquamarine {
       public:
         ~CDRMFB();
 
-        static Hyprutils::Memory::CSharedPointer<CDRMFB> create(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_);
+        static Hyprutils::Memory::CSharedPointer<CDRMFB> create(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, bool* isNew = nullptr);
 
         void                                             closeHandles();
         // drops the buffer from KMS
-        void                                         drop();
+        void drop();
+
+        // re-imports the buffer into KMS. Essentially drop and import.
+        void                                         reimport();
 
         uint32_t                                     id = 0;
         Hyprutils::Memory::CWeakPointer<IBuffer>     buffer;
@@ -59,6 +62,7 @@ namespace Aquamarine {
       private:
         CDRMFB(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_);
         uint32_t submitBuffer();
+        void     import();
 
         bool     dropped = false, handlesClosed = false;
     };

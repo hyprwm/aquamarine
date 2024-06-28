@@ -192,15 +192,13 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
     backend->log(AQ_LOG_DEBUG, std::format("drm: Found {} GPUs", gpus.size()));
 
     std::vector<SP<CDRMBackend>> backends;
-    SP<CDRMBackend>              primary;
+    SP<CDRMBackend>              newPrimary;
 
     for (auto& gpu : gpus) {
         auto drmBackend  = SP<CDRMBackend>(new CDRMBackend(backend));
         drmBackend->self = drmBackend;
-        if (primary)
-            drmBackend->primary = primary;
 
-        if (!drmBackend->registerGPU(gpu)) {
+        if (!drmBackend->registerGPU(gpu, newPrimary)) {
             backend->log(AQ_LOG_ERROR, std::format("drm: Failed to register gpu {}", gpu->path));
             continue;
         } else
@@ -225,9 +223,9 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 
         drmBackend->scanConnectors();
 
-        if (!primary) {
+        if (!newPrimary) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: gpu {} becomes primary drm", gpu->path));
-            primary = drmBackend;
+            newPrimary = drmBackend;
         }
 
         backends.emplace_back(drmBackend);
@@ -441,7 +439,9 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
 
     gpuName = drmName;
 
-    backend->log(AQ_LOG_DEBUG, std::format("drm: Starting backend for {}, with driver {}", drmName ? drmName : "unknown", drmVer->name ? drmVer->name : "unknown"));
+    backend->log(AQ_LOG_DEBUG,
+                 std::format("drm: Starting backend for {}, with driver {}{}", drmName ? drmName : "unknown", drmVer->name ? drmVer->name : "unknown",
+                             (primary ? std::format(" with primary {}", primary->gpu->path) : "")));
 
     drmFreeVersion(drmVer);
 
@@ -1111,13 +1111,21 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         backend->backend->log(AQ_LOG_TRACE, "drm: Committed a buffer, updating state");
 
         SP<CDRMFB> drmFB;
-        auto       buf = STATE.buffer;
+        auto       buf   = STATE.buffer;
+        bool       isNew = false;
 
-        drmFB = CDRMFB::create(buf, backend); // will return attachment if present
+        drmFB = CDRMFB::create(buf, backend, &isNew); // will return attachment if present
 
         if (!drmFB) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
             return false;
+        }
+
+        if (!isNew && backend->primary) {
+            // this is not a new buffer, and we are not on a primary GPU, which means
+            // this buffer lives on the primary. We need to re-import it to update
+            // the contents that have possibly (probably) changed
+            drmFB->reimport();
         }
 
         data.mainFB = drmFB;
@@ -1197,9 +1205,12 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
     name = name_;
 }
 
-SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) {
+SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, bool* isNew) {
 
     SP<CDRMFB> fb;
+
+    if (isNew)
+        *isNew = true;
 
     if (buffer_->attachments.has(AQ_ATTACHMENT_DRM_BUFFER)) {
         auto at = (CDRMBufferAttachment*)buffer_->attachments.get(AQ_ATTACHMENT_DRM_BUFFER).get();
@@ -1207,8 +1218,11 @@ SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CW
         backend_->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: buffer has drmfb attachment with fb {:x}", (uintptr_t)fb.get()));
     }
 
-    if (fb)
+    if (fb) {
+        if (isNew)
+            *isNew = false;
         return fb;
+    }
 
     fb = SP<CDRMFB>(new CDRMFB(buffer_, backend_));
 
@@ -1221,6 +1235,10 @@ SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CW
 }
 
 Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) : buffer(buffer_), backend(backend_) {
+    import();
+}
+
+void Aquamarine::CDRMFB::import() {
     auto attrs = buffer->dmabuf();
     if (!attrs.success) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf");
@@ -1257,6 +1275,15 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
 
     // FIXME: why does this implode when it doesnt on wlroots or kwin?
     // closeHandles();
+}
+
+void Aquamarine::CDRMFB::reimport() {
+    drop();
+    dropped       = false;
+    handlesClosed = false;
+    boHandles     = {0, 0, 0, 0};
+
+    import();
 }
 
 Aquamarine::CDRMFB::~CDRMFB() {
@@ -1298,6 +1325,8 @@ void Aquamarine::CDRMFB::drop() {
 
     if (!id)
         return;
+
+    closeHandles();
 
     backend->backend->log(AQ_LOG_TRACE, std::format("drm: dropping buffer {}", id));
 
