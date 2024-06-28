@@ -67,7 +67,7 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
     add(plane->id, plane->props.crtc_y, (uint64_t)pos.y);
 }
 
-void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) {
+void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled && data.mainFB;
 
@@ -87,7 +87,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     if (data.modeset && enable && connector->props.max_bpc && connector->maxBpcBounds.at(1))
         add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
 
-    add(connector->crtc->id, connector->crtc->props.mode_id, connector->atomic.modeID);
+    //  add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
@@ -98,7 +98,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {});
 
         if (connector->crtc->primary->props.fb_damage_clips)
-            add(connector->crtc->primary->id, connector->crtc->primary->props.fb_damage_clips, connector->atomic.fbDamage);
+            add(connector->crtc->primary->id, connector->crtc->primary->props.fb_damage_clips, data.atomic.fbDamage);
 
         if (connector->crtc->cursor) {
             if (!connector->output->cursorVisible)
@@ -169,38 +169,44 @@ void Aquamarine::CDRMAtomicRequest::rollbackBlob(uint32_t* current, uint32_t nex
     destroyBlob(next);
 }
 
-void Aquamarine::CDRMAtomicRequest::rollback() {
+void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
+    if (!conn)
+        return;
+
     conn->crtc->atomic.ownModeID = true;
-    rollbackBlob(&conn->crtc->atomic.modeID, conn->atomic.modeID);
+    rollbackBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     // TODO: gamma
     //rollbackBlob(&conn->crtc->atomic.gammaLut, conn->atomic.gammaLut);
-    destroyBlob(conn->atomic.fbDamage);
+    destroyBlob(data.atomic.fbDamage);
 }
 
-void Aquamarine::CDRMAtomicRequest::apply() {
+void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
+    if (!conn)
+        return;
+
     if (!conn->crtc->atomic.ownModeID)
         conn->crtc->atomic.modeID = 0;
 
     conn->crtc->atomic.ownModeID = true;
-    commitBlob(&conn->crtc->atomic.modeID, conn->atomic.modeID);
+    commitBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     // TODO: gamma
     //commitBlob(&conn->crtc->atomic.gammaLut, conn->atomic.gammaLut);
-    destroyBlob(conn->atomic.fbDamage);
+    destroyBlob(data.atomic.fbDamage);
 }
 
 Aquamarine::CDRMAtomicImpl::CDRMAtomicImpl(Hyprutils::Memory::CSharedPointer<CDRMBackend> backend_) : backend(backend_) {
     ;
 }
 
-bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) {
+bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled;
 
     if (data.modeset) {
         if (!enable)
-            connector->atomic.modeID = 0;
+            data.atomic.modeBlob = 0;
         else {
-            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, (drmModeModeInfo*)&data.modeInfo, sizeof(drmModeModeInfo), &connector->atomic.modeID)) {
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, (drmModeModeInfo*)&data.modeInfo, sizeof(drmModeModeInfo), &data.atomic.modeBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a modeset blob");
                 return false;
             }
@@ -211,10 +217,10 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
 
     if (STATE.committed & COutputState::AQ_OUTPUT_STATE_DAMAGE && connector->crtc->primary->props.fb_damage_clips) {
         if (STATE.damage.empty())
-            connector->atomic.fbDamage = 0;
+            data.atomic.fbDamage = 0;
         else {
             std::vector<pixman_box32_t> rects = STATE.damage.getRects();
-            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, rects.data(), sizeof(pixman_box32_t) * rects.size(), &connector->atomic.fbDamage)) {
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, rects.data(), sizeof(pixman_box32_t) * rects.size(), &data.atomic.fbDamage)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a damage blob");
                 return false;
             }
@@ -224,7 +230,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
     return true;
 }
 
-bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) {
+bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     if (!prepareConnector(connector, data))
         return false;
 
@@ -242,10 +248,11 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 
     const bool ok = request.commit(flags);
 
-    if (ok)
-        request.apply();
-    else
-        request.rollback();
+    if (ok) {
+        request.apply(data);
+        connector->isPageFlipPending = true;
+    } else
+        request.rollback(data);
 
     return ok;
 }
@@ -273,11 +280,8 @@ bool Aquamarine::CDRMAtomicImpl::moveCursor(Hyprutils::Memory::CSharedPointer<SD
     if (!connector->output->cursorVisible || !connector->output->state->state().enabled || !connector->crtc || !connector->crtc->cursor)
         return true;
 
-    CDRMAtomicRequest request(backend);
-
-    request.planeProps(connector->crtc->cursor, connector->crtc->cursor->front, connector->crtc->id, connector->output->cursorPos - connector->output->cursorHotspot);
-
-    return request.commit(DRM_MODE_ATOMIC_NONBLOCK);
+    connector->output->needsFrame = true;
+    connector->output->scheduleFrame();
 
     return true;
 }

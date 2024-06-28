@@ -6,12 +6,12 @@ namespace Aquamarine {
     class CDRMAtomicImpl : public IDRMImplementation {
       public:
         CDRMAtomicImpl(Hyprutils::Memory::CSharedPointer<CDRMBackend> backend_);
-        virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data);
+        virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
         virtual bool moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
 
       private:
-        bool                                         prepareConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data);
+        bool                                         prepareConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
 
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
 
@@ -23,13 +23,13 @@ namespace Aquamarine {
         CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer<CDRMBackend> backend);
         ~CDRMAtomicRequest();
 
-        void addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data);
+        void addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         bool commit(uint32_t flagssss);
         void add(uint32_t id, uint32_t prop, uint64_t val);
         void planeProps(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Memory::CSharedPointer<CDRMFB> fb, uint32_t crtc, Hyprutils::Math::Vector2D pos);
 
-        void rollback();
-        void apply();
+        void rollback(SDRMConnectorCommitData& data);
+        void apply(SDRMConnectorCommitData& data);
 
         bool failed = false;
 

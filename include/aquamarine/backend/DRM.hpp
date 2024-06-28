@@ -186,7 +186,13 @@ namespace Aquamarine {
         bool                                      test     = false;
         drmModeModeInfo                           modeInfo;
 
-        void                                      calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
+        struct {
+            uint32_t gammaLut = 0;
+            uint32_t fbDamage = 0;
+            uint32_t modeBlob = 0;
+        } atomic;
+
+        void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
     };
 
     struct SDRMConnector {
@@ -198,7 +204,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<SDRMCRTC>    getCurrentCRTC(const drmModeConnector* connector);
         drmModeModeInfo*                               getCurrentMode();
         void                                           parseEDID(std::vector<uint8_t> data);
-        bool                                           commitState(const SDRMConnectorCommitData& data);
+        bool                                           commitState(SDRMConnectorCommitData& data);
         void                                           applyCommit(const SDRMConnectorCommitData& data);
         void                                           rollbackCommit(const SDRMConnectorCommitData& data);
         void                                           onPresent();
@@ -222,14 +228,12 @@ namespace Aquamarine {
 
         bool                                           isPageFlipPending = false;
         SDRMPageFlip                                   pendingPageFlip;
+        bool                                           frameEventScheduled = false;
 
         drmModeModeInfo                                fallbackModeInfo;
 
         struct {
-            uint32_t modeID     = 0;
-            uint32_t gammaLut   = 0;
-            uint32_t fbDamage   = 0;
-            bool     vrrEnabled = false;
+            bool vrrEnabled = false;
         } atomic;
 
         union UDRMConnectorProps {
@@ -256,8 +260,8 @@ namespace Aquamarine {
 
     class IDRMImplementation {
       public:
-        virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) = 0;
-        virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector)                                       = 0;
+        virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) = 0;
+        virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector)                                 = 0;
 
         // moving a cursor IIRC is almost instant on most hardware so we don't have to wait for a commit.
         virtual bool moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) = 0;

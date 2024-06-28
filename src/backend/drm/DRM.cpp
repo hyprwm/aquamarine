@@ -528,7 +528,7 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         .flags     = flags,
     });
 
-    if (BACKEND->sessionActive())
+    if (BACKEND->sessionActive() && !pageFlip->connector->frameEventScheduled)
         pageFlip->connector->output->events.frame.emit();
 }
 
@@ -902,7 +902,7 @@ void Aquamarine::SDRMConnector::disconnect() {
     status = DRM_MODE_DISCONNECTED;
 }
 
-bool Aquamarine::SDRMConnector::commitState(const SDRMConnectorCommitData& data) {
+bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
     const bool ok = backend->impl->commit(self.lock(), data);
 
     if (ok && !data.test)
@@ -1102,10 +1102,17 @@ void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord) {
 }
 
 void Aquamarine::CDRMOutput::scheduleFrame() {
-    if (connector->isPageFlipPending)
+    if (connector->isPageFlipPending || connector->frameEventScheduled)
         return;
 
-    backend->idleCallbacks.emplace_back([this]() { events.frame.emit(); });
+    connector->frameEventScheduled = true;
+
+    backend->idleCallbacks.emplace_back([this]() {
+        connector->frameEventScheduled = false;
+        if (connector->isPageFlipPending)
+            return;
+        events.frame.emit();
+    });
 }
 
 Vector2D Aquamarine::CDRMOutput::cursorPlaneSize() {

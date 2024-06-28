@@ -14,18 +14,16 @@ Aquamarine::CDRMLegacyImpl::CDRMLegacyImpl(Hyprutils::Memory::CSharedPointer<CDR
 }
 
 bool Aquamarine::CDRMLegacyImpl::moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
-    Vector2D cursorPos = connector->output->cursorPos;
-    if (int ret2 = drmModeMoveCursor(connector->backend->gpu->fd, connector->crtc->id, cursorPos.x, cursorPos.y)) {
-        connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModeMoveCursor failed: {}", strerror(-ret2)));
-        return false;
-    }
+    if (!connector->output->cursorVisible || !connector->output->state->state().enabled || !connector->crtc || !connector->crtc->cursor)
+        return true;
 
-    connector->backend->backend->log(AQ_LOG_DEBUG, "legacy drm: cursor move");
+    connector->output->needsFrame = true;
+    connector->output->scheduleFrame();
 
     return true;
 }
 
-bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) {
+bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE = connector->output->state->state();
     SP<CDRMFB>  mainFB;
     bool        enable = STATE.enabled;
@@ -141,11 +139,11 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
     return true;
 }
 
-bool Aquamarine::CDRMLegacyImpl::testInternal(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) {
+bool Aquamarine::CDRMLegacyImpl::testInternal(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     return true; // TODO: lol
 }
 
-bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, const SDRMConnectorCommitData& data) {
+bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     if (!testInternal(connector, data))
         return false;
 
