@@ -80,15 +80,23 @@ bool Aquamarine::CBackend::start() {
     bool fallback = false;
     int  started  = 0;
 
+    auto optionsForType = [this] (eBackendType type) -> SBackendImplementationOptions {
+        for (auto& o : implementationOptions) {
+            if (o.backendType == type)
+                return o;
+        }
+        return SBackendImplementationOptions{};
+    };
+
     for (size_t i = 0; i < implementations.size(); ++i) {
         const bool ok = implementations.at(i)->start();
 
         if (!ok) {
-            log(AQ_LOG_ERROR, std::format("Requested backend ({}) could not start, enabling fallbacks", backendTypeToName(implementationOptions.at(i).backendType)));
+            log(AQ_LOG_ERROR, std::format("Requested backend ({}) could not start, enabling fallbacks", backendTypeToName(implementations.at(i)->type())));
             fallback = true;
-            if (implementationOptions.at(i).backendRequestMode == AQ_BACKEND_REQUEST_MANDATORY) {
+            if (optionsForType(implementations.at(i)->type()).backendRequestMode == AQ_BACKEND_REQUEST_MANDATORY) {
                 log(AQ_LOG_CRITICAL,
-                    std::format("Requested backend ({}) could not start and it's mandatory, cannot continue!", backendTypeToName(implementationOptions.at(i).backendType)));
+                    std::format("Requested backend ({}) could not start and it's mandatory, cannot continue!", backendTypeToName(implementations.at(i)->type())));
                 implementations.clear();
                 return false;
             }
