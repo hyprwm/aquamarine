@@ -491,13 +491,16 @@ void Aquamarine::CDRMBackend::scanConnectors() {
             conn          = connectors.emplace_back(SP<SDRMConnector>(new SDRMConnector()));
             conn->self    = conn;
             conn->backend = self;
+            conn->id      = connectorID;
             if (!conn->init(drmConn)) {
                 backend->log(AQ_LOG_ERROR, std::format("drm: Connector id {} failed initializing", connectorID));
                 connectors.pop_back();
                 continue;
             }
-        } else
+        } else {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Connector id {} already initialized", connectorID));
             conn = *it;
+        }
 
         if (!conn->crtc) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Ignoring connector {} because it has no CRTC", connectorID));
@@ -742,6 +745,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* connector) {
     uint32_t crtcID = 0;
     if (props.crtc_id) {
+        backend->backend->log(AQ_LOG_TRACE, "drm: Using crtc_id for finding crtc");
         uint64_t value = 0;
         if (!getDRMProp(backend->gpu->fd, id, props.crtc_id, &value)) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Failed to get CRTC_ID");
@@ -749,6 +753,7 @@ SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* c
         }
         crtcID = static_cast<uint32_t>(value);
     } else if (connector->encoder_id) {
+        backend->backend->log(AQ_LOG_TRACE, "drm: Using encoder_id for finding crtc");
         auto encoder = drmModeGetEncoder(backend->gpu->fd, connector->encoder_id);
         if (!encoder) {
             backend->backend->log(AQ_LOG_ERROR, "drm: drmModeGetEncoder failed");
@@ -756,8 +761,15 @@ SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* c
         }
         crtcID = encoder->crtc_id;
         drmModeFreeEncoder(encoder);
-    } else
+    } else {
+        backend->backend->log(AQ_LOG_ERROR, "drm: Connector has neither crtc_id nor encoder_id");
         return nullptr;
+    }
+
+    if (crtcID == 0) {
+        backend->backend->log(AQ_LOG_ERROR, "drm: getCurrentCRTC: No CRTC 0");
+        return nullptr;
+    }
 
     auto it = std::find_if(backend->crtcs.begin(), backend->crtcs.end(), [crtcID](const auto& e) { return e->id == crtcID; });
 
@@ -770,7 +782,6 @@ SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* c
 }
 
 bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
-    id                        = connector->connector_id;
     pendingPageFlip.connector = self.lock();
 
     if (!getDRMConnectorProps(backend->gpu->fd, id, &props))
@@ -781,6 +792,7 @@ bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
         name = "ERROR";
 
     szName = std::format("{}-{}", name, connector->connector_type_id);
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Connector gets name {}", szName));
 
     possibleCrtcs = drmModeConnectorGetPossibleCrtcs(backend->gpu->fd, connector);
     if (!possibleCrtcs)
