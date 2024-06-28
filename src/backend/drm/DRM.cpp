@@ -200,7 +200,7 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
         if (primary)
             drmBackend->primary = primary;
 
-        if (!drmBackend->registerGPU(gpus.at(0))) {
+        if (!drmBackend->registerGPU(gpu)) {
             backend->log(AQ_LOG_ERROR, std::format("drm: Failed to register gpu {}", gpu->path));
             continue;
         } else
