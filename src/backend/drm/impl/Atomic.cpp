@@ -24,6 +24,8 @@ void Aquamarine::CDRMAtomicRequest::add(uint32_t id, uint32_t prop, uint64_t val
     if (failed)
         return;
 
+    backend->log(AQ_LOG_TRACE, std::format("atomic drm request: adding id {} prop {} with value {}", id, prop, val));
+
     if (id == 0 || prop == 0) {
         backend->log(AQ_LOG_ERROR, "atomic drm request: failed to add prop: id / prop == 0");
         return;
@@ -45,7 +47,9 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
         // Disable the plane
         backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: disabling plane {}", plane->id));
         add(plane->id, plane->props.fb_id, 0);
-        add(plane->id, plane->props.crtc_id, 0);
+        add(plane->id, plane->props.crtc_id, crtc);
+        add(plane->id, plane->props.crtc_x, (uint64_t)pos.x);
+        add(plane->id, plane->props.crtc_y, (uint64_t)pos.y);
         return;
     }
 
@@ -69,13 +73,18 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
 
 void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE  = connector->output->state->state();
-    const bool  enable = STATE.enabled && data.mainFB;
+    const bool  enable = STATE.enabled;
 
     backend->log(AQ_LOG_TRACE,
                  std::format("atomic addConnector blobs: mode_id {}, active {}, crtc_id {}, link_status {}, content_type {}", connector->crtc->props.mode_id,
                              connector->crtc->props.active, connector->props.crtc_id, connector->props.link_status, connector->props.content_type));
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
+
+    if (data.modeset && enable) {
+        backend->log(AQ_LOG_TRACE, std::format("atomic: mode blob {}", data.atomic.modeBlob));
+        add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
+    }
 
     if (data.modeset && enable && connector->props.link_status)
         add(connector->id, connector->props.link_status, DRM_MODE_LINK_STATUS_GOOD);
@@ -87,7 +96,6 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     if (data.modeset && enable && connector->props.max_bpc && connector->maxBpcBounds.at(1))
         add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
 
-    //  add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
@@ -210,6 +218,10 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a modeset blob");
                 return false;
             }
+
+            connector->backend->log(AQ_LOG_TRACE,
+                                    std::format("Connector blob id {}: clock {}, {}x{}, vrefresh {}, name: {}", data.atomic.modeBlob, data.modeInfo.clock, data.modeInfo.hdisplay,
+                                                data.modeInfo.vdisplay, data.modeInfo.vrefresh, data.modeInfo.name));
         }
     }
 

@@ -52,12 +52,15 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
             ref->self = ref;
         } else if (b.backendType == AQ_BACKEND_DRM) {
             auto ref = CDRMBackend::attempt(backend);
-            if (!ref) {
+            if (ref.empty()) {
                 backend->log(AQ_LOG_ERROR, "DRM Backend failed");
                 continue;
             }
-            backend->implementations.emplace_back(ref);
-            ref->self = ref;
+
+            for (auto& r : ref) {
+                backend->implementations.emplace_back(r);
+            }
+
         } else {
             backend->log(AQ_LOG_ERROR, std::format("Unknown backend id: {}", (int)b.backendType));
             continue;

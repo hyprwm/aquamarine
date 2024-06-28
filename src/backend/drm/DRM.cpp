@@ -1,6 +1,7 @@
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <aquamarine/backend/drm/Atomic.hpp>
+#include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
 #include <deque>
@@ -50,8 +51,6 @@ static udev_enumerate* enumDRMCards(udev* udev) {
 }
 
 static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
-    // FIXME: This provides no explicit way to set a preferred gpu
-
     auto enumerate = enumDRMCards(backend->session->udevHandle);
 
     if (!enumerate) {
@@ -123,20 +122,43 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
     udev_enumerate_unref(enumerate);
 
     std::vector<SP<CSessionDevice>> vecDevices;
-    for (auto& d : devices) {
-        vecDevices.push_back(d);
+
+    auto                            explicitGpus = getenv("AQ_DRM_DEVICES");
+    if (explicitGpus) {
+        backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit device list {}", explicitGpus));
+        Hyprutils::String::CVarList explicitDevices(explicitGpus, ';', true);
+
+        for (auto& d : explicitDevices) {
+            bool found = false;
+            for (auto& vd : devices) {
+                if (vd->path == d) {
+                    vecDevices.emplace_back(vd);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found)
+                backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit device {} found", d));
+            else
+                backend->log(AQ_LOG_ERROR, std::format("drm: Explicit device {} not found", d));
+        }
+    } else {
+        for (auto& d : devices) {
+            vecDevices.push_back(d);
+        }
     }
 
     return vecDevices;
 }
 
-SP<CDRMBackend> Aquamarine::CDRMBackend::attempt(SP<CBackend> backend) {
+std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backend) {
     if (!backend->session)
         backend->session = CSession::attempt(backend);
 
     if (!backend->session) {
         backend->log(AQ_LOG_ERROR, "Failed to open a session");
-        return nullptr;
+        return {};
     }
 
     if (!backend->session->active) {
@@ -156,7 +178,7 @@ SP<CDRMBackend> Aquamarine::CDRMBackend::attempt(SP<CBackend> backend) {
 
         if (!backend->session->active) {
             backend->log(AQ_LOG_DEBUG, "Session could not be activated in time");
-            return nullptr;
+            return {};
         }
     }
 
@@ -164,41 +186,54 @@ SP<CDRMBackend> Aquamarine::CDRMBackend::attempt(SP<CBackend> backend) {
 
     if (gpus.empty()) {
         backend->log(AQ_LOG_ERROR, "drm: Found no gpus to use, cannot continue");
-        return nullptr;
+        return {};
     }
 
     backend->log(AQ_LOG_DEBUG, std::format("drm: Found {} GPUs", gpus.size()));
 
-    // FIXME: this will ignore multi-gpu setups and only create one backend
-    auto drmBackend  = SP<CDRMBackend>(new CDRMBackend(backend));
-    drmBackend->self = drmBackend;
+    std::vector<SP<CDRMBackend>> backends;
+    SP<CDRMBackend>              primary;
 
-    if (!drmBackend->registerGPU(gpus.at(0))) {
-        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to register gpu at fd {}", gpus[0]->fd));
-        return nullptr;
-    } else
-        backend->log(AQ_LOG_DEBUG, std::format("drm: Registered gpu at fd {}", gpus[0]->fd));
+    for (auto& gpu : gpus) {
+        auto drmBackend  = SP<CDRMBackend>(new CDRMBackend(backend));
+        drmBackend->self = drmBackend;
+        if (primary)
+            drmBackend->primary = primary;
 
-    // TODO: consider listening for new devices
-    // But if you expect me to handle gpu hotswaps you are probably insane LOL
+        if (!drmBackend->registerGPU(gpus.at(0))) {
+            backend->log(AQ_LOG_ERROR, std::format("drm: Failed to register gpu {}", gpu->path));
+            continue;
+        } else
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Registered gpu {}", gpu->path));
 
-    if (!drmBackend->checkFeatures()) {
-        backend->log(AQ_LOG_ERROR, "drm: Failed checking features");
-        return nullptr;
+        // TODO: consider listening for new devices
+        // But if you expect me to handle gpu hotswaps you are probably insane LOL
+
+        if (!drmBackend->checkFeatures()) {
+            backend->log(AQ_LOG_ERROR, "drm: Failed checking features");
+            continue;
+        }
+
+        if (!drmBackend->initResources()) {
+            backend->log(AQ_LOG_ERROR, "drm: Failed initializing resources");
+            continue;
+        }
+
+        backend->log(AQ_LOG_DEBUG, std::format("drm: Basic init pass for gpu {}", gpu->path));
+
+        drmBackend->grabFormats();
+
+        drmBackend->scanConnectors();
+
+        if (!primary) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: gpu {} becomes primary drm", gpu->path));
+            primary = drmBackend;
+        }
+
+        backends.emplace_back(drmBackend);
     }
 
-    if (!drmBackend->initResources()) {
-        backend->log(AQ_LOG_ERROR, "drm: Failed initializing resources");
-        return nullptr;
-    }
-
-    backend->log(AQ_LOG_DEBUG, std::format("drm: Basic init pass for gpu {}", gpus[0]->path));
-
-    drmBackend->grabFormats();
-
-    drmBackend->scanConnectors();
-
-    return drmBackend;
+    return backends;
 }
 
 Aquamarine::CDRMBackend::~CDRMBackend() {
@@ -587,6 +622,19 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getRenderFormats() {
         if (p->type != DRM_PLANE_TYPE_PRIMARY)
             continue;
 
+        if (primary) {
+            backend->log(AQ_LOG_TRACE, std::format("drm: getRenderFormats on secondary {}", gpu->path));
+
+            // this is a secondary GPU renderer. In order to receive buffers,
+            // we'll force linear modifiers.
+            // TODO: don't. Find a common maybe?
+            auto fmts = p->formats;
+            for (auto& fmt : fmts) {
+                fmt.modifiers = {DRM_FORMAT_MOD_LINEAR};
+            }
+            return fmts;
+        }
+
         return p->formats;
     }
 
@@ -597,6 +645,19 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getCursorFormats() {
     for (auto& p : planes) {
         if (p->type != DRM_PLANE_TYPE_CURSOR)
             continue;
+
+        if (primary) {
+            backend->log(AQ_LOG_TRACE, std::format("drm: getCursorFormats on secondary {}", gpu->path));
+
+            // this is a secondary GPU renderer. In order to receive buffers,
+            // we'll force linear modifiers.
+            // TODO: don't. Find a common maybe?
+            auto fmts = p->formats;
+            for (auto& fmt : fmts) {
+                fmt.modifiers = {DRM_FORMAT_MOD_LINEAR};
+            }
+            return fmts;
+        }
 
         return p->formats;
     }

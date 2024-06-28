@@ -291,7 +291,7 @@ namespace Aquamarine {
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
 
-        static Hyprutils::Memory::CSharedPointer<CDRMBackend> attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend);
+        static std::vector<Hyprutils::Memory::CSharedPointer<CDRMBackend>> attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend);
         bool registerGPU(Hyprutils::Memory::CSharedPointer<CSessionDevice> gpu_, Hyprutils::Memory::CSharedPointer<CDRMBackend> primary_ = {});
         bool checkFeatures();
         bool initResources();
