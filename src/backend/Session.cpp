@@ -265,6 +265,8 @@ void Aquamarine::CSession::onReady() {
             backend->events.newKeyboard.emit(SP<IKeyboard>(d->keyboard));
         if (d->mouse)
             backend->events.newPointer.emit(SP<IPointer>(d->mouse));
+        if (d->touch)
+            backend->events.newTouch.emit(SP<ITouch>(d->touch));
 
         // FIXME: other devices.
     }
@@ -498,6 +500,118 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             break;
         }
 
+        case LIBINPUT_EVENT_GESTURE_SWIPE_BEGIN: {
+            auto ge = libinput_event_get_gesture_event(e);
+            hlDevice->mouse->events.swipeBegin.emit(IPointer::SSwipeBeginEvent{
+                .timeMs  = (uint32_t)(libinput_event_gesture_get_time_usec(ge) / 1000),
+                .fingers = (uint32_t)libinput_event_gesture_get_finger_count(ge),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_GESTURE_SWIPE_UPDATE: {
+            auto ge = libinput_event_get_gesture_event(e);
+            hlDevice->mouse->events.swipeUpdate.emit(IPointer::SSwipeUpdateEvent{
+                .timeMs  = (uint32_t)(libinput_event_gesture_get_time_usec(ge) / 1000),
+                .fingers = (uint32_t)libinput_event_gesture_get_finger_count(ge),
+                .delta   = {libinput_event_gesture_get_dx(ge), libinput_event_gesture_get_dy(ge)},
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_GESTURE_SWIPE_END: {
+            auto ge = libinput_event_get_gesture_event(e);
+            hlDevice->mouse->events.swipeEnd.emit(IPointer::SSwipeEndEvent{
+                .timeMs    = (uint32_t)(libinput_event_gesture_get_time_usec(ge) / 1000),
+                .cancelled = (bool)libinput_event_gesture_get_cancelled(ge),
+            });
+            break;
+        }
+
+        case LIBINPUT_EVENT_GESTURE_PINCH_BEGIN: {
+            auto ge = libinput_event_get_gesture_event(e);
+            hlDevice->mouse->events.pinchBegin.emit(IPointer::SPinchBeginEvent{
+                .timeMs  = (uint32_t)(libinput_event_gesture_get_time_usec(ge) / 1000),
+                .fingers = (uint32_t)libinput_event_gesture_get_finger_count(ge),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_GESTURE_PINCH_UPDATE: {
+            auto ge = libinput_event_get_gesture_event(e);
+            hlDevice->mouse->events.pinchUpdate.emit(IPointer::SPinchUpdateEvent{
+                .timeMs   = (uint32_t)(libinput_event_gesture_get_time_usec(ge) / 1000),
+                .fingers  = (uint32_t)libinput_event_gesture_get_finger_count(ge),
+                .delta    = {libinput_event_gesture_get_dx(ge), libinput_event_gesture_get_dy(ge)},
+                .scale    = libinput_event_gesture_get_scale(ge),
+                .rotation = libinput_event_gesture_get_angle_delta(ge),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_GESTURE_PINCH_END: {
+            auto ge = libinput_event_get_gesture_event(e);
+            hlDevice->mouse->events.pinchEnd.emit(IPointer::SPinchEndEvent{
+                .timeMs    = (uint32_t)(libinput_event_gesture_get_time_usec(ge) / 1000),
+                .cancelled = (bool)libinput_event_gesture_get_cancelled(ge),
+            });
+            break;
+        }
+
+        case LIBINPUT_EVENT_GESTURE_HOLD_BEGIN: {
+            auto ge = libinput_event_get_gesture_event(e);
+            hlDevice->mouse->events.holdBegin.emit(IPointer::SHoldBeginEvent{
+                .timeMs  = (uint32_t)(libinput_event_gesture_get_time_usec(ge) / 1000),
+                .fingers = (uint32_t)libinput_event_gesture_get_finger_count(ge),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_GESTURE_HOLD_END: {
+            auto ge = libinput_event_get_gesture_event(e);
+            hlDevice->mouse->events.holdEnd.emit(IPointer::SHoldEndEvent{
+                .timeMs    = (uint32_t)(libinput_event_gesture_get_time_usec(ge) / 1000),
+                .cancelled = (bool)libinput_event_gesture_get_cancelled(ge),
+            });
+            break;
+        }
+
+            // ---------- touch
+
+        case LIBINPUT_EVENT_TOUCH_DOWN: {
+            auto te = libinput_event_get_touch_event(e);
+            hlDevice->touch->events.down.emit(ITouch::SDownEvent{
+                .timeMs  = (uint32_t)(libinput_event_touch_get_time_usec(te) / 1000),
+                .touchID = libinput_event_touch_get_seat_slot(te),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_TOUCH_UP: {
+            auto te = libinput_event_get_touch_event(e);
+            hlDevice->touch->events.up.emit(ITouch::SUpEvent{
+                .timeMs  = (uint32_t)(libinput_event_touch_get_time_usec(te) / 1000),
+                .touchID = libinput_event_touch_get_seat_slot(te),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_TOUCH_MOTION: {
+            auto te = libinput_event_get_touch_event(e);
+            hlDevice->touch->events.move.emit(ITouch::SMotionEvent{
+                .timeMs  = (uint32_t)(libinput_event_touch_get_time_usec(te) / 1000),
+                .touchID = libinput_event_touch_get_seat_slot(te),
+                .pos     = {libinput_event_touch_get_x_transformed(te, 1), libinput_event_touch_get_y_transformed(te, 1)},
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_TOUCH_CANCEL: {
+            auto te = libinput_event_get_touch_event(e);
+            hlDevice->touch->events.cancel.emit(ITouch::SCancelEvent{
+                .timeMs  = (uint32_t)(libinput_event_touch_get_time_usec(te) / 1000),
+                .touchID = libinput_event_touch_get_seat_slot(te),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_TOUCH_FRAME: {
+            auto te = libinput_event_get_touch_event(e);
+            hlDevice->touch->events.frame.emit();
+            break;
+        }
+
             // FIXME: other events
 
         default: break;
@@ -530,6 +644,12 @@ void Aquamarine::CLibinputDevice::init() {
         mouse = makeShared<CLibinputMouse>(self.lock());
         if (session->backend->ready)
             session->backend->events.newPointer.emit(SP<IPointer>(mouse));
+    }
+
+    if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_TOUCH)) {
+        touch = makeShared<CLibinputTouch>(self.lock());
+        if (session->backend->ready)
+            session->backend->events.newTouch.emit(SP<ITouch>(touch));
     }
 
     // FIXME: other devices
@@ -568,6 +688,24 @@ libinput_device* Aquamarine::CLibinputMouse::getLibinputHandle() {
 }
 
 const std::string& Aquamarine::CLibinputMouse::getName() {
+    if (!device)
+        return AQ_UNKNOWN_DEVICE_NAME;
+    return device->name;
+}
+
+Aquamarine::CLibinputTouch::CLibinputTouch(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev) : device(dev) {
+    double w = 0, h = 0;
+    libinput_device_get_size(dev->device, &w, &h);
+    physicalSize = {w, h};
+}
+
+libinput_device* Aquamarine::CLibinputTouch::getLibinputHandle() {
+    if (!device)
+        return nullptr;
+    return device->device;
+}
+
+const std::string& Aquamarine::CLibinputTouch::getName() {
     if (!device)
         return AQ_UNKNOWN_DEVICE_NAME;
     return device->name;

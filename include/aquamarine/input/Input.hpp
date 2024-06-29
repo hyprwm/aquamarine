@@ -155,6 +155,8 @@ namespace Aquamarine {
         virtual libinput_device*   getLibinputHandle();
         virtual const std::string& getName() = 0;
 
+        Hyprutils::Math::Vector2D physicalSize; // in mm, 0,0 if unknown
+
         struct SDownEvent {
             uint32_t                  timeMs  = 0;
             int32_t                   touchID = 0;
