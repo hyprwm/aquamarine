@@ -471,7 +471,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             };
 
             switch (eventType) {
-                case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL: aqe.source = IPointer::AQ_POINTER_AXIS_SOURCE_WHEEL;
+                case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL: aqe.source = IPointer::AQ_POINTER_AXIS_SOURCE_WHEEL; break;
                 case LIBINPUT_EVENT_POINTER_SCROLL_FINGER: aqe.source = IPointer::AQ_POINTER_AXIS_SOURCE_FINGER; break;
                 case LIBINPUT_EVENT_POINTER_SCROLL_CONTINUOUS: aqe.source = IPointer::AQ_POINTER_AXIS_SOURCE_CONTINUOUS; break;
                 default: break; /* unreachable */
@@ -638,8 +638,6 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
         }
 
             // --------- tbalet
-
-
 
             // FIXME: other events
 
