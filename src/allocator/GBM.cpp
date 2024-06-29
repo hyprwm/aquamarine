@@ -110,6 +110,11 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
             allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod 0x{:x}", mod));
         }
         bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, params.size.x, params.size.y, params.format, explicitModifiers.data(), explicitModifiers.size());
+
+        if (!bo) {
+            allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
+            bo = gbm_bo_create(allocator->gbmDevice, params.size.x, params.size.y, params.format, flags);
+        }
     }
 
     if (!bo) {
