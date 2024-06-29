@@ -487,7 +487,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
                     continue;
 
                 aqe.axis      = axis == LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL ? IPointer::AQ_POINTER_AXIS_VERTICAL : IPointer::AQ_POINTER_AXIS_HORIZONTAL;
-                aqe.delta     = libinput_event_pointer_get_axis_value(pe, axis);
+                aqe.delta     = libinput_event_pointer_get_scroll_value(pe, axis);
                 aqe.direction = IPointer::AQ_POINTER_AXIS_RELATIVE_IDENTICAL;
                 if (libinput_device_config_scroll_get_natural_scroll_enabled(device))
                     aqe.direction = IPointer::AQ_POINTER_AXIS_RELATIVE_INVERTED;
