@@ -99,6 +99,23 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
     };
 
+    class CLibinputSwitch : public ISwitch {
+      public:
+        CLibinputSwitch(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev);
+        virtual ~CLibinputSwitch() {
+            ;
+        }
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName();
+
+        eSwitchType                type  = AQ_SWITCH_TYPE_UNKNOWN;
+        bool                       state = false;
+
+      private:
+        Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+    };
+
     class CLibinputDevice {
       public:
         CLibinputDevice(libinput_device* device, Hyprutils::Memory::CWeakPointer<CSession> session_);
@@ -114,6 +131,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<CLibinputKeyboard> keyboard;
         Hyprutils::Memory::CSharedPointer<CLibinputMouse>    mouse;
         Hyprutils::Memory::CSharedPointer<CLibinputTouch>    touch;
+        Hyprutils::Memory::CSharedPointer<CLibinputSwitch>   switchy; // :)
     };
 
     class CSession {

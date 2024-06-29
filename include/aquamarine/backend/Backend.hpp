@@ -109,6 +109,10 @@ namespace Aquamarine {
             Hyprutils::Signal::CSignal newPointer;
             Hyprutils::Signal::CSignal newKeyboard;
             Hyprutils::Signal::CSignal newTouch;
+            Hyprutils::Signal::CSignal newSwitch;
+            Hyprutils::Signal::CSignal newTablet;
+            Hyprutils::Signal::CSignal newTabletTool;
+            Hyprutils::Signal::CSignal newTabletPad;
         } events;
 
         Hyprutils::Memory::CSharedPointer<IAllocator> allocator;

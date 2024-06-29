@@ -267,6 +267,8 @@ void Aquamarine::CSession::onReady() {
             backend->events.newPointer.emit(SP<IPointer>(d->mouse));
         if (d->touch)
             backend->events.newTouch.emit(SP<ITouch>(d->touch));
+        if (d->switchy)
+            backend->events.newSwitch.emit(SP<ITouch>(d->touch));
 
         // FIXME: other devices.
     }
@@ -571,7 +573,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             break;
         }
 
-            // ---------- touch
+            // --------- touch
 
         case LIBINPUT_EVENT_TOUCH_DOWN: {
             auto te = libinput_event_get_touch_event(e);
@@ -612,6 +614,33 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             break;
         }
 
+            // --------- switch
+
+        case LIBINPUT_EVENT_SWITCH_TOGGLE: {
+            auto       se = libinput_event_get_switch_event(e);
+
+            const bool ENABLED = libinput_event_switch_get_switch_state(se) == LIBINPUT_SWITCH_STATE_ON;
+
+            if (ENABLED == hlDevice->switchy->state)
+                return;
+
+            switch (libinput_event_switch_get_switch(se)) {
+                case LIBINPUT_SWITCH_LID: hlDevice->switchy->type = ISwitch::AQ_SWITCH_TYPE_LID; break;
+                case LIBINPUT_SWITCH_TABLET_MODE: hlDevice->switchy->type = ISwitch::AQ_SWITCH_TYPE_TABLET_MODE; break;
+            }
+
+            hlDevice->switchy->events.fire.emit(ISwitch::SFireEvent{
+                .timeMs = (uint32_t)(libinput_event_switch_get_time_usec(se) / 1000),
+                .type   = hlDevice->switchy->type,
+                .enable = ENABLED,
+            });
+            break;
+        }
+
+            // --------- tbalet
+
+
+
             // FIXME: other events
 
         default: break;
@@ -650,6 +679,12 @@ void Aquamarine::CLibinputDevice::init() {
         touch = makeShared<CLibinputTouch>(self.lock());
         if (session->backend->ready)
             session->backend->events.newTouch.emit(SP<ITouch>(touch));
+    }
+
+    if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_SWITCH)) {
+        switchy = makeShared<CLibinputSwitch>(self.lock());
+        if (session->backend->ready)
+            session->backend->events.newSwitch.emit(SP<ISwitch>(switchy));
     }
 
     // FIXME: other devices
@@ -706,6 +741,22 @@ libinput_device* Aquamarine::CLibinputTouch::getLibinputHandle() {
 }
 
 const std::string& Aquamarine::CLibinputTouch::getName() {
+    if (!device)
+        return AQ_UNKNOWN_DEVICE_NAME;
+    return device->name;
+}
+
+Aquamarine::CLibinputSwitch::CLibinputSwitch(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev) : device(dev) {
+    ;
+}
+
+libinput_device* Aquamarine::CLibinputSwitch::getLibinputHandle() {
+    if (!device)
+        return nullptr;
+    return device->device;
+}
+
+const std::string& Aquamarine::CLibinputSwitch::getName() {
     if (!device)
         return AQ_UNKNOWN_DEVICE_NAME;
     return device->name;

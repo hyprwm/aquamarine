@@ -13,7 +13,7 @@ namespace Aquamarine {
         }
         virtual libinput_device*   getLibinputHandle();
         virtual const std::string& getName() = 0;
-        virtual void updateLEDs(uint32_t leds);
+        virtual void               updateLEDs(uint32_t leds);
 
         struct SKeyEvent {
             uint32_t timeMs  = 0;
@@ -79,7 +79,7 @@ namespace Aquamarine {
             ePointerAxis                  axis      = AQ_POINTER_AXIS_VERTICAL;
             ePointerAxisSource            source    = AQ_POINTER_AXIS_SOURCE_WHEEL;
             ePointerAxisRelativeDirection direction = AQ_POINTER_AXIS_RELATIVE_IDENTICAL;
-            double                        delta     = 0.0, discrete = 0.0;
+            double                        delta = 0.0, discrete = 0.0;
         };
 
         struct SSwipeBeginEvent {
@@ -88,8 +88,8 @@ namespace Aquamarine {
         };
 
         struct SSwipeUpdateEvent {
-            uint32_t timeMs  = 0;
-            uint32_t fingers = 0;
+            uint32_t                  timeMs  = 0;
+            uint32_t                  fingers = 0;
             Hyprutils::Math::Vector2D delta;
         };
 
@@ -104,10 +104,10 @@ namespace Aquamarine {
         };
 
         struct SPinchUpdateEvent {
-            uint32_t timeMs  = 0;
-            uint32_t fingers = 0;
+            uint32_t                  timeMs  = 0;
+            uint32_t                  fingers = 0;
             Hyprutils::Math::Vector2D delta;
-            double   scale = 1.0, rotation = 0.0;
+            double                    scale = 1.0, rotation = 0.0;
         };
 
         struct SPinchEndEvent {
@@ -155,7 +155,7 @@ namespace Aquamarine {
         virtual libinput_device*   getLibinputHandle();
         virtual const std::string& getName() = 0;
 
-        Hyprutils::Math::Vector2D physicalSize; // in mm, 0,0 if unknown
+        Hyprutils::Math::Vector2D  physicalSize; // in mm, 0,0 if unknown
 
         struct SDownEvent {
             uint32_t                  timeMs  = 0;
@@ -186,6 +186,33 @@ namespace Aquamarine {
             Hyprutils::Signal::CSignal up;
             Hyprutils::Signal::CSignal cancel;
             Hyprutils::Signal::CSignal frame;
+        } events;
+    };
+
+    class ISwitch {
+      public:
+        virtual ~ISwitch() {
+            events.destroy.emit();
+        }
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName() = 0;
+
+        enum eSwitchType {
+            AQ_SWITCH_TYPE_UNKNOWN = 0,
+            AQ_SWITCH_TYPE_LID,
+            AQ_SWITCH_TYPE_TABLET_MODE,
+        };
+
+        struct SFireEvent {
+            uint32_t    timeMs = 0;
+            eSwitchType type   = AQ_SWITCH_TYPE_UNKNOWN;
+            bool        enable = false;
+        };
+
+        struct {
+            Hyprutils::Signal::CSignal destroy;
+            Hyprutils::Signal::CSignal fire;
         } events;
     };
 
