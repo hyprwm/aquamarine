@@ -1134,6 +1134,17 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     if (connector->crtc->pendingCursor)
         data.cursorFB = connector->crtc->pendingCursor;
 
+    if (data.cursorFB) {
+        // verify cursor format. This might be wrong on NVIDIA where linear buffers
+        // fail to be created from gbm
+        // TODO: add an API to detect this and request drm_dumb linear buffers. Or do something,
+        // idk
+        if (data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID) {
+            backend->backend->log(AQ_LOG_TRACE, "drm: Dropping invalid buffer for cursor plane");
+            data.cursorFB = nullptr;
+        }
+    }
+
     data.blocking = BLOCKING;
     data.modeset  = NEEDS_RECONFIG;
     data.flags    = flags;
