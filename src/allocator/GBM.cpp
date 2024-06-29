@@ -104,8 +104,13 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     if (explicitModifiers.empty()) {
         allocator->backend->log(AQ_LOG_WARNING, "GBM: Using modifier-less allocation");
         bo = gbm_bo_create(allocator->gbmDevice, params.size.x, params.size.y, params.format, flags);
-    } else
+    } else {
+        allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Using modifier-based allocation, modifiers: {}", explicitModifiers.size()));
+        for (auto& mod : explicitModifiers) {
+            allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod 0x{:x}", mod));
+        }
         bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, params.size.x, params.size.y, params.format, explicitModifiers.data(), explicitModifiers.size());
+    }
 
     if (!bo) {
         allocator->backend->log(AQ_LOG_ERROR, "GBM: Failed to allocate a GBM buffer: bo null");
