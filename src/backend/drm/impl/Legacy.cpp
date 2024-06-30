@@ -150,13 +150,12 @@ bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     return commitInternal(connector, data);
 }
 
-bool Aquamarine::CDRMLegacyImpl::reset(SP<SDRMConnector> connector) {
-    if (!connector->crtc)
-        return true;
-
-    if (int ret = drmModeSetCrtc(backend->gpu->fd, connector->crtc->id, 0, 0, 0, nullptr, 0, nullptr); ret) {
-        connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: reset failed: {}", strerror(-ret)));
-        return false;
+bool Aquamarine::CDRMLegacyImpl::reset() {
+    for (auto& connector : backend->connectors) {
+        if (int ret = drmModeSetCrtc(backend->gpu->fd, connector->crtc->id, 0, 0, 0, nullptr, 0, nullptr); ret) {
+            connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: reset failed: {}", strerror(-ret)));
+            return false;
+        }
     }
 
     return true;

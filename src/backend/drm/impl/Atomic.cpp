@@ -272,7 +272,7 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     return ok;
 }
 
-bool Aquamarine::CDRMAtomicImpl::reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+bool Aquamarine::CDRMAtomicImpl::reset() {
     CDRMAtomicRequest request(backend);
 
     for (auto& crtc : backend->crtcs) {
@@ -291,7 +291,7 @@ bool Aquamarine::CDRMAtomicImpl::reset(Hyprutils::Memory::CSharedPointer<SDRMCon
     return request.commit(DRM_MODE_ATOMIC_ALLOW_MODESET);
 }
 
-bool Aquamarine::CDRMAtomicImpl::moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+bool Aquamarine::CDRMAtomicImpl::moveCursor(SP<SDRMConnector> connector) {
     if (!connector->output->cursorVisible || !connector->output->state->state().enabled || !connector->crtc || !connector->crtc->cursor)
         return true;
 

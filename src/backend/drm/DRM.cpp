@@ -253,15 +253,8 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
 
-    for (auto& c : connectors) {
-        if (!c->crtc)
-            continue;
-
-        backend->log(AQ_LOG_DEBUG, std::format("drm: Resetting crtc {}", c->crtc->id));
-
-        if (!impl->reset(c))
-            backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed reset", c->crtc->id));
-    }
+    if (!impl->reset())
+        backend->log(AQ_LOG_ERROR, "drm: failed reset");
 
     for (auto& c : connectors) {
         if (!c->crtc)
@@ -524,6 +517,7 @@ void Aquamarine::CDRMBackend::scanConnectors() {
 }
 
 bool Aquamarine::CDRMBackend::start() {
+    impl->reset();
     return true;
 }
 

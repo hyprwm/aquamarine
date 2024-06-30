@@ -270,7 +270,7 @@ namespace Aquamarine {
     class IDRMImplementation {
       public:
         virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) = 0;
-        virtual bool reset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector)                                 = 0;
+        virtual bool reset()                                                                                           = 0;
 
         // moving a cursor IIRC is almost instant on most hardware so we don't have to wait for a commit.
         virtual bool moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) = 0;
