@@ -45,7 +45,8 @@ namespace Aquamarine {
       public:
         ~CDRMFB();
 
-        static Hyprutils::Memory::CSharedPointer<CDRMFB> create(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, bool* isNew = nullptr);
+        static Hyprutils::Memory::CSharedPointer<CDRMFB> create(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_,
+                                                                bool* isNew = nullptr);
 
         void                                             closeHandles();
         // drops the buffer from KMS
@@ -170,10 +171,13 @@ namespace Aquamarine {
       private:
         CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, Hyprutils::Memory::CSharedPointer<SDRMConnector> connector_);
 
-        bool                                             commitState(bool onlyTest = false);
+        bool                                                         commitState(bool onlyTest = false);
 
-        Hyprutils::Memory::CWeakPointer<CDRMBackend>     backend;
-        Hyprutils::Memory::CSharedPointer<SDRMConnector> connector;
+        Hyprutils::Memory::CWeakPointer<CDRMBackend>                 backend;
+        Hyprutils::Memory::CSharedPointer<SDRMConnector>             connector;
+        Hyprutils::Memory::CSharedPointer<std::function<void(void)>> frameIdle;
+
+        bool                                                         lastCommitNoBuffer = true;
 
         friend struct SDRMConnector;
     };
@@ -194,6 +198,7 @@ namespace Aquamarine {
             uint32_t gammaLut = 0;
             uint32_t fbDamage = 0;
             uint32_t modeBlob = 0;
+            bool     blobbed  = false;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);

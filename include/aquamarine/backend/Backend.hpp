@@ -104,6 +104,12 @@ namespace Aquamarine {
         /* get a vector of the backend implementations available */
         const std::vector<Hyprutils::Memory::CSharedPointer<IBackendImplementation>>& getImplementations();
 
+        /* push an idle event to the queue */
+        void addIdleEvent(Hyprutils::Memory::CSharedPointer<std::function<void(void)>> fn);
+
+        /* remove an idle event from the queue */
+        void removeIdleEvent(Hyprutils::Memory::CSharedPointer<std::function<void(void)>> pfn);
+
         struct {
             Hyprutils::Signal::CSignal newOutput;
             Hyprutils::Signal::CSignal newPointer;
@@ -129,6 +135,13 @@ namespace Aquamarine {
         SBackendOptions                                                        options;
         Hyprutils::Memory::CWeakPointer<CBackend>                              self;
         std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>                sessionFDs;
+
+        struct {
+            int                                                                       fd = -1;
+            std::vector<Hyprutils::Memory::CSharedPointer<std::function<void(void)>>> pending;
+        } idle;
+
+        void dispatchIdle();
 
         //
         struct {

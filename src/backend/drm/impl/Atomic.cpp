@@ -47,7 +47,7 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
         // Disable the plane
         backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: disabling plane {}", plane->id));
         add(plane->id, plane->props.fb_id, 0);
-        add(plane->id, plane->props.crtc_id, crtc);
+        add(plane->id, plane->props.crtc_id, 0);
         add(plane->id, plane->props.crtc_x, (uint64_t)pos.x);
         add(plane->id, plane->props.crtc_y, (uint64_t)pos.y);
         return;
@@ -73,7 +73,7 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
 
 void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE  = connector->output->state->state();
-    const bool  enable = STATE.enabled;
+    const bool  enable = STATE.enabled && data.mainFB;
 
     backend->log(AQ_LOG_TRACE,
                  std::format("atomic addConnector blobs: mode_id {}, active {}, crtc_id {}, link_status {}, content_type {}", connector->crtc->props.mode_id,
@@ -82,8 +82,8 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
 
     if (data.modeset && enable) {
-        backend->log(AQ_LOG_TRACE, std::format("atomic: mode blob {}", data.atomic.modeBlob));
         add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
+        data.atomic.blobbed = true;
     }
 
     if (data.modeset && enable && connector->props.link_status)
@@ -182,7 +182,8 @@ void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
         return;
 
     conn->crtc->atomic.ownModeID = true;
-    rollbackBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
+    if (data.atomic.blobbed)
+        rollbackBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     // TODO: gamma
     //rollbackBlob(&conn->crtc->atomic.gammaLut, conn->atomic.gammaLut);
     destroyBlob(data.atomic.fbDamage);
@@ -196,7 +197,8 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
         conn->crtc->atomic.modeID = 0;
 
     conn->crtc->atomic.ownModeID = true;
-    commitBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
+    if (data.atomic.blobbed)
+        commitBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     // TODO: gamma
     //commitBlob(&conn->crtc->atomic.gammaLut, conn->atomic.gammaLut);
     destroyBlob(data.atomic.fbDamage);
@@ -262,7 +264,8 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 
     if (ok) {
         request.apply(data);
-        connector->isPageFlipPending = true;
+        if (!data.test && data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
+            connector->isPageFlipPending = true;
     } else
         request.rollback(data);
 

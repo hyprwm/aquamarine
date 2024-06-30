@@ -576,19 +576,8 @@ bool Aquamarine::CDRMBackend::dispatchEvents() {
         .page_flip_handler2 = ::handlePF,
     };
 
-    // we will call this asynchronously and not only when drm fd polls, so we
-    // ignore the errors (from e.g. a partial read)
-    // TODO: is this ok?
     if (drmHandleEvent(gpu->fd, &event) != 0)
-        ; // backend->log(AQ_LOG_ERROR, std::format("drm: Failed to handle event on fd {}", gpu->fd));
-
-    if (!idleCallbacks.empty()) {
-        for (auto& c : idleCallbacks) {
-            if (c)
-                c();
-        }
-        idleCallbacks.clear();
-    }
+        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to handle event on fd {}", gpu->fd));
 
     return true;
 }
@@ -1015,7 +1004,9 @@ void Aquamarine::SDRMConnector::onPresent() {
 }
 
 Aquamarine::CDRMOutput::~CDRMOutput() {
-    ;
+    backend->backend->removeIdleEvent(frameIdle);
+    connector->isPageFlipPending   = false;
+    connector->frameEventScheduled = false;
 }
 
 bool Aquamarine::CDRMOutput::commit() {
@@ -1146,7 +1137,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     }
 
     data.blocking = BLOCKING;
-    data.modeset  = NEEDS_RECONFIG;
+    data.modeset  = NEEDS_RECONFIG || lastCommitNoBuffer;
     data.flags    = flags;
     data.test     = onlyTest;
     if (MODE->modeInfo.has_value())
@@ -1156,9 +1147,13 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     bool ok = connector->commitState(data);
 
-    events.commit.emit();
+    if (onlyTest)
+        return ok;
 
+    events.commit.emit();
     state->onCommit();
+
+    lastCommitNoBuffer = !data.mainFB;
 
     return ok;
 }
@@ -1202,12 +1197,7 @@ void Aquamarine::CDRMOutput::scheduleFrame() {
 
     connector->frameEventScheduled = true;
 
-    backend->idleCallbacks.emplace_back([this]() {
-        connector->frameEventScheduled = false;
-        if (connector->isPageFlipPending)
-            return;
-        events.frame.emit();
-    });
+    backend->backend->addIdleEvent(frameIdle);
 }
 
 Vector2D Aquamarine::CDRMOutput::cursorPlaneSize() {
@@ -1217,6 +1207,13 @@ Vector2D Aquamarine::CDRMOutput::cursorPlaneSize() {
 Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, SP<SDRMConnector> connector_) :
     backend(backend_), connector(connector_) {
     name = name_;
+
+    frameIdle = makeShared<std::function<void(void)>>([this]() {
+        connector->frameEventScheduled = false;
+        if (connector->isPageFlipPending)
+            return;
+        events.frame.emit();
+    });
 }
 
 SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, bool* isNew) {

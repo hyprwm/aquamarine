@@ -5,10 +5,28 @@
 #include <sys/poll.h>
 #include <thread>
 #include <chrono>
+#include <sys/timerfd.h>
+#include <time.h>
+#include <string.h>
 
 using namespace Hyprutils::Memory;
 using namespace Aquamarine;
 #define SP CSharedPointer
+
+#define TIMESPEC_NSEC_PER_SEC 1000000000L
+
+static void timespecAddNs(timespec* pTimespec, int64_t delta) {
+    int delta_ns_low = delta % TIMESPEC_NSEC_PER_SEC;
+    int delta_s_high = delta / TIMESPEC_NSEC_PER_SEC;
+
+    pTimespec->tv_sec += delta_s_high;
+
+    pTimespec->tv_nsec += (long)delta_ns_low;
+    if (pTimespec->tv_nsec >= TIMESPEC_NSEC_PER_SEC) {
+        pTimespec->tv_nsec -= TIMESPEC_NSEC_PER_SEC;
+        ++pTimespec->tv_sec;
+    }
+}
 
 static const char* backendTypeToName(eBackendType type) {
     switch (type) {
@@ -67,6 +85,9 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
         }
     }
 
+    // create a timerfd for idle events
+    backend->idle.fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+
     return backend;
 }
 
@@ -80,7 +101,7 @@ bool Aquamarine::CBackend::start() {
     bool fallback = false;
     int  started  = 0;
 
-    auto optionsForType = [this] (eBackendType type) -> SBackendImplementationOptions {
+    auto optionsForType = [this](eBackendType type) -> SBackendImplementationOptions {
         for (auto& o : implementationOptions) {
             if (o.backendType == type)
                 return o;
@@ -95,8 +116,7 @@ bool Aquamarine::CBackend::start() {
             log(AQ_LOG_ERROR, std::format("Requested backend ({}) could not start, enabling fallbacks", backendTypeToName(implementations.at(i)->type())));
             fallback = true;
             if (optionsForType(implementations.at(i)->type()).backendRequestMode == AQ_BACKEND_REQUEST_MANDATORY) {
-                log(AQ_LOG_CRITICAL,
-                    std::format("Requested backend ({}) could not start and it's mandatory, cannot continue!", backendTypeToName(implementations.at(i)->type())));
+                log(AQ_LOG_CRITICAL, std::format("Requested backend ({}) could not start and it's mandatory, cannot continue!", backendTypeToName(implementations.at(i)->type())));
                 implementations.clear();
                 return false;
             }
@@ -158,6 +178,8 @@ std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CBackend::ge
         result.emplace_back(sfd);
     }
 
+    result.emplace_back(makeShared<SPollFD>(idle.fd, [this]() { dispatchIdle(); }));
+
     return result;
 }
 
@@ -191,6 +213,33 @@ std::vector<SDRMFormat> Aquamarine::CBackend::getPrimaryRenderFormats() {
     return {};
 }
 
-const std::vector<Hyprutils::Memory::CSharedPointer<IBackendImplementation>>& Aquamarine::CBackend::getImplementations() {
+const std::vector<SP<IBackendImplementation>>& Aquamarine::CBackend::getImplementations() {
     return implementations;
+}
+
+void Aquamarine::CBackend::addIdleEvent(SP<std::function<void(void)>> fn) {
+    auto r = idle.pending.emplace_back(fn);
+
+    // update timerfd
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    itimerspec ts = {.it_value = now};
+
+    if (timerfd_settime(idle.fd, TFD_TIMER_ABSTIME, &ts, nullptr))
+        log(AQ_LOG_ERROR, std::format("backend: failed to arm timerfd: {}", strerror(errno)));
+}
+
+void Aquamarine::CBackend::removeIdleEvent(SP<std::function<void(void)>> pfn) {
+    std::erase(idle.pending, pfn);
+}
+
+void Aquamarine::CBackend::dispatchIdle() {
+    auto cpy = idle.pending;
+    idle.pending.clear();
+
+    for (auto& i : cpy) {
+        if (i && *i)
+            (*i)();
+    }
 }
