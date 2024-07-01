@@ -6,6 +6,8 @@ for an application to render on a Wayland session (in a window) or a native DRM 
 It is agnostic of the rendering API (Vulkan/OpenGL) and designed to be lightweight, performant, and
 minimal.
 
+Aquamarine provides no bindings for other languages. It is C++-only.
+
 ## Stability
 
 Aquamarine depends on the ABI stability of the stdlib implementation of your compiler. Sover bumps will be done only for aquamarine ABI breaks, not stdlib.
@@ -20,8 +22,8 @@ cmake --build ./build --config Release --target all -j`nproc 2>/dev/null || getc
 ## TODOs
 
  - [x] Wayland backend
- - [ ] DRM backend (DRM / KMS / libinput)
- - [ ] Virtual backend (aka. Headless)
+ - [x] DRM backend (DRM / KMS / libinput)
+ - [x] Virtual backend (aka. Headless)
  - [ ] Hardware plane support
 
 
