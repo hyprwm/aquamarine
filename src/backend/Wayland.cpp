@@ -137,6 +137,8 @@ int Aquamarine::CWaylandBackend::drmFD() {
 bool Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
     auto o  = outputs.emplace_back(SP<CWaylandOutput>(new CWaylandOutput(szName.empty() ? std::format("WAYLAND-{}", ++lastOutputID) : szName, self)));
     o->self = o;
+    if (backend->ready)
+        o->swapchain = CSwapchain::create(backend->allocator, self.lock());
     idleCallbacks.emplace_back([this, o]() { backend->events.newOutput.emit(SP<IOutput>(o)); });
     return true;
 }
