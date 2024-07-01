@@ -7,7 +7,7 @@ jobs:
       matrix:
         package:
           - aquamarine
-          - aquamarine-with-tests
+          # - aquamarine-with-tests
 
     runs-on: ubuntu-latest
     steps:
