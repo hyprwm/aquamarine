@@ -35,6 +35,10 @@ size_t Aquamarine::IOutput::getGammaSize() {
     return 0;
 }
 
+bool Aquamarine::IOutput::destroy() {
+    return false;
+}
+
 const Aquamarine::COutputState::SInternalState& Aquamarine::COutputState::state() {
     return internalState;
 }

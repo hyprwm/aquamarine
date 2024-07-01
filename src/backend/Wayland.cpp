@@ -125,7 +125,7 @@ bool Aquamarine::CWaylandBackend::start() {
 
     dispatchEvents();
 
-    createOutput("WAYLAND1");
+    createOutput();
 
     return true;
 }
@@ -431,6 +431,11 @@ std::vector<SDRMFormat> Aquamarine::CWaylandBackend::getCursorFormats() {
     return dmabufFormats;
 }
 
+bool Aquamarine::CWaylandBackend::createOutput() {
+    createOutput(std::format("WAYLAND-{}", ++lastOutputID));
+    return true;
+}
+
 Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_) : backend(backend_) {
     name = name_;
 
@@ -469,12 +474,7 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
         sendFrameAndSetCallback();
     });
 
-    waylandState.xdgToplevel->setClose([this](CCXdgToplevel* r) {
-        events.destroy.emit();
-        waylandState.surface->sendAttach(nullptr, 0, 0);
-        waylandState.surface->sendCommit();
-        std::erase(backend->outputs, self.lock());
-    });
+    waylandState.xdgToplevel->setClose([this](CCXdgToplevel* r) { destroy(); });
 
     auto inputRegion = makeShared<CCWlRegion>(backend->waylandState.compositor->sendCreateRegion());
     inputRegion->sendAdd(0, 0, INT32_MAX, INT32_MAX);
@@ -489,12 +489,22 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
 }
 
 Aquamarine::CWaylandOutput::~CWaylandOutput() {
+    backend->idleCallbacks.clear(); // FIXME: mega hack to avoid a UAF in frame events
     if (waylandState.xdgToplevel)
         waylandState.xdgToplevel->sendDestroy();
     if (waylandState.xdgSurface)
         waylandState.xdgSurface->sendDestroy();
     if (waylandState.surface)
         waylandState.surface->sendDestroy();
+}
+
+bool Aquamarine::CWaylandOutput::destroy() {
+    events.destroy.emit();
+    waylandState.surface->sendAttach(nullptr, 0, 0);
+    waylandState.surface->sendCommit();
+    waylandState.frameCallback.reset();
+    std::erase(backend->outputs, self.lock());
+    return true;
 }
 
 bool Aquamarine::CWaylandOutput::test() {

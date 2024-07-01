@@ -75,6 +75,7 @@ namespace Aquamarine {
         virtual void                                                    onReady()          = 0;
         virtual std::vector<SDRMFormat>                                 getRenderFormats() = 0;
         virtual std::vector<SDRMFormat>                                 getCursorFormats() = 0;
+        virtual bool                                                    createOutput()     = 0;
     };
 
     class CBackend {

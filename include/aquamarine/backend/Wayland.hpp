@@ -48,6 +48,7 @@ namespace Aquamarine {
         virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord);
         virtual void                                                      scheduleFrame();
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
+        virtual bool                                                      destroy();
 
         Hyprutils::Memory::CWeakPointer<CWaylandOutput>                   self;
 
@@ -131,6 +132,7 @@ namespace Aquamarine {
         virtual void                                                    onReady();
         virtual std::vector<SDRMFormat>                                 getRenderFormats();
         virtual std::vector<SDRMFormat>                                 getCursorFormats();
+        virtual bool                                                    createOutput();
 
         Hyprutils::Memory::CWeakPointer<CWaylandBackend>                self;
 
@@ -152,6 +154,9 @@ namespace Aquamarine {
         // pointer focus
         Hyprutils::Memory::CWeakPointer<CWaylandOutput> focusedOutput;
         uint32_t                                        lastEnterSerial = 0;
+
+        // state
+        size_t lastOutputID = 0;
 
         // dmabuf formats
         std::vector<SDRMFormat> dmabufFormats;

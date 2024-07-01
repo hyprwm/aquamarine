@@ -1,5 +1,6 @@
 #include <aquamarine/backend/Backend.hpp>
 #include <aquamarine/backend/Wayland.hpp>
+#include <aquamarine/backend/Headless.hpp>
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 #include <sys/poll.h>
@@ -78,7 +79,10 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
             for (auto& r : ref) {
                 backend->implementations.emplace_back(r);
             }
-
+        } else if (b.backendType == AQ_BACKEND_HEADLESS) {
+            auto ref = SP<CHeadlessBackend>(new CHeadlessBackend(backend));
+            backend->implementations.emplace_back(ref);
+            ref->self = ref;
         } else {
             backend->log(AQ_LOG_ERROR, std::format("Unknown backend id: {}", (int)b.backendType));
             continue;

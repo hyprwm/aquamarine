@@ -651,6 +651,10 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getCursorFormats() {
     return {};
 }
 
+bool Aquamarine::CDRMBackend::createOutput() {
+    return false;
+}
+
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     id = plane->plane_id;
 

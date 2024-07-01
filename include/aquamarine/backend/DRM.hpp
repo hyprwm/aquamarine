@@ -289,6 +289,7 @@ namespace Aquamarine {
         virtual void                                                    onReady();
         virtual std::vector<SDRMFormat>                                 getRenderFormats();
         virtual std::vector<SDRMFormat>                                 getCursorFormats();
+        virtual bool                                                    createOutput();
 
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                    self;
 

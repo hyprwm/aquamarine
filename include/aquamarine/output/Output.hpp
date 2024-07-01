@@ -86,6 +86,7 @@ namespace Aquamarine {
         friend class IOutput;
         friend class CWaylandOutput;
         friend class CDRMOutput;
+        friend class CHeadlessOutput;
     };
 
     class IOutput {
@@ -104,6 +105,7 @@ namespace Aquamarine {
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();              // -1, -1 means no set size, 0, 0 means error
         virtual void                                                      scheduleFrame();
         virtual size_t                                                    getGammaSize();
+        virtual bool                                                      destroy(); // not all backends allow this!!!
 
         std::string                                                       name, description, make, model, serial;
         Hyprutils::Math::Vector2D                                         physicalSize;
