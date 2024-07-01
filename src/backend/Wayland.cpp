@@ -134,10 +134,11 @@ int Aquamarine::CWaylandBackend::drmFD() {
     return drmState.fd;
 }
 
-void Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
-    auto o  = outputs.emplace_back(SP<CWaylandOutput>(new CWaylandOutput(szName, self)));
+bool Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
+    auto o  = outputs.emplace_back(SP<CWaylandOutput>(new CWaylandOutput(szName.empty() ? std::format("WAYLAND-{}", ++lastOutputID) : szName, self)));
     o->self = o;
     idleCallbacks.emplace_back([this, o]() { backend->events.newOutput.emit(SP<IOutput>(o)); });
+    return true;
 }
 
 std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CWaylandBackend::pollFDs() {
@@ -429,11 +430,6 @@ std::vector<SDRMFormat> Aquamarine::CWaylandBackend::getRenderFormats() {
 
 std::vector<SDRMFormat> Aquamarine::CWaylandBackend::getCursorFormats() {
     return dmabufFormats;
-}
-
-bool Aquamarine::CWaylandBackend::createOutput() {
-    createOutput(std::format("WAYLAND-{}", ++lastOutputID));
-    return true;
 }
 
 Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_) : backend(backend_) {

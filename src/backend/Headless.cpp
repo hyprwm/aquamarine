@@ -117,8 +117,8 @@ std::vector<SDRMFormat> Aquamarine::CHeadlessBackend::getCursorFormats() {
     return {}; // No cursor support
 }
 
-bool Aquamarine::CHeadlessBackend::createOutput() {
-    auto output = SP<CHeadlessOutput>(new CHeadlessOutput(std::format("HEADLESS-{}", ++outputIDCounter), self.lock()));
+bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
+    auto output = SP<CHeadlessOutput>(new CHeadlessOutput(name.empty() ? std::format("HEADLESS-{}", ++outputIDCounter) : name, self.lock()));
     outputs.emplace_back(output);
     output->swapchain = CSwapchain::create(backend->allocator, self.lock());
     output->self = output;

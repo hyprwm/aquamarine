@@ -132,7 +132,7 @@ namespace Aquamarine {
         virtual void                                                    onReady();
         virtual std::vector<SDRMFormat>                                 getRenderFormats();
         virtual std::vector<SDRMFormat>                                 getCursorFormats();
-        virtual bool                                                    createOutput();
+        virtual bool                                                    createOutput(const std::string& name = "");
 
         Hyprutils::Memory::CWeakPointer<CWaylandBackend>                self;
 
@@ -142,7 +142,6 @@ namespace Aquamarine {
         void initSeat();
         void initShell();
         bool initDmabuf();
-        void createOutput(const std::string& szName);
 
         //
         Hyprutils::Memory::CWeakPointer<CBackend>                        backend;

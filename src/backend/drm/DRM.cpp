@@ -651,7 +651,7 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getCursorFormats() {
     return {};
 }
 
-bool Aquamarine::CDRMBackend::createOutput() {
+bool Aquamarine::CDRMBackend::createOutput(const std::string&) {
     return false;
 }
 
