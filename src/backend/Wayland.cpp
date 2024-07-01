@@ -469,6 +469,13 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
         sendFrameAndSetCallback();
     });
 
+    waylandState.xdgToplevel->setClose([this](CCXdgToplevel* r) {
+        events.destroy.emit();
+        waylandState.surface->sendAttach(nullptr, 0, 0);
+        waylandState.surface->sendCommit();
+        std::erase(backend->outputs, self.lock());
+    });
+
     auto inputRegion = makeShared<CCWlRegion>(backend->waylandState.compositor->sendCreateRegion());
     inputRegion->sendAdd(0, 0, INT32_MAX, INT32_MAX);
 
