@@ -315,9 +315,8 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
     drmProps.supportsAsyncCommit     = drmGetCap(gpu->fd, DRM_CAP_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
     drmProps.supportsAddFb2Modifiers = drmGetCap(gpu->fd, DRM_CAP_ADDFB2_MODIFIERS, &cap) == 0 && cap == 1;
 
-    // FIXME: move to NO_ATOMIC when this piece of shit works
-    if (!envEnabled("AQ_ATOMIC")) {
-        backend->log(AQ_LOG_WARNING, "drm: AQ_ATOMIC not enabled, using the legacy drm iface");
+    if (envEnabled("AQ_NO_ATOMIC")) {
+        backend->log(AQ_LOG_WARNING, "drm: AQ_NO_ATOMIC enabled, using the legacy drm iface");
         impl = makeShared<CDRMLegacyImpl>(self.lock());
     } else if (drmSetClientCap(gpu->fd, DRM_CLIENT_CAP_ATOMIC, 1)) {
         backend->log(AQ_LOG_WARNING, "drm: failed to set DRM_CLIENT_CAP_ATOMIC, falling back to legacy");
@@ -326,6 +325,7 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
         backend->log(AQ_LOG_DEBUG, "drm: Atomic supported, using atomic for modesetting");
         impl                         = makeShared<CDRMAtomicImpl>(self.lock());
         drmProps.supportsAsyncCommit = drmGetCap(gpu->fd, DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
+        atomic                       = true;
     }
 
     backend->log(AQ_LOG_DEBUG, std::format("drm: drmProps.supportsAsyncCommit: {}", drmProps.supportsAsyncCommit));
@@ -1204,6 +1204,21 @@ void Aquamarine::CDRMOutput::scheduleFrame() {
 
 Vector2D Aquamarine::CDRMOutput::cursorPlaneSize() {
     return backend->drmProps.cursorSize;
+}
+
+size_t Aquamarine::CDRMOutput::getGammaSize() {
+    if (!backend->atomic) {
+        backend->log(AQ_LOG_ERROR, "No support for gamma on the legacy iface");
+        return 0;
+    }
+
+    uint64_t size = 0;
+    if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.gamma_lut_size, &size)) {
+        backend->log(AQ_LOG_ERROR, "Couldn't get the gamma_size prop");
+        return 0;
+    }
+
+    return size;
 }
 
 Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, SP<SDRMConnector> connector_) :

@@ -162,6 +162,7 @@ namespace Aquamarine {
         virtual void                                                      scheduleFrame();
         virtual void                                                      setCursorVisible(bool visible);
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
+        virtual size_t                                                    getGammaSize();
 
         Hyprutils::Memory::CWeakPointer<CDRMOutput>                       self;
         bool                                                              cursorVisible = true;
@@ -199,6 +200,7 @@ namespace Aquamarine {
             uint32_t fbDamage = 0;
             uint32_t modeBlob = 0;
             bool     blobbed  = false;
+            bool     gammad   = false;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
@@ -320,6 +322,8 @@ namespace Aquamarine {
         std::vector<Hyprutils::Memory::CSharedPointer<SDRMPlane>>     planes;
         std::vector<Hyprutils::Memory::CSharedPointer<SDRMConnector>> connectors;
         std::vector<SDRMFormat>                                       formats;
+
+        bool                                                          atomic = false;
 
         struct {
             Hyprutils::Math::Vector2D cursorSize;
