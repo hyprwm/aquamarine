@@ -14,11 +14,14 @@ extern "C" {
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <libdisplay-info/cvt.h>
+#include <libdisplay-info/info.h>
+#include <libdisplay-info/edid.h>
 }
 
 #include "Props.hpp"
 #include "FormatUtils.hpp"
 #include "Shared.hpp"
+#include "hwdata.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -840,7 +843,27 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
 }
 
 void Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
-    // TODO: libdisplay-info prolly
+    auto info = di_info_parse_edid(data.data(), data.size());
+    if (!info) {
+        backend->backend->log(AQ_LOG_ERROR, "drm: failed to parse edid");
+        return;
+    }
+
+    auto edid       = di_info_get_edid(info);
+    auto venProduct = di_edid_get_vendor_product(edid);
+    auto pnpID      = std::string{venProduct->manufacturer, 3};
+    if (PNPIDS.contains(pnpID))
+        make = PNPIDS.at(pnpID);
+    else
+        make = pnpID;
+
+    auto mod = di_info_get_model(info);
+    auto ser = di_info_get_serial(info);
+
+    model  = mod ? mod : "";
+    serial = ser ? ser : "";
+
+    di_info_destroy(info);
 }
 
 void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {

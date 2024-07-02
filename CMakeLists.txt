@@ -36,7 +36,7 @@ file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS "include/*.hpp")
 add_library(aquamarine SHARED ${SRCFILES})
 target_include_directories( aquamarine
     PUBLIC "./include"
-    PRIVATE "./src" "./src/include" "./protocols"
+    PRIVATE "./src" "./src/include" "./protocols" "./build"
 )
 set_target_properties(aquamarine PROPERTIES
     VERSION ${AQUAMARINE_VERSION}
@@ -78,6 +78,22 @@ protocolWayland()
 
 protocolNew("stable/xdg-shell" "xdg-shell" false)
 protocolNew("stable/linux-dmabuf" "linux-dmabuf-v1" false)
+
+# Generate hwdata info
+pkg_get_variable(HWDATA_DIR hwdata pkgdatadir)
+message(STATUS "Running ${CMAKE_SOURCE_DIR}/data/hwdata.sh < ${HWDATA_DIR}/pnp.ids")
+execute_process(
+    COMMAND /bin/sh -c "${CMAKE_SOURCE_DIR}/data/hwdata.sh < ${HWDATA_DIR}/pnp.ids"
+    RESULT_VARIABLE HWDATA_PNP_RESULT
+    OUTPUT_VARIABLE HWDATA_PNP_IDS
+    ENCODING UTF8
+)
+
+if (NOT HWDATA_PNP_RESULT MATCHES 0)
+    message(WARNING "hwdata gathering pnps failed")
+endif()
+
+configure_file(data/hwdata.hpp.in hwdata.hpp @ONLY)
 
 # tests
 add_custom_target(tests)

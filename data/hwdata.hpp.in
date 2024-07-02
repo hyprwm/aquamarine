@@ -1,0 +1,8 @@
+#include <unordered_map>
+#include <string>
+
+#define __AQ_PNP_PROP(pnp, manu) {pnp, manu}
+inline std::unordered_map<std::string, std::string> PNPIDS = {
+@HWDATA_PNP_IDS@
+};
+#undef __AQ_PNP_PROP
