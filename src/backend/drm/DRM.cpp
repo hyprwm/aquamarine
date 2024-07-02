@@ -916,6 +916,10 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     canDoVrr           = props.vrr_capable && crtc->props.vrr_enabled && !getDRMProp(backend->gpu->fd, id, props.vrr_capable, &prop) && prop;
     output->vrrCapable = canDoVrr;
 
+    backend->backend->log(AQ_LOG_DEBUG,
+                          std::format("drm: crtc is {} of vrr: props.vrr_capable -> {}, crtc->props.vrr_enabled -> {}", (canDoVrr ? "capable" : "incapable"), props.vrr_capable,
+                                      crtc->props.vrr_enabled));
+
     maxBpcBounds.fill(0);
 
     if (props.max_bpc && !introspectDRMPropRange(backend->gpu->fd, props.max_bpc, maxBpcBounds.data(), &maxBpcBounds[1]))
