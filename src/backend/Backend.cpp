@@ -174,14 +174,17 @@ std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CBackend::ge
     for (auto& i : implementations) {
         auto pollfds = i->pollFDs();
         for (auto& p : pollfds) {
+            log(AQ_LOG_DEBUG, std::format("backend: poll fd {} for implementation {}", p->fd, backendTypeToName(i->type())));
             result.emplace_back(p);
         }
     }
 
     for (auto& sfd : sessionFDs) {
+        log(AQ_LOG_DEBUG, std::format("backend: poll fd {} for session", sfd->fd));
         result.emplace_back(sfd);
     }
 
+    log(AQ_LOG_DEBUG, std::format("backend: poll fd {} for idle", idle.fd));
     result.emplace_back(makeShared<SPollFD>(idle.fd, [this]() { dispatchIdle(); }));
 
     return result;
@@ -224,9 +227,15 @@ const std::vector<SP<IBackendImplementation>>& Aquamarine::CBackend::getImplemen
 void Aquamarine::CBackend::addIdleEvent(SP<std::function<void(void)>> fn) {
     auto r = idle.pending.emplace_back(fn);
 
-    // update timerfd
+    updateIdleTimer();
+}
+
+void Aquamarine::CBackend::updateIdleTimer() {
+    uint64_t ADD_NS = idle.pending.empty() ? TIMESPEC_NSEC_PER_SEC * 240ULL /* 240s, 4 mins */ : 0;
+
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
+    timespecAddNs(&now, ADD_NS);
 
     itimerspec ts = {.it_value = now};
 
@@ -246,4 +255,6 @@ void Aquamarine::CBackend::dispatchIdle() {
         if (i && *i)
             (*i)();
     }
+
+    updateIdleTimer();
 }

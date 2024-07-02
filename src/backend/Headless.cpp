@@ -121,7 +121,7 @@ bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
     auto output = SP<CHeadlessOutput>(new CHeadlessOutput(name.empty() ? std::format("HEADLESS-{}", ++outputIDCounter) : name, self.lock()));
     outputs.emplace_back(output);
     output->swapchain = CSwapchain::create(backend->allocator, self.lock());
-    output->self = output;
+    output->self      = output;
     backend->events.newOutput.emit(SP<IOutput>(output));
 
     return true;
@@ -147,22 +147,23 @@ void Aquamarine::CHeadlessBackend::dispatchTimers() {
 }
 
 void Aquamarine::CHeadlessBackend::updateTimerFD() {
-    long long  lowest   = 42069133769LL;
+    long long  lowestNs = TIMESPEC_NSEC_PER_SEC * 240 /* 240s, 4 mins */;
     const auto clocknow = std::chrono::steady_clock::now();
+    bool       any      = false;
 
     for (auto& t : timers.timers) {
-        auto delta = std::chrono::duration_cast<std::chrono::microseconds>(t.when - clocknow).count();
+        auto delta = std::chrono::duration_cast<std::chrono::microseconds>(t.when - clocknow).count() * 1000 /* µs -> ns */;
 
-        if (delta < lowest)
-            lowest = delta;
+        if (delta < lowestNs)
+            lowestNs = delta;
     }
 
-    if (lowest < 0)
-        lowest = 0;
+    if (lowestNs < 0)
+        lowestNs = 0;
 
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    timespecAddNs(&now, lowest * 1000); // µs -> ns => * 1000
+    timespecAddNs(&now, lowestNs);
 
     itimerspec ts = {.it_value = now};
 

@@ -143,6 +143,7 @@ namespace Aquamarine {
         } idle;
 
         void dispatchIdle();
+        void updateIdleTimer();
 
         //
         struct {
