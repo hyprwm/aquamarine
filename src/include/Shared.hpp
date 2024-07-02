@@ -6,6 +6,7 @@
 
 namespace Aquamarine {
     bool envEnabled(const std::string& env);
+    bool isTrace();
 };
 
 #define RASSERT(expr, reason, ...)                                                                                                                                                 \
@@ -18,3 +19,10 @@ namespace Aquamarine {
     }
 
 #define ASSERT(expr) RASSERT(expr, "?")
+
+#define TRACE(expr)                                                                                                                                                                \
+    {                                                                                                                                                                              \
+        if (Aquamarine::isTrace()) {                                                                                                                                               \
+            expr;                                                                                                                                                                  \
+        }                                                                                                                                                                          \
+    }

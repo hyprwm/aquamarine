@@ -2,6 +2,7 @@
 #include <aquamarine/backend/Backend.hpp>
 #include <aquamarine/allocator/Swapchain.hpp>
 #include "FormatUtils.hpp"
+#include "Shared.hpp"
 #include <xf86drm.h>
 #include <gbm.h>
 
@@ -105,9 +106,9 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         allocator->backend->log(AQ_LOG_WARNING, "GBM: Using modifier-less allocation");
         bo = gbm_bo_create(allocator->gbmDevice, params.size.x, params.size.y, params.format, flags);
     } else {
-        allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Using modifier-based allocation, modifiers: {}", explicitModifiers.size()));
+        TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Using modifier-based allocation, modifiers: {}", explicitModifiers.size())));
         for (auto& mod : explicitModifiers) {
-            allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod 0x{:x}", mod));
+            TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod 0x{:x}", mod)));
         }
         bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, params.size.x, params.size.y, params.format, explicitModifiers.data(), explicitModifiers.size());
 

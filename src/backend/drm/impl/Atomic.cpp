@@ -3,6 +3,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <sys/mman.h>
+#include "Shared.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -24,7 +25,7 @@ void Aquamarine::CDRMAtomicRequest::add(uint32_t id, uint32_t prop, uint64_t val
     if (failed)
         return;
 
-    backend->log(AQ_LOG_TRACE, std::format("atomic drm request: adding id {} prop {} with value {}", id, prop, val));
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic drm request: adding id {} prop {} with value {}", id, prop, val)));
 
     if (id == 0 || prop == 0) {
         backend->log(AQ_LOG_ERROR, "atomic drm request: failed to add prop: id / prop == 0");
@@ -45,7 +46,7 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
 
     if (!fb || !crtc) {
         // Disable the plane
-        backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: disabling plane {}", plane->id));
+        TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: disabling plane {}", plane->id)));
         add(plane->id, plane->props.fb_id, 0);
         add(plane->id, plane->props.crtc_id, 0);
         add(plane->id, plane->props.crtc_x, (uint64_t)pos.x);
@@ -53,10 +54,10 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
         return;
     }
 
-    backend->log(AQ_LOG_TRACE,
-                 std::format("atomic planeProps: prop blobs: src_x {}, src_y {}, src_w {}, src_h {}, crtc_w {}, crtc_h {}, fb_id {}, crtc_id {}, crtc_x {}, crtc_y {}",
-                             plane->props.src_x, plane->props.src_y, plane->props.src_w, plane->props.src_h, plane->props.crtc_w, plane->props.crtc_h, plane->props.fb_id,
-                             plane->props.crtc_id, plane->props.crtc_x, plane->props.crtc_y));
+    TRACE(backend->log(AQ_LOG_TRACE,
+                       std::format("atomic planeProps: prop blobs: src_x {}, src_y {}, src_w {}, src_h {}, crtc_w {}, crtc_h {}, fb_id {}, crtc_id {}, crtc_x {}, crtc_y {}",
+                                   plane->props.src_x, plane->props.src_y, plane->props.src_w, plane->props.src_h, plane->props.crtc_w, plane->props.crtc_h, plane->props.fb_id,
+                                   plane->props.crtc_id, plane->props.crtc_x, plane->props.crtc_y)));
 
     // src_ are 16.16 fixed point (lol)
     add(plane->id, plane->props.src_x, 0);
@@ -75,9 +76,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled && data.mainFB;
 
-    backend->log(AQ_LOG_TRACE,
-                 std::format("atomic addConnector blobs: mode_id {}, active {}, crtc_id {}, link_status {}, content_type {}", connector->crtc->props.mode_id,
-                             connector->crtc->props.active, connector->props.crtc_id, connector->props.link_status, connector->props.content_type));
+    TRACE(backend->log(AQ_LOG_TRACE,
+                       std::format("atomic addConnector blobs: mode_id {}, active {}, crtc_id {}, link_status {}, content_type {}", connector->crtc->props.mode_id,
+                                   connector->crtc->props.active, connector->props.crtc_id, connector->props.link_status, connector->props.content_type)));
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
 
@@ -221,9 +222,9 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                 return false;
             }
 
-            connector->backend->log(AQ_LOG_TRACE,
-                                    std::format("Connector blob id {}: clock {}, {}x{}, vrefresh {}, name: {}", data.atomic.modeBlob, data.modeInfo.clock, data.modeInfo.hdisplay,
-                                                data.modeInfo.vdisplay, data.modeInfo.vrefresh, data.modeInfo.name));
+            TRACE(connector->backend->log(AQ_LOG_TRACE,
+                                          std::format("Connector blob id {}: clock {}, {}x{}, vrefresh {}, name: {}", data.atomic.modeBlob, data.modeInfo.clock,
+                                                      data.modeInfo.hdisplay, data.modeInfo.vdisplay, data.modeInfo.vrefresh, data.modeInfo.name)));
         }
     }
 

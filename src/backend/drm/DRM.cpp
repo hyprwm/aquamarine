@@ -542,7 +542,7 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
 
     const auto& BACKEND = pageFlip->connector->backend;
 
-    BACKEND->log(AQ_LOG_TRACE, std::format("drm: pf event seq {} sec {} usec {} crtc {}", seq, tv_sec, tv_usec, crtc_id));
+    TRACE(BACKEND->log(AQ_LOG_TRACE, std::format("drm: pf event seq {} sec {} usec {} crtc {}", seq, tv_sec, tv_usec, crtc_id)));
 
     if (pageFlip->connector->status != DRM_MODE_CONNECTED || !pageFlip->connector->crtc) {
         BACKEND->log(AQ_LOG_DEBUG, "drm: Ignoring a pf event from a disabled crtc / connector");
@@ -612,7 +612,7 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getRenderFormats() {
             continue;
 
         if (primary) {
-            backend->log(AQ_LOG_TRACE, std::format("drm: getRenderFormats on secondary {}", gpu->path));
+            TRACE(backend->log(AQ_LOG_TRACE, std::format("drm: getRenderFormats on secondary {}", gpu->path)));
 
             // this is a secondary GPU renderer. In order to receive buffers,
             // we'll force linear modifiers.
@@ -636,7 +636,7 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getCursorFormats() {
             continue;
 
         if (primary) {
-            backend->log(AQ_LOG_TRACE, std::format("drm: getCursorFormats on secondary {}", gpu->path));
+            TRACE(backend->log(AQ_LOG_TRACE, std::format("drm: getCursorFormats on secondary {}", gpu->path)));
 
             // this is a secondary GPU renderer. In order to receive buffers,
             // we'll force linear modifiers.
@@ -679,7 +679,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
         else
             formats.emplace_back(SDRMFormat{.drmFormat = plane->formats[i], .modifiers = {DRM_FORMAT_MOD_LINEAR}});
 
-        backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Format {}", fourccToName(plane->formats[i])));
+        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Format {}", fourccToName(plane->formats[i]))));
     }
 
     if (props.in_formats && backend->drmProps.supportsAddFb2Modifiers) {
@@ -701,7 +701,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
         while (drmModeFormatModifierBlobIterNext(blob, &iter)) {
             auto it = std::find_if(formats.begin(), formats.end(), [iter](const auto& e) { return e.drmFormat == iter.fmt; });
 
-            backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Modifier {} with format {}", iter.mod, fourccToName(iter.fmt)));
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Modifier {} with format {}", iter.mod, fourccToName(iter.fmt))));
 
             if (it == formats.end())
                 formats.emplace_back(SDRMFormat{.drmFormat = iter.fmt, .modifiers = {iter.mod}});
@@ -735,7 +735,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* connector) {
     uint32_t crtcID = 0;
     if (props.crtc_id) {
-        backend->backend->log(AQ_LOG_TRACE, "drm: Using crtc_id for finding crtc");
+        TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Using crtc_id for finding crtc"));
         uint64_t value = 0;
         if (!getDRMProp(backend->gpu->fd, id, props.crtc_id, &value)) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Failed to get CRTC_ID");
@@ -743,7 +743,7 @@ SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* c
         }
         crtcID = static_cast<uint32_t>(value);
     } else if (connector->encoder_id) {
-        backend->backend->log(AQ_LOG_TRACE, "drm: Using encoder_id for finding crtc");
+        TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Using encoder_id for finding crtc"));
         auto encoder = drmModeGetEncoder(backend->gpu->fd, connector->encoder_id);
         if (!encoder) {
             backend->backend->log(AQ_LOG_ERROR, "drm: drmModeGetEncoder failed");
@@ -1085,7 +1085,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     }
 
     if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->attachments.has(AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE)) {
-        backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer.");
+        TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer."));
         return false;
     }
 
@@ -1124,7 +1124,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     SDRMConnectorCommitData data;
 
     if (STATE.buffer) {
-        backend->backend->log(AQ_LOG_TRACE, "drm: Committed a buffer, updating state");
+        TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Committed a buffer, updating state"));
 
         SP<CDRMFB> drmFB;
         auto       buf   = STATE.buffer;
@@ -1156,7 +1156,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         // TODO: add an API to detect this and request drm_dumb linear buffers. Or do something,
         // idk
         if (data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID) {
-            backend->backend->log(AQ_LOG_TRACE, "drm: Dropping invalid buffer for cursor plane");
+            TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Dropping invalid buffer for cursor plane"));
             data.cursorFB = nullptr;
         }
     }
@@ -1266,7 +1266,7 @@ SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CW
     if (buffer_->attachments.has(AQ_ATTACHMENT_DRM_BUFFER)) {
         auto at = (CDRMBufferAttachment*)buffer_->attachments.get(AQ_ATTACHMENT_DRM_BUFFER).get();
         fb      = at->fb;
-        backend_->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: buffer has drmfb attachment with fb {:x}", (uintptr_t)fb.get()));
+        TRACE(backend_->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: buffer has drmfb attachment with fb {:x}", (uintptr_t)fb.get())));
     }
 
     if (fb) {
@@ -1311,7 +1311,7 @@ void Aquamarine::CDRMFB::import() {
             return;
         }
 
-        backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i), boHandles.at(i)));
+        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i), boHandles.at(i))));
     }
 
     id = submitBuffer();
@@ -1322,7 +1322,7 @@ void Aquamarine::CDRMFB::import() {
         return;
     }
 
-    backend->backend->log(AQ_LOG_TRACE, std::format("drm: new buffer {}", id));
+    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: new buffer {}", id)));
 
     // FIXME: why does this implode when it doesnt on wlroots or kwin?
     // closeHandles();
@@ -1379,7 +1379,7 @@ void Aquamarine::CDRMFB::drop() {
 
     closeHandles();
 
-    backend->backend->log(AQ_LOG_TRACE, std::format("drm: dropping buffer {}", id));
+    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: dropping buffer {}", id)));
 
     int ret = drmModeCloseFB(backend->gpu->fd, id);
     if (ret == -EINVAL)
@@ -1398,9 +1398,9 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
     }
 
     if (backend->drmProps.supportsAddFb2Modifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
-        backend->backend->log(AQ_LOG_TRACE,
-                              std::format("drm: Using drmModeAddFB2WithModifiers to import buffer into KMS: Size {} with format {} and mod {}", attrs.size,
-                                          fourccToName(attrs.format), attrs.modifier));
+        TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                    std::format("drm: Using drmModeAddFB2WithModifiers to import buffer into KMS: Size {} with format {} and mod {}", attrs.size,
+                                                fourccToName(attrs.format), attrs.modifier)));
         if (drmModeAddFB2WithModifiers(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), mods.data(),
                                        &newID, DRM_MODE_FB_MODIFIERS)) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2WithModifiers");
@@ -1412,9 +1412,9 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
             return 0;
         }
 
-        backend->backend->log(
+        TRACE(backend->backend->log(
             AQ_LOG_TRACE,
-            std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod {}", attrs.size, fourccToName(attrs.format), attrs.modifier));
+            std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod {}", attrs.size, fourccToName(attrs.format), attrs.modifier)));
 
         if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), &newID, 0)) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2");
