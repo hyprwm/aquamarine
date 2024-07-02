@@ -271,10 +271,34 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             .test     = false,
         };
 
-        if (c->output->state->state().mode && c->output->state->state().mode->modeInfo.has_value())
-            data.modeInfo = *c->output->state->state().mode->modeInfo;
+        auto& STATE = c->output->state->state();
+
+        if (STATE.mode && STATE.mode->modeInfo.has_value())
+            data.modeInfo = *STATE.mode->modeInfo;
         else
             data.calculateMode(c);
+
+        if (STATE.buffer) {
+            SP<CDRMFB> drmFB;
+            auto       buf   = STATE.buffer;
+            bool       isNew = false;
+
+            drmFB = CDRMFB::create(buf, self, &isNew);
+
+            if (!drmFB)
+                backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
+
+            if (!isNew && primary && drmFB)
+                drmFB->reimport();
+
+            data.mainFB = drmFB;
+        }
+
+        if (c->crtc->pendingCursor)
+            data.cursorFB = c->crtc->pendingCursor;
+
+        if (data.cursorFB && data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID)
+            data.cursorFB = nullptr;
 
         backend->log(AQ_LOG_DEBUG,
                      std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, data.modeInfo.clock, data.modeInfo.hdisplay,
