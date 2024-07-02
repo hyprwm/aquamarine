@@ -2,6 +2,7 @@
   lib,
   stdenv,
   cmake,
+  hwdata,
   hyprutils,
   hyprwayland-scanner,
   libdisplay-info,
@@ -41,6 +42,10 @@ stdenv.mkDerivation {
     udev
     wayland
     wayland-protocols
+  ];
+
+  depsBuildBuild = [
+    hwdata
   ];
 
   outputs = ["out" "dev"];
