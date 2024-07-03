@@ -231,6 +231,7 @@ SP<CSession> Aquamarine::CSession::attempt(Hyprutils::Memory::CSharedPointer<CBa
 
 Aquamarine::CSession::~CSession() {
     sessionDevices.clear();
+    libinputDevices.clear();
 
     if (libinputHandle)
         libinput_unref(libinputHandle);
