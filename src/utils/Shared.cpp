@@ -6,10 +6,8 @@ bool Aquamarine::envEnabled(const std::string& env) {
     return e && e == std::string{"1"};
 }
 
-static bool trace = []() -> bool {
-    return Aquamarine::envEnabled("AQ_TRACE");
-}();
+static bool trace = []() -> bool { return Aquamarine::envEnabled("AQ_TRACE"); }();
 
-bool Aquamarine::isTrace() {
+bool        Aquamarine::isTrace() {
     return trace;
 }

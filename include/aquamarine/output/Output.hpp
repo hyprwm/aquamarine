@@ -21,12 +21,12 @@ namespace Aquamarine {
         std::optional<drmModeModeInfo> modeInfo; // if this is a drm mode, this will be populated.
     };
 
-    enum eOutputPresentationMode {
+    enum eOutputPresentationMode : uint32_t {
         AQ_OUTPUT_PRESENTATION_VSYNC = 0,
         AQ_OUTPUT_PRESENTATION_IMMEDIATE, // likely tearing
     };
 
-    enum eSubpixelMode {
+    enum eSubpixelMode : uint32_t {
         AQ_SUBPIXEL_UNKNOWN = 0,
         AQ_SUBPIXEL_NONE,
         AQ_SUBPIXEL_HORIZONTAL_RGB,

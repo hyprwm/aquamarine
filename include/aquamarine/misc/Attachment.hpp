@@ -4,7 +4,7 @@
 #include <hyprutils/memory/SharedPtr.hpp>
 
 namespace Aquamarine {
-    enum eAttachmentType {
+    enum eAttachmentType : uint32_t {
         AQ_ATTACHMENT_DRM_BUFFER = 0,
         AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE,
     };

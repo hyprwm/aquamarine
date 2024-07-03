@@ -7,11 +7,11 @@
 #include "../misc/Attachment.hpp"
 
 namespace Aquamarine {
-    enum eBufferCapability {
+    enum eBufferCapability : uint32_t {
         BUFFER_CAPABILITY_DATAPTR = (1 << 0),
     };
 
-    enum eBufferType {
+    enum eBufferType : uint32_t {
         BUFFER_TYPE_DMABUF = 0,
         BUFFER_TYPE_SHM,
         BUFFER_TYPE_MISC,

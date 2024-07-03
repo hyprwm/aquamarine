@@ -8,6 +8,7 @@ extern "C" {
 #include <xf86drm.h>
 #include <sys/stat.h>
 #include <xf86drmMode.h>
+#include <linux/input.h>
 }
 
 using namespace Aquamarine;
@@ -270,8 +271,14 @@ void Aquamarine::CSession::onReady() {
             backend->events.newTouch.emit(SP<ITouch>(d->touch));
         if (d->switchy)
             backend->events.newSwitch.emit(SP<ITouch>(d->touch));
+        if (d->tablet)
+            backend->events.newTablet.emit(SP<ITablet>(d->tablet));
+        if (d->tabletPad)
+            backend->events.newTabletPad.emit(SP<ITabletPad>(d->tabletPad));
 
-        // FIXME: other devices.
+        for (auto& t : d->tabletTools) {
+            backend->events.newTabletTool.emit(SP<ITabletTool>(t));
+        }
     }
 }
 
@@ -400,7 +407,8 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
         return;
     }
 
-    auto hlDevice = ((CLibinputDevice*)data)->self.lock();
+    auto hlDevice    = ((CLibinputDevice*)data)->self.lock();
+    bool destroyTool = false;
 
     switch (eventType) {
         case LIBINPUT_EVENT_DEVICE_ADDED:
@@ -640,7 +648,145 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
 
             // --------- tbalet
 
-            // FIXME: other events
+        case LIBINPUT_EVENT_TABLET_PAD_BUTTON: {
+            auto tpe = libinput_event_get_tablet_pad_event(e);
+
+            hlDevice->tabletPad->events.button.emit(ITabletPad::SButtonEvent{
+                .timeMs = (uint32_t)(libinput_event_tablet_pad_get_time_usec(tpe) / 1000),
+                .button = libinput_event_tablet_pad_get_button_number(tpe),
+                .down   = libinput_event_tablet_pad_get_button_state(tpe) == LIBINPUT_BUTTON_STATE_PRESSED,
+                .mode   = (uint16_t)libinput_event_tablet_pad_get_mode(tpe),
+                .group  = (uint16_t)libinput_tablet_pad_mode_group_get_index(libinput_event_tablet_pad_get_mode_group(tpe)),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_TABLET_PAD_RING: {
+            auto tpe = libinput_event_get_tablet_pad_event(e);
+
+            hlDevice->tabletPad->events.ring.emit(ITabletPad::SRingEvent{
+                .timeMs = (uint32_t)(libinput_event_tablet_pad_get_time_usec(tpe) / 1000),
+                .source = libinput_event_tablet_pad_get_ring_source(tpe) == LIBINPUT_TABLET_PAD_RING_SOURCE_UNKNOWN ? ITabletPad::AQ_TABLET_PAD_RING_SOURCE_UNKNOWN :
+                                                                                                                      ITabletPad::AQ_TABLET_PAD_RING_SOURCE_FINGER,
+                .ring   = (uint16_t)libinput_event_tablet_pad_get_ring_number(tpe),
+                .pos    = libinput_event_tablet_pad_get_ring_position(tpe),
+                .mode   = (uint16_t)libinput_event_tablet_pad_get_mode(tpe),
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_TABLET_PAD_STRIP: {
+            auto tpe = libinput_event_get_tablet_pad_event(e);
+
+            hlDevice->tabletPad->events.strip.emit(ITabletPad::SStripEvent{
+                .timeMs = (uint32_t)(libinput_event_tablet_pad_get_time_usec(tpe) / 1000),
+                .source = libinput_event_tablet_pad_get_strip_source(tpe) == LIBINPUT_TABLET_PAD_STRIP_SOURCE_UNKNOWN ? ITabletPad::AQ_TABLET_PAD_STRIP_SOURCE_UNKNOWN :
+                                                                                                                        ITabletPad::AQ_TABLET_PAD_STRIP_SOURCE_FINGER,
+                .strip  = (uint16_t)libinput_event_tablet_pad_get_strip_number(tpe),
+                .pos    = libinput_event_tablet_pad_get_strip_position(tpe),
+                .mode   = (uint16_t)libinput_event_tablet_pad_get_mode(tpe),
+            });
+            break;
+        }
+
+        case LIBINPUT_EVENT_TABLET_TOOL_PROXIMITY: {
+            auto tte  = libinput_event_get_tablet_tool_event(e);
+            auto tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
+
+            hlDevice->tablet->events.proximity.emit(ITablet::SProximityEvent{
+                .tool     = tool,
+                .timeMs   = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
+                .absolute = {libinput_event_tablet_tool_get_x_transformed(tte, 1), libinput_event_tablet_tool_get_y_transformed(tte, 1)},
+                .in       = libinput_event_tablet_tool_get_proximity_state(tte) == LIBINPUT_TABLET_TOOL_PROXIMITY_STATE_IN,
+            });
+
+            destroyTool = !libinput_tablet_tool_is_unique(libinput_event_tablet_tool_get_tool(tte)) &&
+                libinput_event_tablet_tool_get_proximity_state(tte) == LIBINPUT_TABLET_TOOL_PROXIMITY_STATE_OUT;
+
+            if (libinput_event_tablet_tool_get_proximity_state(tte) == LIBINPUT_TABLET_TOOL_PROXIMITY_STATE_OUT) {
+                std::erase(hlDevice->tabletTools, tool);
+                break;
+            }
+
+            // fallthrough. If this is proximity in, also process axis.
+        }
+        case LIBINPUT_EVENT_TABLET_TOOL_AXIS: {
+            auto                tte  = libinput_event_get_tablet_tool_event(e);
+            auto                tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
+
+            ITablet::SAxisEvent event = {
+                .tool   = tool,
+                .timeMs = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
+            };
+
+            if (libinput_event_tablet_tool_x_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_X;
+                event.absolute.x = libinput_event_tablet_tool_get_x_transformed(tte, 1);
+                event.delta.x    = libinput_event_tablet_tool_get_dx(tte);
+            }
+            if (libinput_event_tablet_tool_y_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_Y;
+                event.absolute.y = libinput_event_tablet_tool_get_y_transformed(tte, 1);
+                event.delta.y    = libinput_event_tablet_tool_get_dy(tte);
+            }
+            if (libinput_event_tablet_tool_pressure_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_PRESSURE;
+                event.pressure = libinput_event_tablet_tool_get_pressure(tte);
+            }
+            if (libinput_event_tablet_tool_distance_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_DISTANCE;
+                event.distance = libinput_event_tablet_tool_get_distance(tte);
+            }
+            if (libinput_event_tablet_tool_tilt_x_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_TILT_X;
+                event.tilt.x = libinput_event_tablet_tool_get_tilt_x(tte);
+            }
+            if (libinput_event_tablet_tool_tilt_y_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_TILT_Y;
+                event.tilt.y = libinput_event_tablet_tool_get_tilt_y(tte);
+            }
+            if (libinput_event_tablet_tool_rotation_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_ROTATION;
+                event.rotation = libinput_event_tablet_tool_get_rotation(tte);
+            }
+            if (libinput_event_tablet_tool_slider_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_SLIDER;
+                event.slider = libinput_event_tablet_tool_get_slider_position(tte);
+            }
+            if (libinput_event_tablet_tool_wheel_has_changed(tte)) {
+                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_WHEEL;
+                event.wheelDelta = libinput_event_tablet_tool_get_wheel_delta(tte);
+            }
+
+            hlDevice->tablet->events.axis.emit(event);
+
+            if (destroyTool)
+                std::erase(hlDevice->tabletTools, tool);
+
+            break;
+        }
+        case LIBINPUT_EVENT_TABLET_TOOL_TIP: {
+            auto tte  = libinput_event_get_tablet_tool_event(e);
+            auto tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
+
+            hlDevice->tablet->events.tip.emit(ITablet::STipEvent{
+                .tool     = tool,
+                .timeMs   = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
+                .absolute = {libinput_event_tablet_tool_get_x_transformed(tte, 1), libinput_event_tablet_tool_get_y_transformed(tte, 1)},
+                .down     = libinput_event_tablet_tool_get_tip_state(tte) == LIBINPUT_TABLET_TOOL_TIP_DOWN,
+            });
+            break;
+        }
+        case LIBINPUT_EVENT_TABLET_TOOL_BUTTON: {
+            auto tte  = libinput_event_get_tablet_tool_event(e);
+            auto tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
+
+            hlDevice->tablet->events.button.emit(ITablet::SButtonEvent{
+                .tool   = tool,
+                .timeMs = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
+                .button = libinput_event_tablet_tool_get_button(tte),
+                .down   = libinput_event_tablet_tool_get_button_state(tte) == LIBINPUT_BUTTON_STATE_PRESSED,
+            });
+            break;
+        }
 
         default: break;
     }
@@ -686,11 +832,48 @@ void Aquamarine::CLibinputDevice::init() {
             session->backend->events.newSwitch.emit(SP<ISwitch>(switchy));
     }
 
-    // FIXME: other devices
+    if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_TABLET_TOOL)) {
+        tablet = makeShared<CLibinputTablet>(self.lock());
+        if (session->backend->ready)
+            session->backend->events.newTablet.emit(SP<ITablet>(tablet));
+    }
+
+    if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_TABLET_PAD)) {
+        tabletPad = makeShared<CLibinputTabletPad>(self.lock());
+        if (session->backend->ready)
+            session->backend->events.newTabletPad.emit(SP<ITabletPad>(tabletPad));
+    }
 }
 
 Aquamarine::CLibinputDevice::~CLibinputDevice() {
     libinput_device_unref(device);
+}
+
+SP<CLibinputTabletTool> Aquamarine::CLibinputDevice::toolFrom(libinput_tablet_tool* tool) {
+    for (auto& t : tabletTools) {
+        if (t->libinputTool == tool)
+            return t;
+    }
+
+    auto newt = makeShared<CLibinputTabletTool>(self.lock(), tool);
+    tabletTools.emplace_back(newt);
+    if (session->backend->ready)
+        session->backend->events.newTabletTool.emit(SP<ITabletTool>(newt));
+    return newt;
+}
+
+static ITabletTool::eTabletToolType aqTypeFromLibinput(libinput_tablet_tool_type value) {
+    switch (value) {
+        case LIBINPUT_TABLET_TOOL_TYPE_PEN: return ITabletTool::AQ_TABLET_TOOL_TYPE_PEN;
+        case LIBINPUT_TABLET_TOOL_TYPE_ERASER: return ITabletTool::AQ_TABLET_TOOL_TYPE_ERASER;
+        case LIBINPUT_TABLET_TOOL_TYPE_BRUSH: return ITabletTool::AQ_TABLET_TOOL_TYPE_BRUSH;
+        case LIBINPUT_TABLET_TOOL_TYPE_PENCIL: return ITabletTool::AQ_TABLET_TOOL_TYPE_PENCIL;
+        case LIBINPUT_TABLET_TOOL_TYPE_AIRBRUSH: return ITabletTool::AQ_TABLET_TOOL_TYPE_AIRBRUSH;
+        case LIBINPUT_TABLET_TOOL_TYPE_MOUSE: return ITabletTool::AQ_TABLET_TOOL_TYPE_MOUSE;
+        case LIBINPUT_TABLET_TOOL_TYPE_LENS: return ITabletTool::AQ_TABLET_TOOL_TYPE_LENS;
+        case LIBINPUT_TABLET_TOOL_TYPE_TOTEM: return ITabletTool::AQ_TABLET_TOOL_TYPE_TOTEM;
+    }
+    return ITabletTool::AQ_TABLET_TOOL_TYPE_INVALID;
 }
 
 Aquamarine::CLibinputKeyboard::CLibinputKeyboard(SP<CLibinputDevice> dev) : device(dev) {}
@@ -759,4 +942,136 @@ const std::string& Aquamarine::CLibinputSwitch::getName() {
     if (!device)
         return AQ_UNKNOWN_DEVICE_NAME;
     return device->name;
+}
+
+Aquamarine::CLibinputTablet::CLibinputTablet(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev) : device(dev) {
+    if (libinput_device_get_id_bustype(device->device) == BUS_USB) {
+        usbVendorID  = libinput_device_get_id_vendor(device->device);
+        usbProductID = libinput_device_get_id_product(device->device);
+    }
+
+    double w = 0, h = 0;
+    libinput_device_get_size(dev->device, &w, &h);
+    physicalSize = {w, h};
+
+    auto udevice = libinput_device_get_udev_device(device->device);
+    paths.emplace_back(udev_device_get_syspath(udevice));
+}
+
+libinput_device* Aquamarine::CLibinputTablet::getLibinputHandle() {
+    if (!device)
+        return nullptr;
+    return device->device;
+}
+
+const std::string& Aquamarine::CLibinputTablet::getName() {
+    if (!device)
+        return AQ_UNKNOWN_DEVICE_NAME;
+    return device->name;
+}
+
+Aquamarine::CLibinputTabletTool::CLibinputTabletTool(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev, libinput_tablet_tool* tool) : device(dev), libinputTool(tool) {
+    type   = aqTypeFromLibinput(libinput_tablet_tool_get_type(libinputTool));
+    serial = libinput_tablet_tool_get_serial(libinputTool);
+    id     = libinput_tablet_tool_get_tool_id(libinputTool);
+
+    libinput_tablet_tool_ref(tool);
+
+    capabilities = 0;
+    if (libinput_tablet_tool_has_distance(tool))
+        capabilities |= AQ_TABLET_TOOL_CAPABILITY_DISTANCE;
+    if (libinput_tablet_tool_has_pressure(tool))
+        capabilities |= AQ_TABLET_TOOL_CAPABILITY_PRESSURE;
+    if (libinput_tablet_tool_has_tilt(tool))
+        capabilities |= AQ_TABLET_TOOL_CAPABILITY_TILT;
+    if (libinput_tablet_tool_has_rotation(tool))
+        capabilities |= AQ_TABLET_TOOL_CAPABILITY_ROTATION;
+    if (libinput_tablet_tool_has_slider(tool))
+        capabilities |= AQ_TABLET_TOOL_CAPABILITY_SLIDER;
+    if (libinput_tablet_tool_has_wheel(tool))
+        capabilities |= AQ_TABLET_TOOL_CAPABILITY_WHEEL;
+
+    libinput_tablet_tool_set_user_data(tool, this);
+}
+
+Aquamarine::CLibinputTabletTool::~CLibinputTabletTool() {
+    libinput_tablet_tool_unref(libinputTool);
+}
+
+libinput_device* Aquamarine::CLibinputTabletTool::getLibinputHandle() {
+    if (!device)
+        return nullptr;
+    return device->device;
+}
+
+const std::string& Aquamarine::CLibinputTabletTool::getName() {
+    if (!device)
+        return AQ_UNKNOWN_DEVICE_NAME;
+    return device->name;
+}
+
+Aquamarine::CLibinputTabletPad::CLibinputTabletPad(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev) : device(dev) {
+    buttons = libinput_device_tablet_pad_get_num_buttons(device->device);
+    rings   = libinput_device_tablet_pad_get_num_rings(device->device);
+    strips  = libinput_device_tablet_pad_get_num_strips(device->device);
+
+    auto udevice = libinput_device_get_udev_device(device->device);
+    paths.emplace_back(udev_device_get_syspath(udevice));
+
+    int groupsno = libinput_device_tablet_pad_get_num_mode_groups(device->device);
+    for (size_t i = 0; i < groupsno; ++i) {
+        auto g = createGroupFromID(i);
+        if (g)
+            groups.emplace_back(g);
+    }
+}
+
+Aquamarine::CLibinputTabletPad::~CLibinputTabletPad() {
+    int groups = libinput_device_tablet_pad_get_num_mode_groups(device->device);
+    for (int i = 0; i < groups; ++i) {
+        auto g = libinput_device_tablet_pad_get_mode_group(device->device, i);
+        libinput_tablet_pad_mode_group_unref(g);
+    }
+}
+
+libinput_device* Aquamarine::CLibinputTabletPad::getLibinputHandle() {
+    if (!device)
+        return nullptr;
+    return device->device;
+}
+
+const std::string& Aquamarine::CLibinputTabletPad::getName() {
+    if (!device)
+        return AQ_UNKNOWN_DEVICE_NAME;
+    return device->name;
+}
+
+SP<ITabletPad::STabletPadGroup> Aquamarine::CLibinputTabletPad::createGroupFromID(int id) {
+    auto libinputGroup = libinput_device_tablet_pad_get_mode_group(device->device, id);
+
+    auto group = makeShared<STabletPadGroup>();
+    for (size_t i = 0; i < rings; ++i) {
+        if (!libinput_tablet_pad_mode_group_has_ring(libinputGroup, i))
+            continue;
+
+        group->rings.push_back(i);
+    }
+
+    for (size_t i = 0; i < strips; ++i) {
+        if (!libinput_tablet_pad_mode_group_has_strip(libinputGroup, i))
+            continue;
+
+        group->strips.push_back(i);
+    }
+
+    for (size_t i = 0; i < buttons; ++i) {
+        if (!libinput_tablet_pad_mode_group_has_button(libinputGroup, i))
+            continue;
+
+        group->buttons.push_back(i);
+    }
+
+    group->modes = libinput_tablet_pad_mode_group_get_num_modes(libinputGroup);
+
+    return group;
 }

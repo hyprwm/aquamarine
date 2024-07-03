@@ -16,6 +16,18 @@ libinput_device* Aquamarine::ISwitch::getLibinputHandle() {
     return nullptr;
 }
 
+libinput_device* Aquamarine::ITabletTool::getLibinputHandle() {
+    return nullptr;
+}
+
+libinput_device* Aquamarine::ITablet::getLibinputHandle() {
+    return nullptr;
+}
+
+libinput_device* Aquamarine::ITabletPad::getLibinputHandle() {
+    return nullptr;
+}
+
 void Aquamarine::IKeyboard::updateLEDs(uint32_t leds) {
     ;
 }

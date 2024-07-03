@@ -11,13 +11,13 @@
 #include "Session.hpp"
 
 namespace Aquamarine {
-    enum eBackendType {
+    enum eBackendType : uint32_t {
         AQ_BACKEND_WAYLAND = 0,
         AQ_BACKEND_DRM,
         AQ_BACKEND_HEADLESS,
     };
 
-    enum eBackendRequestMode {
+    enum eBackendRequestMode : uint32_t {
         /*
             Require the provided backend, will error out if it's not available.
         */
@@ -32,7 +32,7 @@ namespace Aquamarine {
         AQ_BACKEND_REQUEST_FALLBACK,
     };
 
-    enum eBackendLogLevel {
+    enum eBackendLogLevel : uint32_t {
         AQ_LOG_TRACE = 0,
         AQ_LOG_DEBUG,
         AQ_LOG_WARNING,

@@ -13,6 +13,7 @@ struct libseat;
 struct libinput;
 struct libinput_event;
 struct libinput_device;
+struct libinput_tablet_tool;
 
 namespace Aquamarine {
     class CBackend;
@@ -34,7 +35,7 @@ namespace Aquamarine {
         dev_t                                                    dev;
         std::string                                              path;
 
-        enum eChangeEventType {
+        enum eChangeEventType : uint32_t {
             AQ_SESSION_EVENT_CHANGE_HOTPLUG = 0,
             AQ_SESSION_EVENT_CHANGE_LEASE,
         };
@@ -69,6 +70,8 @@ namespace Aquamarine {
 
       private:
         Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+
+        friend class CLibinputDevice;
     };
 
     class CLibinputMouse : public IPointer {
@@ -83,6 +86,8 @@ namespace Aquamarine {
 
       private:
         Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+
+        friend class CLibinputDevice;
     };
 
     class CLibinputTouch : public ITouch {
@@ -97,6 +102,8 @@ namespace Aquamarine {
 
       private:
         Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+
+        friend class CLibinputDevice;
     };
 
     class CLibinputSwitch : public ISwitch {
@@ -114,6 +121,55 @@ namespace Aquamarine {
 
       private:
         Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+
+        friend class CLibinputDevice;
+    };
+
+    class CLibinputTablet : public ITablet {
+      public:
+        CLibinputTablet(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev);
+        virtual ~CLibinputTablet() {
+            ;
+        }
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName();
+
+      private:
+        Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+
+        friend class CLibinputDevice;
+    };
+
+    class CLibinputTabletTool : public ITabletTool {
+      public:
+        CLibinputTabletTool(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev, libinput_tablet_tool* tool);
+        virtual ~CLibinputTabletTool();
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName();
+
+      private:
+        Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;
+        libinput_tablet_tool*                            libinputTool = nullptr;
+
+        friend class CLibinputDevice;
+    };
+
+    class CLibinputTabletPad : public ITabletPad {
+      public:
+        CLibinputTabletPad(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev);
+        virtual ~CLibinputTabletPad();
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName();
+
+      private:
+        Hyprutils::Memory::CWeakPointer<CLibinputDevice>               device;
+
+        Hyprutils::Memory::CSharedPointer<ITabletPad::STabletPadGroup> createGroupFromID(int id);
+
+        friend class CLibinputDevice;
     };
 
     class CLibinputDevice {
@@ -121,17 +177,22 @@ namespace Aquamarine {
         CLibinputDevice(libinput_device* device, Hyprutils::Memory::CWeakPointer<CSession> session_);
         ~CLibinputDevice();
 
-        void                                                 init();
+        void                                                                init();
 
-        libinput_device*                                     device;
-        Hyprutils::Memory::CWeakPointer<CLibinputDevice>     self;
-        Hyprutils::Memory::CWeakPointer<CSession>            session;
-        std::string                                          name;
+        libinput_device*                                                    device;
+        Hyprutils::Memory::CWeakPointer<CLibinputDevice>                    self;
+        Hyprutils::Memory::CWeakPointer<CSession>                           session;
+        std::string                                                         name;
 
-        Hyprutils::Memory::CSharedPointer<CLibinputKeyboard> keyboard;
-        Hyprutils::Memory::CSharedPointer<CLibinputMouse>    mouse;
-        Hyprutils::Memory::CSharedPointer<CLibinputTouch>    touch;
-        Hyprutils::Memory::CSharedPointer<CLibinputSwitch>   switchy; // :)
+        Hyprutils::Memory::CSharedPointer<CLibinputKeyboard>                keyboard;
+        Hyprutils::Memory::CSharedPointer<CLibinputMouse>                   mouse;
+        Hyprutils::Memory::CSharedPointer<CLibinputTouch>                   touch;
+        Hyprutils::Memory::CSharedPointer<CLibinputSwitch>                  switchy; // :)
+        Hyprutils::Memory::CSharedPointer<CLibinputTablet>                  tablet;
+        Hyprutils::Memory::CSharedPointer<CLibinputTabletPad>               tabletPad;
+        std::vector<Hyprutils::Memory::CSharedPointer<CLibinputTabletTool>> tabletTools;
+
+        Hyprutils::Memory::CSharedPointer<CLibinputTabletTool>              toolFrom(libinput_tablet_tool* tool);
     };
 
     class CSession {

@@ -6,6 +6,8 @@
 struct libinput_device;
 
 namespace Aquamarine {
+    class ITabletTool;
+
     class IKeyboard {
       public:
         virtual ~IKeyboard() {
@@ -41,19 +43,19 @@ namespace Aquamarine {
         virtual libinput_device*   getLibinputHandle();
         virtual const std::string& getName() = 0;
 
-        enum ePointerAxis {
+        enum ePointerAxis : uint32_t {
             AQ_POINTER_AXIS_VERTICAL = 0,
             AQ_POINTER_AXIS_HORIZONTAL,
         };
 
-        enum ePointerAxisSource {
+        enum ePointerAxisSource : uint32_t {
             AQ_POINTER_AXIS_SOURCE_WHEEL = 0,
             AQ_POINTER_AXIS_SOURCE_FINGER,
             AQ_POINTER_AXIS_SOURCE_CONTINUOUS,
             AQ_POINTER_AXIS_SOURCE_TILT,
         };
 
-        enum ePointerAxisRelativeDirection {
+        enum ePointerAxisRelativeDirection : uint32_t {
             AQ_POINTER_AXIS_RELATIVE_IDENTICAL = 0,
             AQ_POINTER_AXIS_RELATIVE_INVERTED,
         };
@@ -198,7 +200,7 @@ namespace Aquamarine {
         virtual libinput_device*   getLibinputHandle();
         virtual const std::string& getName() = 0;
 
-        enum eSwitchType {
+        enum eSwitchType : uint32_t {
             AQ_SWITCH_TYPE_UNKNOWN = 0,
             AQ_SWITCH_TYPE_LID,
             AQ_SWITCH_TYPE_TABLET_MODE,
@@ -216,18 +218,107 @@ namespace Aquamarine {
         } events;
     };
 
+    enum eTabletToolAxes : uint32_t {
+        AQ_TABLET_TOOL_AXIS_X        = (1 << 0),
+        AQ_TABLET_TOOL_AXIS_Y        = (1 << 1),
+        AQ_TABLET_TOOL_AXIS_DISTANCE = (1 << 2),
+        AQ_TABLET_TOOL_AXIS_PRESSURE = (1 << 3),
+        AQ_TABLET_TOOL_AXIS_TILT_X   = (1 << 4),
+        AQ_TABLET_TOOL_AXIS_TILT_Y   = (1 << 5),
+        AQ_TABLET_TOOL_AXIS_ROTATION = (1 << 6),
+        AQ_TABLET_TOOL_AXIS_SLIDER   = (1 << 7),
+        AQ_TABLET_TOOL_AXIS_WHEEL    = (1 << 8),
+    };
+
     class ITablet {
       public:
-        // FIXME:
+        virtual ~ITablet() {
+            events.destroy.emit();
+        }
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName() = 0;
+
+        uint16_t                   usbVendorID = 0, usbProductID = 0;
+        Hyprutils::Math::Vector2D  physicalSize; // mm
+        std::vector<std::string>   paths;
+
+        struct SAxisEvent {
+            Hyprutils::Memory::CSharedPointer<ITabletTool> tool;
+
+            uint32_t                                       timeMs = 0, updatedAxes = 0;
+            Hyprutils::Math::Vector2D                      absolute;
+            Hyprutils::Math::Vector2D                      delta;
+            Hyprutils::Math::Vector2D                      tilt;
+            double                                         pressure = 0.0, distance = 0.0, rotation = 0.0, slider = 0.0, wheelDelta = 0.0;
+        };
+
+        struct SProximityEvent {
+            Hyprutils::Memory::CSharedPointer<ITabletTool> tool;
+
+            uint32_t                                       timeMs = 0;
+            Hyprutils::Math::Vector2D                      absolute;
+            bool                                           in = false;
+        };
+
+        struct STipEvent {
+            Hyprutils::Memory::CSharedPointer<ITabletTool> tool;
+
+            uint32_t                                       timeMs = 0;
+            Hyprutils::Math::Vector2D                      absolute;
+            bool                                           down = false;
+        };
+
+        struct SButtonEvent {
+            Hyprutils::Memory::CSharedPointer<ITabletTool> tool;
+
+            uint32_t                                       timeMs = 0, button = 0;
+            bool                                           down = false;
+        };
 
         struct {
+            Hyprutils::Signal::CSignal axis;
+            Hyprutils::Signal::CSignal proximity;
+            Hyprutils::Signal::CSignal tip;
+            Hyprutils::Signal::CSignal button;
             Hyprutils::Signal::CSignal destroy;
         } events;
     };
 
     class ITabletTool {
       public:
-        // FIXME:
+        virtual ~ITabletTool() {
+            events.destroy.emit();
+        }
+
+        virtual libinput_device*   getLibinputHandle();
+        virtual const std::string& getName() = 0;
+
+        enum eTabletToolType : uint32_t {
+            AQ_TABLET_TOOL_TYPE_INVALID = 0,
+            AQ_TABLET_TOOL_TYPE_PEN,
+            AQ_TABLET_TOOL_TYPE_ERASER,
+            AQ_TABLET_TOOL_TYPE_BRUSH,
+            AQ_TABLET_TOOL_TYPE_PENCIL,
+            AQ_TABLET_TOOL_TYPE_AIRBRUSH,
+            AQ_TABLET_TOOL_TYPE_MOUSE,
+            AQ_TABLET_TOOL_TYPE_LENS,
+            AQ_TABLET_TOOL_TYPE_TOTEM,
+        };
+
+        eTabletToolType type   = AQ_TABLET_TOOL_TYPE_INVALID;
+        uint64_t        serial = 0, id = 0;
+
+        enum eTabletToolCapabilities : uint32_t {
+            AQ_TABLET_TOOL_CAPABILITY_TILT     = (1 << 0),
+            AQ_TABLET_TOOL_CAPABILITY_PRESSURE = (1 << 1),
+            AQ_TABLET_TOOL_CAPABILITY_DISTANCE = (1 << 2),
+            AQ_TABLET_TOOL_CAPABILITY_ROTATION = (1 << 3),
+            AQ_TABLET_TOOL_CAPABILITY_SLIDER   = (1 << 4),
+            AQ_TABLET_TOOL_CAPABILITY_WHEEL    = (1 << 5),
+        };
+
+        uint32_t capabilities = 0; // enum eTabletToolCapabilities
 
         struct {
             Hyprutils::Signal::CSignal destroy;
@@ -236,10 +327,63 @@ namespace Aquamarine {
 
     class ITabletPad {
       public:
-        // FIXME:
+        virtual ~ITabletPad() {
+            events.destroy.emit();
+        }
+
+        struct STabletPadGroup {
+            std::vector<uint32_t> buttons, strips, rings;
+            uint16_t              modes = 0;
+        };
+
+        virtual libinput_device*                                        getLibinputHandle();
+        virtual const std::string&                                      getName() = 0;
+
+        uint16_t                                                        buttons = 0, rings = 0, strips = 0;
+
+        std::vector<std::string>                                        paths;
+        std::vector<Hyprutils::Memory::CSharedPointer<STabletPadGroup>> groups;
+
+        //
+
+        struct SButtonEvent {
+            uint32_t timeMs = 0, button = 0;
+            bool     down = false;
+            uint16_t mode = 0, group = 0;
+        };
+
+        enum eTabletPadRingSource : uint16_t {
+            AQ_TABLET_PAD_RING_SOURCE_UNKNOWN = 0,
+            AQ_TABLET_PAD_RING_SOURCE_FINGER,
+        };
+
+        enum eTabletPadStripSource : uint16_t {
+            AQ_TABLET_PAD_STRIP_SOURCE_UNKNOWN = 0,
+            AQ_TABLET_PAD_STRIP_SOURCE_FINGER,
+        };
+
+        struct SRingEvent {
+            uint32_t             timeMs = 0;
+            eTabletPadRingSource source = AQ_TABLET_PAD_RING_SOURCE_UNKNOWN;
+            uint16_t             ring   = 0;
+            double               pos    = 0.0;
+            uint16_t             mode   = 0;
+        };
+
+        struct SStripEvent {
+            uint32_t              timeMs = 0;
+            eTabletPadStripSource source = AQ_TABLET_PAD_STRIP_SOURCE_UNKNOWN;
+            uint16_t              strip  = 0;
+            double                pos    = 0.0;
+            uint16_t              mode   = 0;
+        };
 
         struct {
             Hyprutils::Signal::CSignal destroy;
+            Hyprutils::Signal::CSignal button;
+            Hyprutils::Signal::CSignal ring;
+            Hyprutils::Signal::CSignal strip;
+            Hyprutils::Signal::CSignal attach;
         } events;
     };
 }
