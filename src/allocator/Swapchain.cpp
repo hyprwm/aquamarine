@@ -114,3 +114,9 @@ bool Aquamarine::CSwapchain::contains(Hyprutils::Memory::CSharedPointer<IBuffer>
 const SSwapchainOptions& Aquamarine::CSwapchain::currentOptions() {
     return options;
 }
+
+void Aquamarine::CSwapchain::rollback() {
+    lastAcquired--;
+    if (lastAcquired < 0)
+        lastAcquired = options.length - 1;
+}

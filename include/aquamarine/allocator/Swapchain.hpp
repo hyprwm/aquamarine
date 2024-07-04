@@ -24,6 +24,11 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<IBuffer>           next(int* age);
         const SSwapchainOptions&                             currentOptions();
 
+        // rolls the buffers back, marking the last consumed as the next valid.
+        // useful if e.g. a commit fails and we don't wanna write to the previous buffer that is
+        // in use.
+        void rollback();
+
       private:
         CSwapchain(Hyprutils::Memory::CSharedPointer<IAllocator> allocator_, Hyprutils::Memory::CSharedPointer<IBackendImplementation> backendImpl_);
 
