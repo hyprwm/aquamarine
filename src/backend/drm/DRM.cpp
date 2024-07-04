@@ -1196,7 +1196,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     bool ok = connector->commitState(data);
 
-    if (onlyTest)
+    if (onlyTest || !ok)
         return ok;
 
     events.commit.emit();
