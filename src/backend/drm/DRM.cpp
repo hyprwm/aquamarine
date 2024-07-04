@@ -960,7 +960,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         output->nonDesktop = prop;
     }
 
-    canDoVrr           = props.vrr_capable && crtc->props.vrr_enabled && !getDRMProp(backend->gpu->fd, id, props.vrr_capable, &prop) && prop;
+    canDoVrr           = props.vrr_capable && crtc->props.vrr_enabled && getDRMProp(backend->gpu->fd, id, props.vrr_capable, &prop) && prop;
     output->vrrCapable = canDoVrr;
 
     backend->backend->log(AQ_LOG_DEBUG,
