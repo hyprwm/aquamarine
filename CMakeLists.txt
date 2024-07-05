@@ -23,6 +23,7 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     pixman-1
     libdrm gbm libudev
     libdisplay-info hwdata
+    hyprwayland-scanner>=0.4.0
 )
 
 configure_file(aquamarine.pc.in aquamarine.pc @ONLY)
