@@ -7,6 +7,7 @@
 #include <deque>
 #include <cstring>
 #include <sys/mman.h>
+#include <fcntl.h>
 
 extern "C" {
 #include <libseat.h>
@@ -470,6 +471,9 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
             scanConnectors();
+        } else if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Got a lease event for {}", gpuName));
+            scanLeases();
         }
     });
 
@@ -541,6 +545,48 @@ void Aquamarine::CDRMBackend::scanConnectors() {
     }
 
     drmModeFreeResources(resources);
+}
+
+void Aquamarine::CDRMBackend::scanLeases() {
+    auto lessees = drmModeListLessees(gpu->fd);
+    if (!lessees) {
+        backend->log(AQ_LOG_ERROR, "drmModeListLessees failed");
+        return;
+    }
+
+    for (auto& c : connectors) {
+        if (!c->output || !c->output->lease)
+            continue;
+
+        bool has = false;
+        for (size_t i = 0; i < lessees->count; ++i) {
+            if (lessees->lessees[i] == c->output->lease->lesseeID) {
+                has = true;
+                break;
+            }
+        }
+
+        if (has)
+            continue;
+
+        backend->log(AQ_LOG_DEBUG, std::format("lessee {} gone, removing", c->output->lease->lesseeID));
+
+        // don't terminate
+        c->output->lease->active = false;
+
+        auto l = c->output->lease;
+
+        for (auto& c2 : connectors) {
+            if (!c2->output || c2->output->lease != c->output->lease)
+                continue;
+
+            c2->output->lease.reset();
+        }
+
+        l->destroy();
+    }
+
+    drmFree(lessees);
 }
 
 bool Aquamarine::CDRMBackend::start() {
@@ -680,6 +726,22 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getCursorFormats() {
 
 bool Aquamarine::CDRMBackend::createOutput(const std::string&) {
     return false;
+}
+
+int Aquamarine::CDRMBackend::getNonMasterFD() {
+    int fd = open(gpuName.c_str(), O_RDWR | O_CLOEXEC);
+
+    if (fd < 0) {
+        backend->log(AQ_LOG_ERROR, "drm: couldn't dupe fd for non master");
+        return -1;
+    }
+
+    if (drmIsMaster(fd) && drmDropMaster(fd) < 0) {
+        backend->log(AQ_LOG_ERROR, "drm: couldn't drop master from duped fd");
+        return -1;
+    }
+
+    return fd;
 }
 
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
@@ -1269,6 +1331,10 @@ size_t Aquamarine::CDRMOutput::getGammaSize() {
     return size;
 }
 
+int Aquamarine::CDRMOutput::getConnectorID() {
+    return connector->id;
+}
+
 Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, SP<SDRMConnector> connector_) :
     backend(backend_), connector(connector_) {
     name = name_;
@@ -1487,4 +1553,84 @@ void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CShar
 
 Aquamarine::CDRMBufferAttachment::CDRMBufferAttachment(SP<CDRMFB> fb_) : fb(fb_) {
     ;
+}
+
+SP<CDRMLease> Aquamarine::CDRMLease::create(std::vector<SP<IOutput>> outputs) {
+    if (outputs.empty())
+        return nullptr;
+
+    if (outputs.at(0)->getBackend()->type() != AQ_BACKEND_DRM)
+        return nullptr;
+
+    auto backend = ((CDRMBackend*)outputs.at(0)->getBackend().get())->self.lock();
+
+    for (auto& o : outputs) {
+        if (o->getBackend() != backend) {
+            backend->log(AQ_LOG_ERROR, "drm lease: Mismatched backends");
+            return nullptr;
+        }
+    }
+
+    std::vector<uint32_t> objects;
+
+    auto                  lease = SP<CDRMLease>(new CDRMLease);
+
+    for (auto& o : outputs) {
+        auto drmo = ((CDRMOutput*)o.get())->self.lock();
+        backend->log(AQ_LOG_DEBUG, std::format("drm lease: output {}, connector {}", drmo->name, drmo->connector->id));
+
+        // FIXME: do we have to alloc a crtc here?
+        if (!drmo->connector->crtc) {
+            backend->log(AQ_LOG_ERROR, std::format("drm lease: output {} has no crtc", drmo->name));
+            return nullptr;
+        }
+
+        backend->log(AQ_LOG_DEBUG, std::format("drm lease: crtc {}, primary {}", drmo->connector->crtc->id, drmo->connector->crtc->primary->id));
+
+        objects.push_back(drmo->connector->id);
+        objects.push_back(drmo->connector->crtc->id);
+        objects.push_back(drmo->connector->crtc->primary->id);
+        if (drmo->connector->crtc->cursor)
+            objects.push_back(drmo->connector->crtc->cursor->id);
+
+        lease->outputs.emplace_back(drmo);
+    }
+
+    backend->log(AQ_LOG_DEBUG, "drm lease: issuing a lease");
+
+    int leaseFD = drmModeCreateLease(backend->gpu->fd, objects.data(), objects.size(), O_CLOEXEC, &lease->lesseeID);
+    if (leaseFD < 0) {
+        backend->log(AQ_LOG_ERROR, "drm lease: drm rejected a lease");
+        return nullptr;
+    }
+
+    for (auto& o : lease->outputs) {
+        o->lease = lease;
+    }
+
+    lease->leaseFD = leaseFD;
+
+    backend->log(AQ_LOG_DEBUG, std::format("drm lease: lease granted with lessee id {}", lease->lesseeID));
+
+    return lease;
+}
+
+Aquamarine::CDRMLease::~CDRMLease() {
+    if (active)
+        terminate();
+    else
+        destroy();
+}
+
+void Aquamarine::CDRMLease::terminate() {
+    active = false;
+
+    if (drmModeRevokeLease(backend->gpu->fd, lesseeID) < 0)
+        backend->log(AQ_LOG_ERROR, "drm lease: Failed to revoke lease");
+
+    destroy();
+}
+
+void Aquamarine::CDRMLease::destroy() {
+    events.destroy.emit();
 }

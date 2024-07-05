@@ -11,6 +11,7 @@
 namespace Aquamarine {
     class CDRMBackend;
     class CDRMFB;
+    class CDRMOutput;
     struct SDRMConnector;
 
     typedef std::function<void(void)> FIdleCallback;
@@ -39,6 +40,31 @@ namespace Aquamarine {
         virtual eAttachmentType type() {
             return AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE;
         }
+    };
+
+    class CDRMLease {
+      public:
+        static Hyprutils::Memory::CSharedPointer<CDRMLease>      create(std::vector<Hyprutils::Memory::CSharedPointer<IOutput>> outputs);
+        ~CDRMLease();
+
+        void                                                     terminate();
+
+        int                                                      leaseFD = -1;
+        uint32_t                                                 lesseeID = 0;
+        Hyprutils::Memory::CWeakPointer<CDRMBackend>             backend;
+        std::vector<Hyprutils::Memory::CWeakPointer<CDRMOutput>> outputs;
+        bool                                                     active = true;
+
+        struct {
+            Hyprutils::Signal::CSignal destroy;
+        } events;
+
+      private:
+        CDRMLease() = default;
+
+        void destroy();
+
+        friend class CDRMBackend;
     };
 
     class CDRMFB {
@@ -164,7 +190,10 @@ namespace Aquamarine {
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
         virtual size_t                                                    getGammaSize();
 
+        int                                                               getConnectorID();
+
         Hyprutils::Memory::CWeakPointer<CDRMOutput>                       self;
+        Hyprutils::Memory::CWeakPointer<CDRMLease>                        lease;
         bool                                                              cursorVisible = true;
         Hyprutils::Math::Vector2D                                         cursorPos; // without hotspot
         Hyprutils::Math::Vector2D                                         cursorHotspot;
@@ -181,6 +210,7 @@ namespace Aquamarine {
         bool                                                         lastCommitNoBuffer = true;
 
         friend struct SDRMConnector;
+        friend class CDRMLease;
     };
 
     struct SDRMPageFlip {
@@ -297,8 +327,10 @@ namespace Aquamarine {
 
         void                                                            log(eBackendLogLevel, const std::string&);
         bool                                                            sessionActive();
+        int                                                             getNonMasterFD();
 
         std::vector<FIdleCallback>                                      idleCallbacks;
+        std::string                                                     gpuName;
 
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
@@ -309,12 +341,12 @@ namespace Aquamarine {
         bool initResources();
         bool grabFormats();
         void scanConnectors();
+        void scanLeases();
         void restoreAfterVT();
 
         Hyprutils::Memory::CSharedPointer<CSessionDevice>             gpu;
         Hyprutils::Memory::CSharedPointer<IDRMImplementation>         impl;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                  primary;
-        std::string                                                   gpuName;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
 
@@ -348,5 +380,6 @@ namespace Aquamarine {
         friend class CDRMLegacyImpl;
         friend class CDRMAtomicImpl;
         friend class CDRMAtomicRequest;
+        friend class CDRMLease;
     };
 };
