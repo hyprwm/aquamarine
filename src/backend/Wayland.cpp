@@ -570,8 +570,8 @@ bool Aquamarine::CWaylandOutput::commit() {
     readyForFrameCallback = true;
 
     events.commit.emit();
-
     state->onCommit();
+    needsFrame = false;
 
     return true;
 }

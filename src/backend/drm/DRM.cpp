@@ -1203,6 +1203,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     state->onCommit();
 
     lastCommitNoBuffer = !data.mainFB;
+    needsFrame         = false;
 
     return ok;
 }

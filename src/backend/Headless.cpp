@@ -41,6 +41,7 @@ Aquamarine::CHeadlessOutput::~CHeadlessOutput() {
 bool Aquamarine::CHeadlessOutput::commit() {
     events.commit.emit();
     state->onCommit();
+    needsFrame = false;
     return true;
 }
 
