@@ -16,6 +16,7 @@ namespace Aquamarine {
 
     class IAllocator {
       public:
+        virtual ~IAllocator() = default;
         virtual Hyprutils::Memory::CSharedPointer<IBuffer>  acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) = 0;
         virtual Hyprutils::Memory::CSharedPointer<CBackend> getBackend()                                                                                           = 0;
     };

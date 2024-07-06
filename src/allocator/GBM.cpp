@@ -183,6 +183,11 @@ SDMABUFAttrs Aquamarine::CGBMBuffer::dmabuf() {
     return attrs;
 }
 
+CGBMAllocator::~CGBMAllocator() {
+    if (gbmDevice)
+        gbm_device_destroy(gbmDevice);
+}
+
 SP<CGBMAllocator> Aquamarine::CGBMAllocator::create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) {
     uint64_t capabilities = 0;
     if (drmGetCap(drmfd_, DRM_CAP_PRIME, &capabilities) || !(capabilities & DRM_PRIME_CAP_EXPORT)) {
