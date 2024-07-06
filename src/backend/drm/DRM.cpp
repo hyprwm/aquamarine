@@ -261,7 +261,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         backend->log(AQ_LOG_ERROR, "drm: failed reset");
 
     for (auto& c : connectors) {
-        if (!c->crtc)
+        if (!c->crtc || !c->output)
             continue;
 
         SDRMConnectorCommitData data = {
