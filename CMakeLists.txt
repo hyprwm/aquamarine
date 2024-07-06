@@ -44,7 +44,7 @@ file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS "include/*.hpp")
 add_library(aquamarine SHARED ${SRCFILES})
 target_include_directories( aquamarine
     PUBLIC "./include"
-    PRIVATE "./src" "./src/include" "./protocols" "./build"
+    PRIVATE "./src" "./src/include" "./protocols" "${CMAKE_BINARY_DIR}"
 )
 set_target_properties(aquamarine PROPERTIES
     VERSION ${AQUAMARINE_VERSION}
