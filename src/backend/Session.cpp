@@ -9,6 +9,7 @@ extern "C" {
 #include <sys/stat.h>
 #include <xf86drmMode.h>
 #include <linux/input.h>
+#include <unistd.h>
 }
 
 using namespace Aquamarine;

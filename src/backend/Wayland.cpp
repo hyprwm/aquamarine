@@ -8,6 +8,7 @@
 #include <gbm.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;

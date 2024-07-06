@@ -5,6 +5,7 @@
 #include "Shared.hpp"
 #include <xf86drm.h>
 #include <gbm.h>
+#include <unistd.h>
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
