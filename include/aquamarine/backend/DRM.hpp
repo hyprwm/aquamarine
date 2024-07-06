@@ -134,8 +134,9 @@ namespace Aquamarine {
                 uint32_t fb_damage_clips;
                 uint32_t hotspot_x;
                 uint32_t hotspot_y;
+                uint32_t in_fence_fd;
             };
-            uint32_t props[16] = {0};
+            uint32_t props[17] = {0};
         };
         UDRMPlaneProps props;
     };
@@ -171,8 +172,9 @@ namespace Aquamarine {
 
                 uint32_t active;
                 uint32_t mode_id;
+                uint32_t out_fence_ptr;
             };
-            uint32_t props[6] = {0};
+            uint32_t props[7] = {0};
         };
         UDRMCRTCProps props;
     };

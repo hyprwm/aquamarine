@@ -100,6 +100,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
+        if (connector->output->supportsExplicit && STATE.explicitOutFence >= 0)
+            add(connector->crtc->id, connector->crtc->props.out_fence_ptr, STATE.explicitOutFence);
+
         if (connector->crtc->props.gamma_lut && data.atomic.gammad)
             add(connector->crtc->id, connector->crtc->props.gamma_lut, data.atomic.gammaLut);
 
@@ -107,6 +110,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->crtc->id, connector->crtc->props.vrr_enabled, (uint64_t)STATE.adaptiveSync);
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {});
+
+        if (connector->output->supportsExplicit && STATE.explicitInFence >= 0)
+            add(connector->crtc->primary->id, connector->crtc->primary->props.in_fence_fd, STATE.explicitInFence);
 
         if (connector->crtc->primary->props.fb_damage_clips)
             add(connector->crtc->primary->id, connector->crtc->primary->props.fb_damage_clips, data.atomic.fbDamage);

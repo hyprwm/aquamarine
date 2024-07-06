@@ -40,14 +40,16 @@ namespace Aquamarine {
     class COutputState {
       public:
         enum eOutputStateProperties : uint32_t {
-            AQ_OUTPUT_STATE_DAMAGE            = (1 << 0),
-            AQ_OUTPUT_STATE_ENABLED           = (1 << 1),
-            AQ_OUTPUT_STATE_ADAPTIVE_SYNC     = (1 << 2),
-            AQ_OUTPUT_STATE_PRESENTATION_MODE = (1 << 3),
-            AQ_OUTPUT_STATE_GAMMA_LUT         = (1 << 4),
-            AQ_OUTPUT_STATE_MODE              = (1 << 5),
-            AQ_OUTPUT_STATE_FORMAT            = (1 << 6),
-            AQ_OUTPUT_STATE_BUFFER            = (1 << 7),
+            AQ_OUTPUT_STATE_DAMAGE             = (1 << 0),
+            AQ_OUTPUT_STATE_ENABLED            = (1 << 1),
+            AQ_OUTPUT_STATE_ADAPTIVE_SYNC      = (1 << 2),
+            AQ_OUTPUT_STATE_PRESENTATION_MODE  = (1 << 3),
+            AQ_OUTPUT_STATE_GAMMA_LUT          = (1 << 4),
+            AQ_OUTPUT_STATE_MODE               = (1 << 5),
+            AQ_OUTPUT_STATE_FORMAT             = (1 << 6),
+            AQ_OUTPUT_STATE_BUFFER             = (1 << 7),
+            AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE  = (1 << 8),
+            AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE = (1 << 9),
         };
 
         struct SInternalState {
@@ -63,6 +65,7 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<SOutputMode> customMode;
             uint32_t                                       drmFormat = DRM_FORMAT_INVALID;
             Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
+            int64_t                                        explicitInFence = -1, explicitOutFence = -1;
         };
 
         const SInternalState& state();
@@ -77,6 +80,8 @@ namespace Aquamarine {
         void                  setCustomMode(Hyprutils::Memory::CSharedPointer<SOutputMode> mode);
         void                  setFormat(uint32_t drmFormat);
         void                  setBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
+        void                  setExplicitInFence(int64_t fenceFD);  // -1 removes
+        void                  setExplicitOutFence(int64_t fenceFD); // -1 removes
 
       private:
         SInternalState internalState;
@@ -113,7 +118,8 @@ namespace Aquamarine {
         bool                                                              nonDesktop = false;
         eSubpixelMode                                                     subpixel   = AQ_SUBPIXEL_NONE;
         bool                                                              vrrCapable = false, vrrActive = false;
-        bool                                                              needsFrame = false;
+        bool                                                              needsFrame       = false;
+        bool                                                              supportsExplicit = false;
 
         //
         std::vector<Hyprutils::Memory::CSharedPointer<SOutputMode>> modes;

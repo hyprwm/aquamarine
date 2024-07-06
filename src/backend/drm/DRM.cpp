@@ -1045,11 +1045,14 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
     // TODO: subconnectors
 
-    output->make        = make;
-    output->model       = model;
-    output->serial      = serial;
-    output->description = std::format("{} {} {} ({})", make, model, serial, szName);
-    output->needsFrame  = true;
+    output->make             = make;
+    output->model            = model;
+    output->serial           = serial;
+    output->description      = std::format("{} {} {} ({})", make, model, serial, szName);
+    output->needsFrame       = true;
+    output->supportsExplicit = crtc->props.out_fence_ptr && crtc->primary->props.in_fence_fd;
+
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit sync {}", output->supportsExplicit ? "supported" : "unsupported"));
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Description {}", output->description));
 

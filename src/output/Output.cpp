@@ -95,7 +95,21 @@ void Aquamarine::COutputState::setBuffer(Hyprutils::Memory::CSharedPointer<IBuff
     internalState.committed |= AQ_OUTPUT_STATE_BUFFER;
 }
 
+void Aquamarine::COutputState::setExplicitInFence(int64_t fenceFD) {
+    internalState.explicitInFence = fenceFD;
+    internalState.committed |= AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE;
+}
+
+void Aquamarine::COutputState::setExplicitOutFence(int64_t fenceFD) {
+    internalState.explicitOutFence = fenceFD;
+    internalState.committed |= AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE;
+}
+
 void Aquamarine::COutputState::onCommit() {
     internalState.committed = 0;
     internalState.damage.clear();
+
+    // fences are now used, let's reset them to not confuse ourselves later.
+    internalState.explicitInFence  = -1;
+    internalState.explicitOutFence = -1;
 }
