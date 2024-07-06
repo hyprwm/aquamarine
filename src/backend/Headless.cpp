@@ -55,6 +55,7 @@ Hyprutils::Memory::CSharedPointer<IBackendImplementation> Aquamarine::CHeadlessO
 
 void Aquamarine::CHeadlessOutput::scheduleFrame() {
     // FIXME: limit fps to the committed framerate.
+    needsFrame = true;
 
     if (frameScheduled)
         return;

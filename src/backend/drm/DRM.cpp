@@ -1304,6 +1304,8 @@ void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord) {
 }
 
 void Aquamarine::CDRMOutput::scheduleFrame() {
+    needsFrame = true;
+
     if (connector->isPageFlipPending || connector->frameEventScheduled)
         return;
 
