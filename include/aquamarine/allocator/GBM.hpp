@@ -35,6 +35,7 @@ namespace Aquamarine {
 
     class CGBMAllocator : public IAllocator {
       public:
+        ~CGBMAllocator();
         static Hyprutils::Memory::CSharedPointer<CGBMAllocator> create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
 
         virtual Hyprutils::Memory::CSharedPointer<IBuffer>      acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain_);
