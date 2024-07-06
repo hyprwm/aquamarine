@@ -342,6 +342,7 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
 
     drmProps.supportsAsyncCommit     = drmGetCap(gpu->fd, DRM_CAP_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
     drmProps.supportsAddFb2Modifiers = drmGetCap(gpu->fd, DRM_CAP_ADDFB2_MODIFIERS, &cap) == 0 && cap == 1;
+    drmProps.supportsTimelines       = drmGetCap(gpu->fd, DRM_CAP_SYNCOBJ_TIMELINE, &cap) == 0 && cap == 1;
 
     if (envEnabled("AQ_NO_ATOMIC")) {
         backend->log(AQ_LOG_WARNING, "drm: AQ_NO_ATOMIC enabled, using the legacy drm iface");
@@ -358,6 +359,7 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
 
     backend->log(AQ_LOG_DEBUG, std::format("drm: drmProps.supportsAsyncCommit: {}", drmProps.supportsAsyncCommit));
     backend->log(AQ_LOG_DEBUG, std::format("drm: drmProps.supportsAddFb2Modifiers: {}", drmProps.supportsAddFb2Modifiers));
+    backend->log(AQ_LOG_DEBUG, std::format("drm: drmProps.supportsTimelines: {}", drmProps.supportsTimelines));
 
     // TODO: allow no-modifiers?
 
@@ -1050,7 +1052,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     output->serial           = serial;
     output->description      = std::format("{} {} {} ({})", make, model, serial, szName);
     output->needsFrame       = true;
-    output->supportsExplicit = crtc->props.out_fence_ptr && crtc->primary->props.in_fence_fd;
+    output->supportsExplicit = backend->drmProps.supportsTimelines && crtc->props.out_fence_ptr && crtc->primary->props.in_fence_fd;
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit sync {}", output->supportsExplicit ? "supported" : "unsupported"));
 

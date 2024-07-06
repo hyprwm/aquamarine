@@ -44,12 +44,12 @@ namespace Aquamarine {
 
     class CDRMLease {
       public:
-        static Hyprutils::Memory::CSharedPointer<CDRMLease>      create(std::vector<Hyprutils::Memory::CSharedPointer<IOutput>> outputs);
+        static Hyprutils::Memory::CSharedPointer<CDRMLease> create(std::vector<Hyprutils::Memory::CSharedPointer<IOutput>> outputs);
         ~CDRMLease();
 
         void                                                     terminate();
 
-        int                                                      leaseFD = -1;
+        int                                                      leaseFD  = -1;
         uint32_t                                                 lesseeID = 0;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>             backend;
         std::vector<Hyprutils::Memory::CWeakPointer<CDRMOutput>> outputs;
@@ -363,6 +363,7 @@ namespace Aquamarine {
             Hyprutils::Math::Vector2D cursorSize;
             bool                      supportsAsyncCommit     = false;
             bool                      supportsAddFb2Modifiers = false;
+            bool                      supportsTimelines       = false;
         } drmProps;
 
         struct {
