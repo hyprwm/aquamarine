@@ -1,3 +1,4 @@
+#include "aquamarine/output/Output.hpp"
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <aquamarine/backend/drm/Atomic.hpp>
@@ -1065,7 +1066,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
     output->swapchain = CSwapchain::create(backend->backend->allocator, backend->self.lock());
     backend->backend->events.newOutput.emit(output);
-    output->scheduleFrame();
+    output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
 }
 
 void Aquamarine::SDRMConnector::disconnect() {
@@ -1136,7 +1137,7 @@ bool Aquamarine::CDRMOutput::test() {
 void Aquamarine::CDRMOutput::setCursorVisible(bool visible) {
     cursorVisible = visible;
     needsFrame    = true;
-    scheduleFrame();
+    scheduleFrame(AQ_SCHEDULE_CURSOR_VISIBLE);
 }
 
 bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
@@ -1298,7 +1299,7 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
     }
 
     needsFrame = true;
-    scheduleFrame();
+    scheduleFrame(AQ_SCHEDULE_CURSOR_SHAPE);
     return true;
 }
 
@@ -1308,7 +1309,10 @@ void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord) {
     backend->impl->moveCursor(connector);
 }
 
-void Aquamarine::CDRMOutput::scheduleFrame() {
+void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
+    TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                std::format("CDRMOutput::scheduleFrame: reason {}, needsFrame {}, isPageFlipPending {}, frameEventScheduled {}", (uint32_t)reason, needsFrame,
+                                            connector->isPageFlipPending, connector->frameEventScheduled)));
     needsFrame = true;
 
     if (connector->isPageFlipPending || connector->frameEventScheduled)

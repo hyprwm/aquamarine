@@ -187,7 +187,7 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend();
         virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
         virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord);
-        virtual void                                                      scheduleFrame();
+        virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual void                                                      setCursorVisible(bool visible);
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
         virtual size_t                                                    getGammaSize();

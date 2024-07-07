@@ -23,7 +23,7 @@ void Aquamarine::IOutput::setCursorVisible(bool visible) {
     ;
 }
 
-void Aquamarine::IOutput::scheduleFrame() {
+void Aquamarine::IOutput::scheduleFrame(const scheduleFrameReason reason) {
     ;
 }
 

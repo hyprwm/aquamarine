@@ -1,3 +1,4 @@
+#include "aquamarine/output/Output.hpp"
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <cstring>
 #include <xf86drm.h>
@@ -18,7 +19,7 @@ bool Aquamarine::CDRMLegacyImpl::moveCursor(Hyprutils::Memory::CSharedPointer<SD
         return true;
 
     connector->output->needsFrame = true;
-    connector->output->scheduleFrame();
+    connector->output->scheduleFrame(IOutput::AQ_SCHEDULE_CURSOR_MOVE);
 
     return true;
 }
