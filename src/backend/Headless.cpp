@@ -3,6 +3,7 @@
 #include <time.h>
 #include <sys/timerfd.h>
 #include <string.h>
+#include "Shared.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -53,7 +54,9 @@ Hyprutils::Memory::CSharedPointer<IBackendImplementation> Aquamarine::CHeadlessO
     return backend.lock();
 }
 
-void Aquamarine::CHeadlessOutput::scheduleFrame() {
+void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason) {
+    TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                std::format("CHeadlessOutput::scheduleFrame: reason {}, needsFrame {}, frameScheduled {}", (uint32_t)reason, needsFrame, frameScheduled)));
     // FIXME: limit fps to the committed framerate.
     needsFrame = true;
 

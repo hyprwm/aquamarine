@@ -722,7 +722,9 @@ Hyprutils::Math::Vector2D Aquamarine::CWaylandOutput::cursorPlaneSize() {
     return {-1, -1}; // no limit
 }
 
-void Aquamarine::CWaylandOutput::scheduleFrame() {
+void Aquamarine::CWaylandOutput::scheduleFrame(const scheduleFrameReason reason) {
+    TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                std::format("CWaylandOutput::scheduleFrame: reason {}, needsFrame {}, frameScheduled {}", (uint32_t)reason, needsFrame, frameScheduled)));
     needsFrame = true;
 
     if (frameScheduled)

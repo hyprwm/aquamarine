@@ -4,6 +4,7 @@
 #include <xf86drmMode.h>
 #include <sys/mman.h>
 #include "Shared.hpp"
+#include "aquamarine/output/Output.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -323,7 +324,7 @@ bool Aquamarine::CDRMAtomicImpl::moveCursor(SP<SDRMConnector> connector) {
         return true;
 
     connector->output->needsFrame = true;
-    connector->output->scheduleFrame();
+    connector->output->scheduleFrame(IOutput::AQ_SCHEDULE_CURSOR_MOVE);
 
     return true;
 }
