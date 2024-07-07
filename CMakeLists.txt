@@ -9,6 +9,7 @@ project(aquamarine
 )
 
 include(CTest)
+include(CheckIncludeFile)
 include(GNUInstallDirs)
 
 set(PREFIX ${CMAKE_INSTALL_PREFIX})
@@ -51,6 +52,12 @@ set_target_properties(aquamarine PROPERTIES
     SOVERSION 0
 )
 target_link_libraries(aquamarine PkgConfig::deps)
+
+check_include_file("sys/timerfd.h" HAS_TIMERFD)
+pkg_check_modules(epoll IMPORTED_TARGET epoll-shim)
+if(NOT HAS_TIMERFD AND epoll_FOUND)
+    target_link_libraries(aquamarine PkgConfig::epoll)
+endif()
 
 # Protocols
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
