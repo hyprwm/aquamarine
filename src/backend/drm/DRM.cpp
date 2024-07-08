@@ -1325,6 +1325,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     if (connector->crtc->pendingCursor)
         data.cursorFB = connector->crtc->pendingCursor;
+    else
+        data.cursorFB = connector->crtc->cursor->front;
 
     if (data.cursorFB) {
         // verify cursor format. This might be wrong on NVIDIA where linear buffers
@@ -1369,7 +1371,8 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         setCursorVisible(false);
     else {
         cursorHotspot = hotspot;
-        auto fb       = CDRMFB::create(buffer, backend);
+        bool isNew    = false;
+        auto fb       = CDRMFB::create(buffer, backend, &isNew);
         if (!fb) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer failed to import to KMS");
             return false;
@@ -1380,6 +1383,13 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         connector->crtc->pendingCursor = fb;
 
         cursorVisible = true;
+
+        if (!isNew && backend->primary) {
+            // this is not a new buffer, and we are not on a primary GPU, which means
+            // this buffer lives on the primary. We need to re-import it to update
+            // the contents that have possibly (probably) changed
+            fb->reimport();
+        }
     }
 
     needsFrame = true;
