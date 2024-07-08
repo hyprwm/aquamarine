@@ -497,8 +497,8 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
                 c->output->commit();
             }
 
-            c->crtc = crtcs.at(i);
             backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} assigned to {} (old {})", i, crtcs.at(i)->id, c->szName, c->crtc ? c->crtc->id : -1));
+            c->crtc  = crtcs.at(i);
             assigned = true;
             changed.emplace_back(c);
             std::erase(recheck, c);
