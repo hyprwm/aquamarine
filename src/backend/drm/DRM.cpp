@@ -522,8 +522,10 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             c->output->events.state.emit(IOutput::SStateEvent{});
     }
 
-    if (rescan)
+    if (rescan) {
+        backend->log(AQ_LOG_DEBUG, "drm: rescan needed after realloc");
         scanConnectors();
+    }
 }
 
 bool Aquamarine::CDRMBackend::grabFormats() {
