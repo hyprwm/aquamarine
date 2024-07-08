@@ -154,6 +154,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 }
 
 Aquamarine::CGBMBuffer::~CGBMBuffer() {
+    events.destroy.emit();
     if (bo)
         gbm_bo_destroy(bo);
     for (size_t i = 0; i < (size_t)attrs.planes; i++)
