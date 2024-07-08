@@ -86,12 +86,19 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
         std::array<uint32_t, 4>                      boHandles = {0, 0, 0, 0};
 
+        // true if the original buffer is gone and this has been released.
+        bool dead = false;
+
       private:
         CDRMFB(Hyprutils::Memory::CSharedPointer<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_);
         uint32_t submitBuffer();
         void     import();
 
         bool     dropped = false, handlesClosed = false;
+
+        struct {
+            Hyprutils::Signal::CHyprSignalListener destroyBuffer;
+        } listeners;
     };
 
     struct SDRMLayer {

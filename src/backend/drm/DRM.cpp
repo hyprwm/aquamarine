@@ -1308,6 +1308,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             return false;
         }
 
+        if (drmFB->dead) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: KMS buffer is dead?!");
+            return false;
+        }
+
         if (!isNew && backend->primary) {
             // this is not a new buffer, and we are not on a primary GPU, which means
             // this buffer lives on the primary. We need to re-import it to update
@@ -1507,6 +1512,13 @@ void Aquamarine::CDRMFB::import() {
 
     // FIXME: why does this implode when it doesnt on wlroots or kwin?
     // closeHandles();
+
+    listeners.destroyBuffer = buffer->events.destroy.registerListener([this](std::any d) {
+        drop();
+        dead      = true;
+        id        = 0;
+        boHandles = {0, 0, 0, 0};
+    });
 }
 
 void Aquamarine::CDRMFB::reimport() {
