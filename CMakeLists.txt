@@ -17,6 +17,7 @@ set(INCLUDE ${CMAKE_INSTALL_FULL_INCLUDEDIR})
 set(LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
 
 find_package(PkgConfig REQUIRED)
+find_package(hyprwayland-scanner 0.4.0 REQUIRED)
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     libseat>=0.8.0 libinput>=1.26.0
     wayland-client wayland-protocols
@@ -24,7 +25,6 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     pixman-1
     libdrm gbm libudev
     libdisplay-info hwdata
-    hyprwayland-scanner>=0.4.0
 )
 
 configure_file(aquamarine.pc.in aquamarine.pc @ONLY)
