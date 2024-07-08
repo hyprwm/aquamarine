@@ -228,6 +228,8 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 
         drmBackend->scanConnectors();
 
+        drmBackend->recheckCRTCs();
+
         if (!newPrimary) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: gpu {} becomes primary drm", gpu->path));
             newPrimary = drmBackend;
@@ -255,6 +257,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
     backend->log(AQ_LOG_DEBUG, "drm: Restoring after VT switch");
 
     scanConnectors();
+    recheckCRTCs();
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
 
@@ -447,6 +450,78 @@ bool Aquamarine::CDRMBackend::initResources() {
     drmModeFreeResources(resources);
 
     return true;
+}
+
+void Aquamarine::CDRMBackend::recheckCRTCs() {
+    if (connectors.empty() || crtcs.empty())
+        return;
+
+    backend->log(AQ_LOG_DEBUG, "drm: Rechecking CRTCs");
+
+    std::vector<SP<SDRMConnector>> recheck, changed;
+    for (auto& c : connectors) {
+        if (c->crtc && c->status == DRM_MODE_CONNECTED) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Skipping connector {}, has crtc {} and is connected", c->szName, c->crtc->id));
+            continue;
+        }
+
+        recheck.emplace_back(c);
+        backend->log(AQ_LOG_DEBUG, std::format("drm: connector {}, has crtc {}, will be rechecked", c->szName, c->crtc ? c->crtc->id : -1));
+    }
+
+    for (size_t i = 0; i < crtcs.size(); ++i) {
+        bool taken = false;
+        for (auto& c : connectors) {
+            if (c->crtc != crtcs.at(i))
+                continue;
+
+            if (c->status != DRM_MODE_CONNECTED)
+                continue;
+
+            backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} taken by {}, skipping", i, c->crtc->id, c->szName));
+            taken = true;
+            break;
+        }
+
+        if (taken)
+            continue;
+
+        bool assigned = false;
+        for (auto& c : recheck) {
+            if (!(c->possibleCrtcs & (1 << i)))
+                continue;
+
+            // deactivate old output
+            if (c->output && c->output->state && c->output->state->state().enabled) {
+                c->output->state->setEnabled(false);
+                c->output->commit();
+            }
+
+            c->crtc = crtcs.at(i);
+            backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} assigned to {} (old {})", i, crtcs.at(i)->id, c->szName, c->crtc ? c->crtc->id : -1));
+            assigned = true;
+            changed.emplace_back(c);
+            break;
+        }
+
+        if (!assigned)
+            backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} unassigned", i, crtcs.at(i)->id));
+    }
+
+    // if any connectors get a crtc and are connected, we need to rescan to assign them outputs.
+    bool rescan = false;
+    for (auto& c : changed) {
+        if (!c->output && c->status == DRM_MODE_CONNECTED) {
+            rescan = true;
+            continue;
+        }
+
+        // tell the user to re-assign a valid mode etc
+        c->output->events.state.emit(IOutput::SStateEvent{});
+    }
+
+    if (rescan)
+        scanConnectors();
 }
 
 bool Aquamarine::CDRMBackend::grabFormats() {

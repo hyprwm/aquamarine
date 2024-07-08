@@ -148,7 +148,7 @@ namespace Aquamarine {
             AQ_OUTPUT_PRESENT_ZEROCOPY      = (1 << 3),
         };
         struct SStateEvent {
-            Hyprutils::Math::Vector2D size;
+            Hyprutils::Math::Vector2D size; // if {0,0}, means it needs a reconfigure.
         };
 
         struct SPresentEvent {

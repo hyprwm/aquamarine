@@ -345,6 +345,7 @@ namespace Aquamarine {
         void scanConnectors();
         void scanLeases();
         void restoreAfterVT();
+        void recheckCRTCs();
 
         Hyprutils::Memory::CSharedPointer<CSessionDevice>             gpu;
         Hyprutils::Memory::CSharedPointer<IDRMImplementation>         impl;
