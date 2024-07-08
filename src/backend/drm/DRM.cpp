@@ -1569,6 +1569,8 @@ void Aquamarine::CDRMFB::closeHandles() {
         if (drmCloseBufferHandle(backend->gpu->fd, boHandles.at(i)))
             backend->backend->log(AQ_LOG_ERROR, "drm: drmCloseBufferHandle failed");
     }
+
+    boHandles = {0, 0, 0, 0};
 }
 
 void Aquamarine::CDRMFB::drop() {
