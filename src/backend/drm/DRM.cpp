@@ -518,7 +518,8 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
         }
 
         // tell the user to re-assign a valid mode etc
-        c->output->events.state.emit(IOutput::SStateEvent{});
+        if (c->output)
+            c->output->events.state.emit(IOutput::SStateEvent{});
     }
 
     if (rescan)
