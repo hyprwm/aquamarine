@@ -45,6 +45,7 @@ namespace Aquamarine {
         virtual std::vector<SDRMFormat>                                 getRenderFormats();
         virtual std::vector<SDRMFormat>                                 getCursorFormats();
         virtual bool                                                    createOutput(const std::string& name = "");
+        virtual Hyprutils::Memory::CSharedPointer<IAllocator>           preferredAllocator();
 
         Hyprutils::Memory::CWeakPointer<CHeadlessBackend>               self;
 

@@ -139,7 +139,7 @@ bool Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
     auto o  = outputs.emplace_back(SP<CWaylandOutput>(new CWaylandOutput(szName.empty() ? std::format("WAYLAND-{}", ++lastOutputID) : szName, self)));
     o->self = o;
     if (backend->ready)
-        o->swapchain = CSwapchain::create(backend->allocator, self.lock());
+        o->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
     idleCallbacks.emplace_back([this, o]() { backend->events.newOutput.emit(SP<IOutput>(o)); });
     return true;
 }
@@ -188,7 +188,7 @@ bool Aquamarine::CWaylandBackend::setCursor(Hyprutils::Memory::CSharedPointer<IB
 
 void Aquamarine::CWaylandBackend::onReady() {
     for (auto& o : outputs) {
-        o->swapchain = CSwapchain::create(backend->allocator, self.lock());
+        o->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
         if (!o->swapchain) {
             backend->log(AQ_LOG_ERROR, std::format("Output {} failed: swapchain creation failed", o->name));
             continue;
@@ -433,6 +433,10 @@ std::vector<SDRMFormat> Aquamarine::CWaylandBackend::getRenderFormats() {
 
 std::vector<SDRMFormat> Aquamarine::CWaylandBackend::getCursorFormats() {
     return dmabufFormats;
+}
+
+SP<IAllocator> Aquamarine::CWaylandBackend::preferredAllocator() {
+    return backend->primaryAllocator;
 }
 
 Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_) : backend(backend_) {

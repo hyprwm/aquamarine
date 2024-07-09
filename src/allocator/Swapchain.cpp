@@ -72,8 +72,9 @@ SP<IBuffer> Aquamarine::CSwapchain::next(int* age) {
 bool Aquamarine::CSwapchain::fullReconfigure(const SSwapchainOptions& options_) {
     buffers.clear();
     for (size_t i = 0; i < options_.length; ++i) {
-        auto buf =
-            allocator->acquire(SAllocatorBufferParams{.size = options_.size, .format = options_.format, .scanout = options_.scanout, .cursor = options_.cursor}, self.lock());
+        auto buf = allocator->acquire(
+            SAllocatorBufferParams{.size = options_.size, .format = options_.format, .scanout = options_.scanout, .cursor = options_.cursor, .multigpu = options_.multigpu},
+            self.lock());
         if (!buf) {
             allocator->getBackend()->log(AQ_LOG_ERROR, "Swapchain: Failed acquiring a buffer");
             return false;
@@ -107,7 +108,7 @@ bool Aquamarine::CSwapchain::resize(size_t newSize) {
     return true;
 }
 
-bool Aquamarine::CSwapchain::contains(Hyprutils::Memory::CSharedPointer<IBuffer> buffer) {
+bool Aquamarine::CSwapchain::contains(SP<IBuffer> buffer) {
     return std::find(buffers.begin(), buffers.end(), buffer) != buffers.end();
 }
 
@@ -119,4 +120,8 @@ void Aquamarine::CSwapchain::rollback() {
     lastAcquired--;
     if (lastAcquired < 0)
         lastAcquired = options.length - 1;
+}
+
+SP<IAllocator> Aquamarine::CSwapchain::getAllocator() {
+    return allocator;
 }

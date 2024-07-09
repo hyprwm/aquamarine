@@ -40,6 +40,7 @@ namespace Aquamarine {
 
         virtual Hyprutils::Memory::CSharedPointer<IBuffer>      acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain_);
         virtual Hyprutils::Memory::CSharedPointer<CBackend>     getBackend();
+        virtual int                                             drmFD();
 
         //
         Hyprutils::Memory::CWeakPointer<CGBMAllocator> self;

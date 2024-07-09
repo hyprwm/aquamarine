@@ -137,7 +137,11 @@ namespace Aquamarine {
         //
         std::vector<Hyprutils::Memory::CSharedPointer<SOutputMode>> modes;
         Hyprutils::Memory::CSharedPointer<COutputState>             state = Hyprutils::Memory::makeShared<COutputState>();
-        Hyprutils::Memory::CSharedPointer<CSwapchain>               swapchain;
+
+        // please note that for multigpu setups, this swapchain resides on the target gpu,
+        // so it's recommended that if this swapchain's allocator FD doesn't match the primary
+        // drmFD used, you should render to a buffer on the main gpu and only perform the final copy to this swapchain.
+        Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
 
         //
 

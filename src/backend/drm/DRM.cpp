@@ -293,9 +293,6 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             if (!drmFB)
                 backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
 
-            if (!isNew && primary && drmFB)
-                drmFB->reimport();
-
             data.mainFB = drmFB;
         }
 
@@ -747,9 +744,23 @@ void Aquamarine::CDRMBackend::onReady() {
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: onReady: connector {} has output name {}", c->id, c->output->name));
 
+        // find our allocator, for multigpu setups there will be 2
+        for (auto& alloc : backend->allocators) {
+            if (alloc->drmFD() != gpu->fd)
+                continue;
+
+            allocator = alloc;
+            break;
+        }
+
+        if (!allocator) {
+            backend->log(AQ_LOG_ERROR, std::format("drm: backend for gpu {} doesn't have an allocator?!", gpu->path));
+            return;
+        }
+
         // swapchain has to be created here because allocator is absent in connect if not ready
-        c->output->swapchain = CSwapchain::create(backend->allocator, self.lock());
-        c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true}); // mark the swapchain for scanout
+        c->output->swapchain = CSwapchain::create(allocator.lock(), self.lock());
+        c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!primary}); // mark the swapchain for scanout
         c->output->needsFrame = true;
 
         backend->events.newOutput.emit(SP<IOutput>(c->output));
@@ -822,6 +833,10 @@ int Aquamarine::CDRMBackend::getNonMasterFD() {
     }
 
     return fd;
+}
+
+SP<IAllocator> Aquamarine::CDRMBackend::preferredAllocator() {
+    return allocator.lock();
 }
 
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
@@ -1141,7 +1156,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (!backend->backend->ready)
         return;
 
-    output->swapchain = CSwapchain::create(backend->backend->allocator, backend->self.lock());
+    output->swapchain = CSwapchain::create(backend->allocator.lock(), backend->self.lock());
     backend->backend->events.newOutput.emit(output);
     output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
 }
@@ -1311,13 +1326,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             return false;
         }
 
-        if (!isNew && backend->primary) {
-            // this is not a new buffer, and we are not on a primary GPU, which means
-            // this buffer lives on the primary. We need to re-import it to update
-            // the contents that have possibly (probably) changed
-            drmFB->reimport();
-        }
-
         data.mainFB = drmFB;
     }
 
@@ -1381,13 +1389,6 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         connector->crtc->pendingCursor = fb;
 
         cursorVisible = true;
-
-        if (!isNew && backend->primary) {
-            // this is not a new buffer, and we are not on a primary GPU, which means
-            // this buffer lives on the primary. We need to re-import it to update
-            // the contents that have possibly (probably) changed
-            fb->reimport();
-        }
     }
 
     needsFrame = true;

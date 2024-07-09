@@ -53,8 +53,7 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) 
 }
 
 Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
-                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
-    allocator(allocator_) {
+                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) : allocator(allocator_) {
     if (!allocator)
         return;
 
@@ -62,7 +61,8 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     attrs.format = params.format;
     size         = attrs.size;
 
-    const bool            CURSOR = params.cursor && params.scanout;
+    const bool            CURSOR   = params.cursor && params.scanout;
+    const bool            MULTIGPU = params.multigpu && params.scanout;
 
     const auto            FORMATS = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
 
@@ -93,9 +93,12 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         }
     }
 
+    // FIXME: Nvidia cannot render to linear buffers. What do?
+    if (MULTIGPU)
+        explicitModifiers = {DRM_FORMAT_MOD_LINEAR};
+
     if (explicitModifiers.empty()) {
         // fall back to using a linear buffer.
-        // FIXME: Nvidia cannot render to linear buffers.
         explicitModifiers.push_back(DRM_FORMAT_MOD_LINEAR);
     }
 
@@ -244,4 +247,8 @@ SP<IBuffer> Aquamarine::CGBMAllocator::acquire(const SAllocatorBufferParams& par
 
 Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CGBMAllocator::getBackend() {
     return backend.lock();
+}
+
+int Aquamarine::CGBMAllocator::drmFD() {
+    return fd;
 }

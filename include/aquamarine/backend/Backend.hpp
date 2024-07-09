@@ -76,6 +76,7 @@ namespace Aquamarine {
         virtual std::vector<SDRMFormat>                                 getRenderFormats()                         = 0;
         virtual std::vector<SDRMFormat>                                 getCursorFormats()                         = 0;
         virtual bool                                                    createOutput(const std::string& name = "") = 0; // "" means auto
+        virtual Hyprutils::Memory::CSharedPointer<IAllocator>           preferredAllocator()                       = 0;
     };
 
     class CBackend {
@@ -122,9 +123,10 @@ namespace Aquamarine {
             Hyprutils::Signal::CSignal newTabletPad;
         } events;
 
-        Hyprutils::Memory::CSharedPointer<IAllocator> allocator;
-        bool                                          ready = false;
-        Hyprutils::Memory::CSharedPointer<CSession>   session;
+        Hyprutils::Memory::CSharedPointer<IAllocator>              primaryAllocator;
+        std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> allocators;
+        bool                                                       ready = false;
+        Hyprutils::Memory::CSharedPointer<CSession>                session;
 
       private:
         CBackend();

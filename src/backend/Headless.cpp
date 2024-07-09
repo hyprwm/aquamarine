@@ -125,7 +125,7 @@ std::vector<SDRMFormat> Aquamarine::CHeadlessBackend::getCursorFormats() {
 bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
     auto output = SP<CHeadlessOutput>(new CHeadlessOutput(name.empty() ? std::format("HEADLESS-{}", ++outputIDCounter) : name, self.lock()));
     outputs.emplace_back(output);
-    output->swapchain = CSwapchain::create(backend->allocator, self.lock());
+    output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
     output->self      = output;
     backend->events.newOutput.emit(SP<IOutput>(output));
 
@@ -174,6 +174,10 @@ void Aquamarine::CHeadlessBackend::updateTimerFD() {
 
     if (timerfd_settime(timers.timerfd, TFD_TIMER_ABSTIME, &ts, nullptr))
         backend->log(AQ_LOG_ERROR, std::format("headless: failed to arm timerfd: {}", strerror(errno)));
+}
+
+SP<IAllocator> Aquamarine::CHeadlessBackend::preferredAllocator() {
+    return backend->primaryAllocator;
 }
 
 bool Aquamarine::CHeadlessBackend::CTimer::expired() {

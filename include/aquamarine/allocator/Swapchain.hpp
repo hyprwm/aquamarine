@@ -10,7 +10,7 @@ namespace Aquamarine {
         size_t                    length = 0;
         Hyprutils::Math::Vector2D size;
         uint32_t                  format  = DRM_FORMAT_INVALID; // if you leave this on invalid, the swapchain will choose an appropriate format (and modifier) for you.
-        bool                      scanout = false, cursor = false /* requires scanout = true */;
+        bool                      scanout = false, cursor = false /* requires scanout = true */, multigpu = false /* if true, will force linear */;
     };
 
     class CSwapchain {
@@ -23,6 +23,7 @@ namespace Aquamarine {
         bool                                                 contains(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
         Hyprutils::Memory::CSharedPointer<IBuffer>           next(int* age);
         const SSwapchainOptions&                             currentOptions();
+        Hyprutils::Memory::CSharedPointer<IAllocator>        getAllocator();
 
         // rolls the buffers back, marking the last consumed as the next valid.
         // useful if e.g. a commit fails and we don't wanna write to the previous buffer that is
