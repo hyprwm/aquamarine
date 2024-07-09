@@ -877,7 +877,9 @@ static ITabletTool::eTabletToolType aqTypeFromLibinput(libinput_tablet_tool_type
     return ITabletTool::AQ_TABLET_TOOL_TYPE_INVALID;
 }
 
-Aquamarine::CLibinputKeyboard::CLibinputKeyboard(SP<CLibinputDevice> dev) : device(dev) {}
+Aquamarine::CLibinputKeyboard::CLibinputKeyboard(SP<CLibinputDevice> dev) : device(dev) {
+    libinput_device_led_update(device->device, (libinput_led)0);
+}
 
 libinput_device* Aquamarine::CLibinputKeyboard::getLibinputHandle() {
     if (!device)
@@ -892,7 +894,7 @@ const std::string& Aquamarine::CLibinputKeyboard::getName() {
 }
 
 void Aquamarine::CLibinputKeyboard::updateLEDs(uint32_t leds) {
-    ; // FIXME:
+    libinput_device_led_update(device->device, (libinput_led)leds);
 }
 
 Aquamarine::CLibinputMouse::CLibinputMouse(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev) : device(dev) {
