@@ -466,7 +466,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
         }
 
         recheck.emplace_back(c);
-        backend->log(AQ_LOG_DEBUG, std::format("drm: connector {}, has crtc {}, will be rechecked", c->szName, c->crtc ? c->crtc->id : -1));
+        backend->log(AQ_LOG_DEBUG, std::format("drm: connector {}, has crtc {}, will be rechecked", c->szName, c->crtc ? (int)c->crtc->id : -1));
     }
 
     for (size_t i = 0; i < crtcs.size(); ++i) {
@@ -497,7 +497,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
                 c->output->commit();
             }
 
-            backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} assigned to {} (old {})", i, crtcs.at(i)->id, c->szName, c->crtc ? c->crtc->id : -1));
+            backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} assigned to {} (old {})", i, crtcs.at(i)->id, c->szName, c->crtc ? (int)c->crtc->id : -1));
             c->crtc  = crtcs.at(i);
             assigned = true;
             changed.emplace_back(c);
@@ -522,10 +522,8 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             c->output->events.state.emit(IOutput::SStateEvent{});
     }
 
-    if (rescan) {
-        backend->log(AQ_LOG_DEBUG, "drm: rescan needed after realloc");
-        scanConnectors();
-    }
+    backend->log(AQ_LOG_DEBUG, "drm: rescanning after realloc");
+    scanConnectors();
 }
 
 bool Aquamarine::CDRMBackend::grabFormats() {
