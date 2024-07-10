@@ -105,11 +105,13 @@ void Aquamarine::COutputState::setExplicitOutFence(int64_t fenceFD) {
     internalState.committed |= AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE;
 }
 
-void Aquamarine::COutputState::onCommit() {
-    internalState.committed = 0;
-    internalState.damage.clear();
-
+void Aquamarine::COutputState::resetExplicitFences() {
     // fences are now used, let's reset them to not confuse ourselves later.
     internalState.explicitInFence  = -1;
     internalState.explicitOutFence = -1;
+}
+
+void Aquamarine::COutputState::onCommit() {
+    internalState.committed = 0;
+    internalState.damage.clear();
 }
