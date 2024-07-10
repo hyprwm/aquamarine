@@ -101,7 +101,7 @@ void Aquamarine::COutputState::setExplicitInFence(int64_t fenceFD) {
 }
 
 void Aquamarine::COutputState::setExplicitOutFence(int64_t fenceFD) {
-    internalState.explicitOutFence = fenceFD;
+    // internalState.explicitOutFence = fenceFD;
     internalState.committed |= AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE;
 }
 
