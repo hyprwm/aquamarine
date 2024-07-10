@@ -264,6 +264,8 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
     if (!impl->reset())
         backend->log(AQ_LOG_ERROR, "drm: failed reset");
 
+    std::vector<SP<SDRMConnector>> noMode;
+
     for (auto& c : connectors) {
         if (!c->crtc || !c->output)
             continue;
@@ -277,6 +279,12 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         };
 
         auto& STATE = c->output->state->state();
+
+        if (!STATE.customMode && !STATE.mode) {
+            backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no mode, will send a reset state event later.");
+            noMode.emplace_back(c);
+            continue;
+        }
 
         if (STATE.mode && STATE.mode->modeInfo.has_value())
             data.modeInfo = *STATE.mode->modeInfo;
@@ -308,6 +316,14 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
         if (!impl->commit(c, data))
             backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
+    }
+
+    for (auto& c : noMode) {
+        if (!c->output)
+            continue;
+
+        // tell the consumer to re-set a state because we had no mode
+        c->output->events.state.emit(IOutput::SStateEvent{});
     }
 }
 
@@ -1630,8 +1646,13 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
 }
 
 void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
-    const auto&    STATE = connector->output->state->state();
-    const auto     MODE  = STATE.mode ? STATE.mode : STATE.customMode;
+    const auto& STATE = connector->output->state->state();
+    const auto  MODE  = STATE.mode ? STATE.mode : STATE.customMode;
+
+    if (!MODE) {
+        connector->backend->log(AQ_LOG_ERROR, "drm: no mode in calculateMode??");
+        return;
+    }
 
     di_cvt_options options = {
         .red_blank_ver = DI_CVT_REDUCED_BLANKING_NONE,

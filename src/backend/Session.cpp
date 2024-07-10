@@ -396,6 +396,8 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
     auto eventType = libinput_event_get_type(e);
     auto data      = libinput_device_get_user_data(device);
 
+    backend->log(AQ_LOG_TRACE, std::format("libinput: Event {}", (int)eventType));
+
     if (!data && eventType != LIBINPUT_EVENT_DEVICE_ADDED) {
         backend->log(AQ_LOG_ERROR, "libinput: No aq device in event and not added");
         return;
@@ -847,6 +849,7 @@ void Aquamarine::CLibinputDevice::init() {
 }
 
 Aquamarine::CLibinputDevice::~CLibinputDevice() {
+    libinput_device_set_user_data(device, nullptr);
     libinput_device_unref(device);
 }
 
