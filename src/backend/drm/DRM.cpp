@@ -1345,6 +1345,20 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         data.mainFB = drmFB;
     }
 
+    // sometimes, our consumer could f up the swapchain format and change it without the state changing
+    bool formatMismatch = false;
+    if (data.mainFB) {
+        if (const auto params = data.mainFB->buffer->dmabuf(); params.success && params.format != STATE.drmFormat) {
+            // formats mismatch. Update the state format and roll with it
+            backend->backend->log(AQ_LOG_WARNING,
+                                  std::format("drm: Formats mismatch in commit, buffer is {} but output is set to {}. Modesetting to {}", fourccToName(params.format),
+                                              fourccToName(STATE.drmFormat), fourccToName(params.format)));
+            state->setFormat(params.format);
+            formatMismatch = true;
+            flags &= ~DRM_MODE_PAGE_FLIP_ASYNC; // we cannot modeset with async pf
+        }
+    }
+
     if (connector->crtc->pendingCursor)
         data.cursorFB = connector->crtc->pendingCursor;
     else
@@ -1361,8 +1375,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
     }
 
-    data.blocking = BLOCKING;
-    data.modeset  = NEEDS_RECONFIG || lastCommitNoBuffer;
+    data.blocking = BLOCKING || formatMismatch;
+    data.modeset  = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;
     data.flags    = flags;
     data.test     = onlyTest;
     if (MODE->modeInfo.has_value())
