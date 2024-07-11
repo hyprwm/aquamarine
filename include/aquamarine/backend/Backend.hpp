@@ -123,10 +123,9 @@ namespace Aquamarine {
             Hyprutils::Signal::CSignal newTabletPad;
         } events;
 
-        Hyprutils::Memory::CSharedPointer<IAllocator>              primaryAllocator;
-        std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> allocators;
-        bool                                                       ready = false;
-        Hyprutils::Memory::CSharedPointer<CSession>                session;
+        Hyprutils::Memory::CSharedPointer<IAllocator> primaryAllocator;
+        bool                                          ready = false;
+        Hyprutils::Memory::CSharedPointer<CSession>   session;
 
       private:
         CBackend();

@@ -144,13 +144,12 @@ bool Aquamarine::CBackend::start() {
     // TODO: obviously change this when (if) we add different allocators.
     for (auto& b : implementations) {
         if (b->drmFD() >= 0) {
-            allocators.emplace_back(CGBMAllocator::create(b->drmFD(), self));
-            if (!primaryAllocator)
-                primaryAllocator = allocators.front();
+            primaryAllocator = CGBMAllocator::create(b->drmFD(), self);
+            break;
         }
     }
 
-    if (allocators.empty() || !primaryAllocator)
+    if (!primaryAllocator)
         return false;
 
     ready = true;

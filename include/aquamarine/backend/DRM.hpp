@@ -13,6 +13,7 @@ namespace Aquamarine {
     class CDRMFB;
     class CDRMOutput;
     struct SDRMConnector;
+    class CDRMRenderer;
 
     typedef std::function<void(void)> FIdleCallback;
 
@@ -341,7 +342,6 @@ namespace Aquamarine {
 
         std::vector<FIdleCallback>                                      idleCallbacks;
         std::string                                                     gpuName;
-        Hyprutils::Memory::CWeakPointer<IAllocator>                     allocator;
 
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
@@ -350,15 +350,24 @@ namespace Aquamarine {
         bool registerGPU(Hyprutils::Memory::CSharedPointer<CSessionDevice> gpu_, Hyprutils::Memory::CSharedPointer<CDRMBackend> primary_ = {});
         bool checkFeatures();
         bool initResources();
+        bool initMgpu();
         bool grabFormats();
+        bool shouldBlit();
         void scanConnectors();
         void scanLeases();
         void restoreAfterVT();
         void recheckCRTCs();
 
-        Hyprutils::Memory::CSharedPointer<CSessionDevice>             gpu;
-        Hyprutils::Memory::CSharedPointer<IDRMImplementation>         impl;
-        Hyprutils::Memory::CWeakPointer<CDRMBackend>                  primary;
+        Hyprutils::Memory::CSharedPointer<CSessionDevice>     gpu;
+        Hyprutils::Memory::CSharedPointer<IDRMImplementation> impl;
+        Hyprutils::Memory::CWeakPointer<CDRMBackend>          primary;
+
+        // multigpu state, only present if this backend is not primary, aka if this->primary != nullptr
+        struct {
+            Hyprutils::Memory::CSharedPointer<IAllocator>   allocator;
+            Hyprutils::Memory::CSharedPointer<CSwapchain>   swapchain;
+            Hyprutils::Memory::CSharedPointer<CDRMRenderer> renderer;
+        } mgpu;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
 

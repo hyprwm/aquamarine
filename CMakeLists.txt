@@ -17,6 +17,7 @@ set(INCLUDE ${CMAKE_INSTALL_FULL_INCLUDEDIR})
 set(LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
 
 find_package(PkgConfig REQUIRED)
+find_package(OpenGL REQUIRED COMPONENTS "GLES2")
 find_package(hyprwayland-scanner 0.4.0 REQUIRED)
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     libseat>=0.8.0 libinput>=1.26.0
@@ -51,7 +52,11 @@ set_target_properties(aquamarine PROPERTIES
     VERSION ${AQUAMARINE_VERSION}
     SOVERSION 0
 )
-target_link_libraries(aquamarine PkgConfig::deps)
+target_link_libraries(aquamarine
+    OpenGL::EGL
+    OpenGL::GL
+    PkgConfig::deps
+)
 
 check_include_file("sys/timerfd.h" HAS_TIMERFD)
 pkg_check_modules(epoll IMPORTED_TARGET epoll-shim)

@@ -2,6 +2,7 @@
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <aquamarine/backend/drm/Atomic.hpp>
+#include <aquamarine/allocator/GBM.hpp>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
@@ -24,6 +25,7 @@ extern "C" {
 #include "FormatUtils.hpp"
 #include "Shared.hpp"
 #include "hwdata.hpp"
+#include "Renderer.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -465,6 +467,38 @@ bool Aquamarine::CDRMBackend::initResources() {
     return true;
 }
 
+bool Aquamarine::CDRMBackend::shouldBlit() {
+    return primary;
+}
+
+bool Aquamarine::CDRMBackend::initMgpu() {
+    if (!primary)
+        return true;
+
+    mgpu.allocator = CGBMAllocator::create(gpu->fd, backend);
+
+    if (!mgpu.allocator) {
+        backend->log(AQ_LOG_ERROR, "drm: initMgpu: no allocator");
+        return false;
+    }
+
+    mgpu.swapchain = CSwapchain::create(mgpu.allocator, self.lock());
+
+    if (!mgpu.swapchain) {
+        backend->log(AQ_LOG_ERROR, "drm: initMgpu: no swapchain");
+        return false;
+    }
+
+    mgpu.renderer = CDRMRenderer::attempt(gpu->fd, backend.lock());
+
+    if (!mgpu.renderer) {
+        backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
+        return false;
+    }
+
+    return true;
+}
+
 void Aquamarine::CDRMBackend::recheckCRTCs() {
     if (connectors.empty() || crtcs.empty())
         return;
@@ -760,26 +794,17 @@ void Aquamarine::CDRMBackend::onReady() {
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: onReady: connector {} has output name {}", c->id, c->output->name));
 
-        // find our allocator, for multigpu setups there will be 2
-        for (auto& alloc : backend->allocators) {
-            if (alloc->drmFD() != gpu->fd)
-                continue;
-
-            allocator = alloc;
-            break;
-        }
-
-        if (!allocator) {
-            backend->log(AQ_LOG_ERROR, std::format("drm: backend for gpu {} doesn't have an allocator?!", gpu->path));
-            return;
-        }
-
         // swapchain has to be created here because allocator is absent in connect if not ready
-        c->output->swapchain = CSwapchain::create(allocator.lock(), self.lock());
+        c->output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
         c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!primary}); // mark the swapchain for scanout
         c->output->needsFrame = true;
 
         backend->events.newOutput.emit(SP<IOutput>(c->output));
+    }
+
+    if (!initMgpu()) {
+        backend->log(AQ_LOG_ERROR, "drm: Failed initializing mgpu");
+        return;
     }
 }
 
@@ -852,7 +877,7 @@ int Aquamarine::CDRMBackend::getNonMasterFD() {
 }
 
 SP<IAllocator> Aquamarine::CDRMBackend::preferredAllocator() {
-    return allocator.lock();
+    return backend->primaryAllocator;
 }
 
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
@@ -1172,7 +1197,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (!backend->backend->ready)
         return;
 
-    output->swapchain = CSwapchain::create(backend->allocator.lock(), backend->self.lock());
+    output->swapchain = CSwapchain::create(backend->backend->primaryAllocator, backend->self.lock());
     backend->backend->events.newOutput.emit(output);
     output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
 }
@@ -1327,10 +1352,26 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Committed a buffer, updating state"));
 
         SP<CDRMFB> drmFB;
-        auto       buf   = STATE.buffer;
-        bool       isNew = false;
 
-        drmFB = CDRMFB::create(buf, backend, &isNew); // will return attachment if present
+        if (backend->shouldBlit()) {
+            TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires blit, blitting"));
+
+            auto OPTIONS     = swapchain->currentOptions();
+            OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
+            if (!backend->mgpu.swapchain->reconfigure(OPTIONS)) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain failed reconfiguring");
+                return false;
+            }
+
+            auto NEWAQBUF = backend->mgpu.swapchain->next(nullptr);
+            if (!backend->mgpu.renderer->blit(STATE.buffer, NEWAQBUF)) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but blit failed");
+                return false;
+            }
+
+            drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
+        } else
+            drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
 
         if (!drmFB) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
