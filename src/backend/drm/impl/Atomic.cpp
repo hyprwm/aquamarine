@@ -83,7 +83,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
 
-    if (data.modeset && enable) {
+    if (data.modeset) {
         add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
         data.atomic.blobbed = true;
     }
