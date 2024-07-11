@@ -496,6 +496,8 @@ bool Aquamarine::CDRMBackend::initMgpu() {
         return false;
     }
 
+    mgpu.renderer->self = mgpu.renderer;
+
     return true;
 }
 

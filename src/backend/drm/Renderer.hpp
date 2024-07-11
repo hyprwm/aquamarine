@@ -8,6 +8,24 @@
 #include <gbm.h>
 
 namespace Aquamarine {
+    class CDRMRendererBufferAttachment : public IAttachment {
+      public:
+        CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
+                                     GLuint rbo_, GLuint texid_);
+        virtual ~CDRMRendererBufferAttachment() {
+            ;
+        }
+        virtual eAttachmentType type() {
+            return AQ_ATTACHMENT_DRM_RENDERER_DATA;
+        }
+
+        EGLImageKHR                                   eglImage = nullptr;
+        GLuint                                        fbo = 0, rbo = 0, texid = 0;
+        Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
+
+        Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
+    };
+
     class CDRMRenderer {
       public:
         static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(int drmfd, Hyprutils::Memory::CSharedPointer<CBackend> backend_);
@@ -18,6 +36,8 @@ namespace Aquamarine {
 
         void                                                   setEGL();
         void                                                   restoreEGL();
+
+        void                                                   onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
 
         struct {
             struct {
@@ -53,7 +73,9 @@ namespace Aquamarine {
             GLuint   texid = 0;
         };
 
-        GLTex glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
+        GLTex                                         glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
+
+        Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
 
       private:
         CDRMRenderer() = default;

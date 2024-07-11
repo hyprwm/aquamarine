@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include "Math.hpp"
 #include "Shared.hpp"
+#include "FormatUtils.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -276,6 +277,8 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
     attribs.push_back(EGL_LINUX_DRM_FOURCC_EXT);
     attribs.push_back(attrs.format);
 
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL: createEGLImage: size {} with format {}", attrs.size, fourccToName(attrs.format))));
+
     struct {
         EGLint fd;
         EGLint offset;
@@ -364,37 +367,77 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
     }
 
     // firstly, get a texture from the from buffer
-    auto fromTex = glTex(from);
+    // if it has an attachment, use that
+    // both from and to have the same AQ_ATTACHMENT_DRM_RENDERER_DATA.
+    // Those buffers always come from different swapchains, so it's OK.
+
+    GLTex fromTex;
+    {
+        auto attachment = from->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
+        if (attachment) {
+            TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): From attachment found"));
+            auto att = (CDRMRendererBufferAttachment*)attachment.get();
+            fromTex  = {att->eglImage, att->texid};
+        }
+
+        if (!fromTex.image) {
+            backend->log(AQ_LOG_DEBUG, "EGL (blit): No attachment in from, creating a new image");
+            fromTex = glTex(from);
+
+            // should never remove anything, but JIC. We'll leak an EGLImage if this removes anything.
+            from->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
+            from->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, from, fromTex.image, 0, 0, fromTex.texid));
+        }
+    }
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (blit): fromTex id {}, image 0x{:x}", fromTex.texid, (uintptr_t)fromTex.image)));
 
     // then, get a rbo from our to buffer
-    auto toDma = to->dmabuf();
+    // if it has an attachment, use that
 
-    auto rboImage = createEGLImage(toDma);
-    if (rboImage == EGL_NO_IMAGE_KHR) {
-        backend->log(AQ_LOG_ERROR, std::format("EGL (blit): createEGLImage failed: {}", eglGetError()));
-        return false;
+    EGLImageKHR rboImage = nullptr;
+    GLuint      rboID = 0, fboID = 0;
+    auto        toDma = to->dmabuf();
+    {
+        auto attachment = to->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
+        if (attachment) {
+            TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): To attachment found"));
+            auto att = (CDRMRendererBufferAttachment*)attachment.get();
+            rboImage = att->eglImage;
+            fboID    = att->fbo;
+            rboID    = att->rbo;
+        }
+
+        if (!rboImage) {
+            backend->log(AQ_LOG_DEBUG, "EGL (blit): No attachment in to, creating a new image");
+
+            rboImage = createEGLImage(toDma);
+            if (rboImage == EGL_NO_IMAGE_KHR) {
+                backend->log(AQ_LOG_ERROR, std::format("EGL (blit): createEGLImage failed: {}", eglGetError()));
+                return false;
+            }
+
+            GLCALL(glGenRenderbuffers(1, &rboID));
+            GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
+            egl.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage);
+            GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+
+            GLCALL(glGenFramebuffers(1, &fboID));
+            GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fboID));
+            GLCALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rboID));
+
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                backend->log(AQ_LOG_ERROR, std::format("EGL (blit): glCheckFramebufferStatus failed: {}", glGetError()));
+                return false;
+            }
+
+            // should never remove anything, but JIC. We'll leak an RBO and FBO if this removes anything.
+            to->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
+            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, 0));
+        }
     }
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (blit): rboImage 0x{:x}", (uintptr_t)rboImage)));
-
-    GLuint rboID = 0, fboID = 0;
-
-    // TODO: don't spam this?
-    GLCALL(glGenRenderbuffers(1, &rboID));
-    GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
-    egl.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage);
-    GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
-
-    GLCALL(glGenFramebuffers(1, &fboID));
-    GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fboID));
-    GLCALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rboID));
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        backend->log(AQ_LOG_ERROR, std::format("EGL (blit): glCheckFramebufferStatus failed: {}", glGetError()));
-        return false;
-    }
 
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fboID));
@@ -410,12 +453,18 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (blit): box size {}", renderBox.size())));
 
     float mtx[9];
-    float identity[9];
+    float base[9];
     float monitorProj[9];
-    matrixIdentity(identity);
-    projectBox(mtx, renderBox, HYPRUTILS_TRANSFORM_NORMAL, 0, identity);
+    matrixIdentity(base);
 
-    matrixProjection(monitorProj, toDma.size.x, toDma.size.y, HYPRUTILS_TRANSFORM_NORMAL);
+    // KMS uses flipped y, we have to do FLIPPED_180
+    matrixTranslate(base, toDma.size.x / 2.0, toDma.size.y / 2.0);
+    matrixTransform(base, HYPRUTILS_TRANSFORM_FLIPPED_180);
+    matrixTranslate(base, -toDma.size.x / 2.0, -toDma.size.y / 2.0);
+
+    projectBox(mtx, renderBox, HYPRUTILS_TRANSFORM_FLIPPED_180, 0, base);
+
+    matrixProjection(monitorProj, toDma.size.x, toDma.size.y, HYPRUTILS_TRANSFORM_FLIPPED_180);
 
     float glMtx[9];
     matrixMultiply(glMtx, monitorProj, mtx);
@@ -424,6 +473,10 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
 
     GLCALL(glActiveTexture(GL_TEXTURE0));
     GLCALL(glBindTexture(GL_TEXTURE_2D, fromTex.texid));
+
+    GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+
     GLCALL(glUseProgram(gl.shader.program));
     GLCALL(glDisable(GL_BLEND));
     GLCALL(glDisable(GL_SCISSOR_TEST));
@@ -448,18 +501,36 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
 
     // rendered, cleanup
 
-    GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+    glFlush();
+
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-
-    GLCALL(glDeleteTextures(1, &fromTex.texid));
-
-    GLCALL(glDeleteRenderbuffers(1, &rboID));
-    GLCALL(glDeleteFramebuffers(1, &fboID));
-
-    egl.eglDestroyImageKHR(egl.display, rboImage);
-    egl.eglDestroyImageKHR(egl.display, fromTex.image);
+    GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
     restoreEGL();
 
     return true;
+}
+
+void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment) {
+    setEGL();
+
+    TRACE(backend->log(AQ_LOG_TRACE,
+                       std::format("EGL (onBufferAttachmentDrop): dropping fbo {} rbo {} image 0x{:x}", attachment->fbo, attachment->rbo, (uintptr_t)attachment->eglImage)));
+
+    if (attachment->texid)
+        GLCALL(glDeleteTextures(1, &attachment->texid));
+    if (attachment->rbo)
+        GLCALL(glDeleteRenderbuffers(1, &attachment->rbo));
+    if (attachment->fbo)
+        GLCALL(glDeleteFramebuffers(1, &attachment->fbo));
+    if (attachment->eglImage)
+        egl.eglDestroyImageKHR(egl.display, attachment->eglImage);
+
+    restoreEGL();
+}
+
+CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
+                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, GLuint texid_) :
+    eglImage(image), fbo(fbo_), rbo(rbo_), renderer(renderer_), texid(texid_) {
+    bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
 }
