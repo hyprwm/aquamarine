@@ -200,6 +200,11 @@ SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
         attrs.push_back(EGL_CONTEXT_PRIORITY_HIGH_IMG);
     }
 
+    if (EGLEXTENSIONS2.contains("EXT_create_context_robustness")) {
+        attrs.push_back(EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT);
+        attrs.push_back(EGL_LOSE_CONTEXT_ON_RESET_EXT);
+    }
+
     attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
     attrs.push_back(2);
     attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
@@ -348,6 +353,8 @@ CDRMRenderer::GLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffe
     egl.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, tex.image);
     GLCALL(glBindTexture(GL_TEXTURE_2D, 0));
 
+    glFlush();
+
     return tex;
 }
 
@@ -436,6 +443,8 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
             to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, 0));
         }
     }
+
+    glFlush();
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (blit): rboImage 0x{:x}", (uintptr_t)rboImage)));
 
