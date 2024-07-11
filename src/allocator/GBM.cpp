@@ -53,7 +53,8 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) 
 }
 
 Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
-                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) : allocator(allocator_) {
+                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
+    allocator(allocator_) {
     if (!allocator)
         return;
 
@@ -158,8 +159,11 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
 Aquamarine::CGBMBuffer::~CGBMBuffer() {
     events.destroy.emit();
-    if (bo)
+    if (bo) {
+        if (gboMapping)
+            gbm_bo_unmap(bo, gboMapping); // FIXME: is it needed before destroy?
         gbm_bo_destroy(bo);
+    }
     for (size_t i = 0; i < (size_t)attrs.planes; i++)
         close(attrs.fds.at(i));
 }
@@ -186,6 +190,14 @@ bool Aquamarine::CGBMBuffer::good() {
 
 SDMABUFAttrs Aquamarine::CGBMBuffer::dmabuf() {
     return attrs;
+}
+
+std::tuple<uint8_t*, uint32_t, size_t> Aquamarine::CGBMBuffer::beginDataPtr(uint32_t flags) {
+    uint32_t dst_stride = 0;
+    if (!boBuffer)
+        boBuffer = gbm_bo_map(bo, 0, 0, attrs.size.x, attrs.size.y, flags, &dst_stride, &gboMapping);
+    // FIXME: assumes cursor with DRM_FORMAT_ARGB8888
+    return {(uint8_t*)boBuffer, attrs.format, attrs.size.x * attrs.size.y * 4};
 }
 
 CGBMAllocator::~CGBMAllocator() {
