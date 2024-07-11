@@ -101,15 +101,17 @@ void Aquamarine::COutputState::setExplicitInFence(int64_t fenceFD) {
 }
 
 void Aquamarine::COutputState::setExplicitOutFence(int64_t fenceFD) {
-    internalState.explicitOutFence = fenceFD;
+    // internalState.explicitOutFence = fenceFD;
     internalState.committed |= AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE;
+}
+
+void Aquamarine::COutputState::resetExplicitFences() {
+    // fences are now used, let's reset them to not confuse ourselves later.
+    internalState.explicitInFence  = -1;
+    internalState.explicitOutFence = -1;
 }
 
 void Aquamarine::COutputState::onCommit() {
     internalState.committed = 0;
     internalState.damage.clear();
-
-    // fences are now used, let's reset them to not confuse ourselves later.
-    internalState.explicitInFence  = -1;
-    internalState.explicitOutFence = -1;
 }

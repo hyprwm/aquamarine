@@ -82,6 +82,7 @@ namespace Aquamarine {
         void                  setBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
         void                  setExplicitInFence(int64_t fenceFD);  // -1 removes
         void                  setExplicitOutFence(int64_t fenceFD); // -1 removes
+        void                  resetExplicitFences();
 
       private:
         SInternalState internalState;

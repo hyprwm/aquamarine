@@ -101,8 +101,8 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
-        if (connector->output->supportsExplicit && STATE.explicitOutFence >= 0)
-            add(connector->crtc->id, connector->crtc->props.out_fence_ptr, STATE.explicitOutFence);
+        if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
+            add(connector->crtc->id, connector->crtc->props.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
         if (connector->crtc->props.gamma_lut && data.atomic.gammad)
             add(connector->crtc->id, connector->crtc->props.gamma_lut, data.atomic.gammaLut);
