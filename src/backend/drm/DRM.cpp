@@ -1703,6 +1703,9 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
 }
 
 void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+    if (!connector || !connector->output || !connector->output->state)
+        return;
+
     const auto& STATE = connector->output->state->state();
     const auto  MODE  = STATE.mode ? STATE.mode : STATE.customMode;
 
