@@ -8,6 +8,7 @@
 
 namespace Aquamarine {
     enum eBufferCapability : uint32_t {
+        BUFFER_CAPABILITY_NONE    = 0,
         BUFFER_CAPABILITY_DATAPTR = (1 << 0),
     };
 
@@ -63,7 +64,7 @@ namespace Aquamarine {
         Hyprutils::Math::Vector2D                      size;
         bool                                           opaque = false;
 
-        CAttachmentManager attachments;
+        CAttachmentManager                             attachments;
 
         struct {
             Hyprutils::Signal::CSignal destroy;
