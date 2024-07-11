@@ -620,6 +620,10 @@ void Aquamarine::CWaylandOutput::onFrameDone() {
     waylandState.frameCallback.reset();
     readyForFrameCallback = false;
 
+    // FIXME: this is wrong, but otherwise we get bugs.
+    // thanks @phonetic112
+    scheduleFrame(AQ_SCHEDULE_NEEDS_FRAME);
+
     if (frameScheduledWhileWaiting)
         sendFrameAndSetCallback();
     else
