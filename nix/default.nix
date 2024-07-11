@@ -8,6 +8,7 @@
   libdisplay-info,
   libdrm,
   libffi,
+  libGL,
   libinput,
   libseat,
   mesa,
@@ -35,6 +36,7 @@ stdenv.mkDerivation {
     libdisplay-info
     libdrm
     libffi
+    libGL
     libinput
     libseat
     mesa
