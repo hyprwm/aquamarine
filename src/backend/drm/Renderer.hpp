@@ -11,10 +11,16 @@
 #include <vector>
 
 namespace Aquamarine {
+
+    struct SGLTex {
+        EGLImage image  = nullptr;
+        GLuint   texid  = 0;
+        GLuint   target = GL_TEXTURE_2D;
+    };
     class CDRMRendererBufferAttachment : public IAttachment {
       public:
         CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
-                                     GLuint rbo_, GLuint texid_);
+                                     GLuint rbo_, SGLTex tex);
         virtual ~CDRMRendererBufferAttachment() {
             ;
         }
@@ -23,7 +29,8 @@ namespace Aquamarine {
         }
 
         EGLImageKHR                                   eglImage = nullptr;
-        GLuint                                        fbo = 0, rbo = 0, texid = 0;
+        GLuint                                        fbo = 0, rbo = 0;
+        SGLTex                                        tex;
         Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
@@ -73,19 +80,13 @@ namespace Aquamarine {
             EGLSurface draw = nullptr, read = nullptr;
         } savedEGLState;
 
-        struct GLTex {
-            EGLImage image  = nullptr;
-            GLuint   texid  = 0;
-            GLuint   target = GL_TEXTURE_2D;
-        };
-
         struct GLFormat {
             uint32_t drmFormat = 0;
             uint64_t modifier  = 0;
             bool     external  = false;
         };
 
-        GLTex                                         glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
+        SGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
         std::vector<GLFormat>                         formats;

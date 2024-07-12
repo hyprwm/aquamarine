@@ -474,8 +474,8 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
         }                                                                                                                                                                          \
     }
 
-CDRMRenderer::GLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
-    GLTex      tex;
+SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
+    SGLTex     tex;
 
     const auto dma = buffa->dmabuf();
 
@@ -490,7 +490,7 @@ CDRMRenderer::GLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffe
         if (fmt.drmFormat != dma.format || fmt.modifier != dma.modifier)
             continue;
 
-        backend->log(AQ_LOG_DEBUG, std::format("CDRMRenderer::glTex: found format+mod, external = {}", external));
+        backend->log(AQ_LOG_DEBUG, std::format("CDRMRenderer::glTex: found format+mod, external = {}", fmt.external));
         external = fmt.external;
         break;
     }
@@ -528,13 +528,13 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
     // both from and to have the same AQ_ATTACHMENT_DRM_RENDERER_DATA.
     // Those buffers always come from different swapchains, so it's OK.
 
-    GLTex fromTex;
+    SGLTex fromTex;
     {
         auto attachment = from->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
         if (attachment) {
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): From attachment found"));
             auto att = (CDRMRendererBufferAttachment*)attachment.get();
-            fromTex  = {att->eglImage, att->texid};
+            fromTex  = att->tex;
         }
 
         if (!fromTex.image) {
@@ -543,7 +543,7 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
 
             // should never remove anything, but JIC. We'll leak an EGLImage if this removes anything.
             from->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-            from->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, from, fromTex.image, 0, 0, fromTex.texid));
+            from->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, from, nullptr, 0, 0, fromTex));
         }
     }
 
@@ -598,7 +598,7 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
 
             // should never remove anything, but JIC. We'll leak an RBO and FBO if this removes anything.
             to->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, 0));
+            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, SGLTex{}));
         }
     }
 
@@ -686,14 +686,16 @@ void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachme
     TRACE(backend->log(AQ_LOG_TRACE,
                        std::format("EGL (onBufferAttachmentDrop): dropping fbo {} rbo {} image 0x{:x}", attachment->fbo, attachment->rbo, (uintptr_t)attachment->eglImage)));
 
-    if (attachment->texid)
-        GLCALL(glDeleteTextures(1, &attachment->texid));
+    if (attachment->tex.texid)
+        GLCALL(glDeleteTextures(1, &attachment->tex.texid));
     if (attachment->rbo)
         GLCALL(glDeleteRenderbuffers(1, &attachment->rbo));
     if (attachment->fbo)
         GLCALL(glDeleteFramebuffers(1, &attachment->fbo));
     if (attachment->eglImage)
         egl.eglDestroyImageKHR(egl.display, attachment->eglImage);
+    if (attachment->tex.image)
+        egl.eglDestroyImageKHR(egl.display, attachment->tex.image);
 
     restoreEGL();
 }
@@ -719,7 +721,7 @@ bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
 }
 
 CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
-                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, GLuint texid_) :
-    eglImage(image), fbo(fbo_), rbo(rbo_), renderer(renderer_), texid(texid_) {
+                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex tex_) :
+    eglImage(image), fbo(fbo_), rbo(rbo_), renderer(renderer_), tex(tex_) {
     bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
 }
