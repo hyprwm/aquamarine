@@ -6,6 +6,9 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <gbm.h>
+#include <optional>
+#include <tuple>
+#include <vector>
 
 namespace Aquamarine {
     class CDRMRendererBufferAttachment : public IAttachment {
@@ -60,6 +63,8 @@ namespace Aquamarine {
             PFNEGLDESTROYIMAGEKHRPROC                     eglDestroyImageKHR                     = nullptr;
             PFNGLEGLIMAGETARGETTEXTURE2DOESPROC           glEGLImageTargetTexture2DOES           = nullptr;
             PFNGLEGLIMAGETARGETRENDERBUFFERSTORAGEOESPROC glEGLImageTargetRenderbufferStorageOES = nullptr;
+            PFNEGLQUERYDMABUFFORMATSEXTPROC               eglQueryDmaBufFormatsEXT               = nullptr;
+            PFNEGLQUERYDMABUFMODIFIERSEXTPROC             eglQueryDmaBufModifiersEXT             = nullptr;
         } egl;
 
         struct {
@@ -69,19 +74,30 @@ namespace Aquamarine {
         } savedEGLState;
 
         struct GLTex {
-            EGLImage image = nullptr;
-            GLuint   texid = 0;
+            EGLImage image  = nullptr;
+            GLuint   texid  = 0;
+            GLuint   target = GL_TEXTURE_2D;
+        };
+
+        struct GLFormat {
+            uint32_t drmFormat = 0;
+            uint64_t modifier  = 0;
+            bool     external  = false;
         };
 
         GLTex                                         glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
+        std::vector<GLFormat>                         formats;
 
       private:
         CDRMRenderer() = default;
 
-        EGLImageKHR                               createEGLImage(const SDMABUFAttrs& attrs);
+        EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
+        std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);
+        bool                                                  initDRMFormats();
+        bool                                                  hasModifiers = false;
 
-        Hyprutils::Memory::CWeakPointer<CBackend> backend;
+        Hyprutils::Memory::CWeakPointer<CBackend>             backend;
     };
 };

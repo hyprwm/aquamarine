@@ -6,6 +6,7 @@
 #include "Math.hpp"
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
+#include <xf86drm.h>
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -128,6 +129,102 @@ inline void loadGLProc(void* pProc, const char* name) {
 
 // -------------------
 
+std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFormat(EGLint format) {
+    // TODO: return std::expected when clang supports it
+
+    EGLint len = 0;
+    if (!egl.eglQueryDmaBufModifiersEXT(egl.display, format, 0, nullptr, nullptr, &len)) {
+        backend->log(AQ_LOG_ERROR, std::format("EGL: eglQueryDmaBufModifiersEXT failed for format {}", fourccToName(format)));
+        return std::nullopt;
+    }
+
+    if (len <= 0)
+        return std::vector<std::pair<uint64_t, bool>>{};
+
+    std::vector<uint64_t>   mods;
+    std::vector<EGLBoolean> external;
+
+    mods.resize(len);
+    external.resize(len);
+
+    egl.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len);
+
+    std::vector<std::pair<uint64_t, bool>> result;
+    bool                                   linearIsExternal = false;
+    for (size_t i = 0; i < mods.size(); ++i) {
+        if (external.at(i)) {
+            if (mods.at(i) == DRM_FORMAT_MOD_LINEAR)
+                linearIsExternal = true;
+        }
+
+        result.push_back({mods.at(i), external.at(i)});
+    }
+
+    // if the driver doesn't mark linear as external, add it. It's allowed unless the driver says otherwise. (e.g. nvidia)
+    if (!linearIsExternal && std::find(mods.begin(), mods.end(), DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
+        result.push_back({DRM_FORMAT_MOD_LINEAR, false});
+
+    return result;
+}
+
+bool CDRMRenderer::initDRMFormats() {
+    std::vector<EGLint> formats;
+
+    EGLint              len = 0;
+    egl.eglQueryDmaBufFormatsEXT(egl.display, 0, nullptr, &len);
+    formats.resize(len);
+    egl.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len);
+
+    if (formats.size() == 0) {
+        backend->log(AQ_LOG_ERROR, "EGL: Failed to get formats");
+        return false;
+    }
+
+    TRACE(backend->log(AQ_LOG_TRACE, "EGL: Supported formats:"));
+
+    std::vector<GLFormat> dmaFormats;
+
+    for (auto& fmt : formats) {
+        std::vector<std::pair<uint64_t, bool>> mods;
+
+        auto                                   ret = getModsForFormat(fmt);
+        if (!ret.has_value())
+            continue;
+
+        mods = *ret;
+
+        hasModifiers = hasModifiers || mods.size() > 0;
+
+        // EGL can always do implicit modifiers.
+        mods.push_back({DRM_FORMAT_MOD_INVALID, true});
+
+        for (auto& [mod, external] : mods) {
+            dmaFormats.push_back(GLFormat{
+                .drmFormat = (uint32_t)fmt,
+                .modifier  = mod,
+                .external  = external,
+            });
+        }
+
+        TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL: GPU Supports Format {} (0x{:x})", fourccToName((uint32_t)fmt), fmt)));
+        for (auto& [mod, external] : mods) {
+            auto modName = drmGetFormatModifierName(mod);
+            TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL:  | with modifier 0x{:x}: {}", mod, modName ? modName : "?unknown?")));
+            free(modName);
+        }
+    }
+
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL: Found {} formats", dmaFormats.size())));
+
+    if (dmaFormats.empty()) {
+        backend->log(AQ_LOG_ERROR, "EGL: No formats");
+        return false;
+    }
+
+    this->formats = dmaFormats;
+    return true;
+}
+
 SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
     SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
     renderer->drmFD           = drmfd;
@@ -167,6 +264,8 @@ SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
     loadGLProc(&renderer->egl.eglDestroyImageKHR, "eglDestroyImageKHR");
     loadGLProc(&renderer->egl.glEGLImageTargetTexture2DOES, "glEGLImageTargetTexture2DOES");
     loadGLProc(&renderer->egl.glEGLImageTargetRenderbufferStorageOES, "glEGLImageTargetRenderbufferStorageOES");
+    loadGLProc(&renderer->egl.eglQueryDmaBufFormatsEXT, "eglQueryDmaBufFormatsEXT");
+    loadGLProc(&renderer->egl.eglQueryDmaBufModifiersEXT, "eglQueryDmaBufModifiersEXT");
 
     if (!renderer->egl.eglGetPlatformDisplayEXT) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglGetPlatformDisplayEXT");
@@ -175,6 +274,16 @@ SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
 
     if (!renderer->egl.eglCreateImageKHR) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglCreateImageKHR");
+        return nullptr;
+    }
+
+    if (!renderer->egl.eglQueryDmaBufFormatsEXT) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglQueryDmaBufFormatsEXT");
+        return nullptr;
+    }
+
+    if (!renderer->egl.eglQueryDmaBufModifiersEXT) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglQueryDmaBufModifiersEXT");
         return nullptr;
     }
 
@@ -205,6 +314,16 @@ SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
         attrs.push_back(EGL_LOSE_CONTEXT_ON_RESET_EXT);
     }
 
+    if (!EGLEXTENSIONS2.contains("EXT_image_dma_buf_import_modifiers")) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no EXT_image_dma_buf_import_modifiers ext");
+        return nullptr;
+    }
+
+    if (!EGLEXTENSIONS2.contains("EXT_image_dma_buf_import")) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no EXT_image_dma_buf_import ext");
+        return nullptr;
+    }
+
     attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
     attrs.push_back(2);
     attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
@@ -232,6 +351,11 @@ SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
     // init shaders
 
     renderer->setEGL();
+
+    if (!renderer->initDRMFormats()) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, initDRMFormats failed");
+        return nullptr;
+    }
 
     renderer->gl.shader.program = createProgram(VERT_SRC, FRAG_SRC);
     if (renderer->gl.shader.program == 0) {
@@ -303,7 +427,7 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
         attribs.push_back(attrs.offsets[i]);
         attribs.push_back(attrNames[i].pitch);
         attribs.push_back(attrs.strides[i]);
-        if (attrs.modifier != DRM_FORMAT_MOD_INVALID) { // FIXME: this will implode if we don't support mods. Does anyone not support them??
+        if (hasModifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
             attribs.push_back(attrNames[i].modlo);
             attribs.push_back(attrs.modifier & 0xFFFFFFFF);
             attribs.push_back(attrNames[i].modhi);
@@ -337,23 +461,35 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
     }
 
 CDRMRenderer::GLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
-    GLTex tex;
+    GLTex      tex;
 
-    tex.image = createEGLImage(buffa->dmabuf());
+    const auto dma = buffa->dmabuf();
+
+    tex.image = createEGLImage(dma);
     if (tex.image == EGL_NO_IMAGE_KHR) {
         backend->log(AQ_LOG_ERROR, std::format("EGL (glTex): createEGLImage failed: {}", eglGetError()));
         return tex;
     }
 
+    bool external = false;
+    for (auto& fmt : formats) {
+        if (fmt.drmFormat != dma.format || fmt.modifier != dma.modifier)
+            continue;
+
+        backend->log(AQ_LOG_DEBUG, std::format("CDRMRenderer::glTex: found format+mod, external = {}", external));
+        external = fmt.external;
+        break;
+    }
+
+    tex.target = external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+
     GLCALL(glGenTextures(1, &tex.texid));
 
-    GLCALL(glBindTexture(GL_TEXTURE_2D, tex.texid));
-    GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-    GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-    egl.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, tex.image);
-    GLCALL(glBindTexture(GL_TEXTURE_2D, 0));
-
-    glFlush();
+    GLCALL(glBindTexture(tex.target, tex.texid));
+    GLCALL(glTexParameteri(tex.target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GLCALL(glTexParameteri(tex.target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GLCALL(egl.glEGLImageTargetTexture2DOES(tex.target, tex.image));
+    GLCALL(glBindTexture(tex.target, 0));
 
     return tex;
 }
@@ -481,10 +617,10 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
     GLCALL(glViewport(0, 0, toDma.size.x, toDma.size.y));
 
     GLCALL(glActiveTexture(GL_TEXTURE0));
-    GLCALL(glBindTexture(GL_TEXTURE_2D, fromTex.texid));
+    GLCALL(glBindTexture(fromTex.target, fromTex.texid));
 
-    GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-    GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GLCALL(glTexParameteri(fromTex.target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GLCALL(glTexParameteri(fromTex.target, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
 
     GLCALL(glUseProgram(gl.shader.program));
     GLCALL(glDisable(GL_BLEND));
@@ -506,7 +642,7 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
     GLCALL(glDisableVertexAttribArray(gl.shader.posAttrib));
     GLCALL(glDisableVertexAttribArray(gl.shader.texAttrib));
 
-    GLCALL(glBindTexture(GL_TEXTURE_2D, 0));
+    GLCALL(glBindTexture(fromTex.target, 0));
 
     // rendered, cleanup
 
