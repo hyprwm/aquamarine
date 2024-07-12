@@ -406,7 +406,7 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
     attribs.push_back(EGL_LINUX_DRM_FOURCC_EXT);
     attribs.push_back(attrs.format);
 
-    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL: createEGLImage: size {} with format {}", attrs.size, fourccToName(attrs.format))));
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL: createEGLImage: size {} with format {} and modifier 0x{:x}", attrs.size, fourccToName(attrs.format), attrs.modifier)));
 
     struct {
         EGLint fd;
