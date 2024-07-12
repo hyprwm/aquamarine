@@ -808,19 +808,6 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getRenderFormats() {
         if (p->type != DRM_PLANE_TYPE_PRIMARY)
             continue;
 
-        if (primary) {
-            TRACE(backend->log(AQ_LOG_TRACE, std::format("drm: getRenderFormats on secondary {}", gpu->path)));
-
-            // this is a secondary GPU renderer. In order to receive buffers,
-            // we'll force linear modifiers.
-            // TODO: don't. Find a common maybe?
-            auto fmts = p->formats;
-            for (auto& fmt : fmts) {
-                fmt.modifiers = {DRM_FORMAT_MOD_LINEAR};
-            }
-            return fmts;
-        }
-
         return p->formats;
     }
 
