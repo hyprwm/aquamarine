@@ -482,13 +482,6 @@ bool Aquamarine::CDRMBackend::initMgpu() {
         return false;
     }
 
-    mgpu.swapchain = CSwapchain::create(mgpu.allocator, self.lock());
-
-    if (!mgpu.swapchain) {
-        backend->log(AQ_LOG_ERROR, "drm: initMgpu: no swapchain");
-        return false;
-    }
-
     mgpu.renderer = CDRMRenderer::attempt(gpu->fd, backend.lock());
 
     if (!mgpu.renderer) {
@@ -1358,14 +1351,19 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         if (backend->shouldBlit()) {
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires blit, blitting"));
 
+            if (!mgpu.swapchain) {
+                TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: No swapchain for blit, creating"));
+                mgpu.swapchain = CSwapchain::create(backend->mgpu.allocator, backend.lock());
+            }
+
             auto OPTIONS     = swapchain->currentOptions();
             OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
-            if (!backend->mgpu.swapchain->reconfigure(OPTIONS)) {
+            if (!mgpu.swapchain->reconfigure(OPTIONS)) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain failed reconfiguring");
                 return false;
             }
 
-            auto NEWAQBUF = backend->mgpu.swapchain->next(nullptr);
+            auto NEWAQBUF = mgpu.swapchain->next(nullptr);
             if (!backend->mgpu.renderer->blit(STATE.buffer, NEWAQBUF)) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but blit failed");
                 return false;
@@ -1446,16 +1444,53 @@ SP<IBackendImplementation> Aquamarine::CDRMOutput::getBackend() {
 }
 
 bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotspot) {
+    if (!buffer->dmabuf().success) {
+        backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer has to be a dmabuf");
+        return false;
+    }
+
     if (!buffer)
         setCursorVisible(false);
     else {
-        cursorHotspot = hotspot;
-        bool isNew    = false;
-        auto fb       = CDRMFB::create(buffer, backend, &isNew);
+        SP<CDRMFB> fb;
+
+        if (backend->primary) {
+            TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires cursor blit, blitting"));
+
+            if (!mgpu.cursorSwapchain) {
+                TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: No cursorSwapchain for blit, creating"));
+                mgpu.cursorSwapchain = CSwapchain::create(backend->mgpu.allocator, backend.lock());
+            }
+
+            auto OPTIONS     = mgpu.cursorSwapchain->currentOptions();
+            OPTIONS.multigpu = false;
+            OPTIONS.scanout  = true;
+            OPTIONS.cursor   = true;
+            OPTIONS.format   = buffer->dmabuf().format;
+            OPTIONS.size     = buffer->dmabuf().size;
+            OPTIONS.length   = 2;
+
+            if (!mgpu.cursorSwapchain->reconfigure(OPTIONS)) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu cursorSwapchain failed reconfiguring");
+                return false;
+            }
+
+            auto NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
+            if (!backend->mgpu.renderer->blit(buffer, NEWAQBUF)) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but cursor blit failed");
+                return false;
+            }
+
+            fb = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
+        } else
+            fb = CDRMFB::create(buffer, backend, nullptr);
+
         if (!fb) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer failed to import to KMS");
             return false;
         }
+
+        cursorHotspot = hotspot;
 
         backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Cursor buffer imported into KMS with id {}", fb->id));
 

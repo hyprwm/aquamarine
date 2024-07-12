@@ -217,7 +217,12 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<SDRMConnector>             connector;
         Hyprutils::Memory::CSharedPointer<std::function<void(void)>> frameIdle;
 
-        bool                                                         lastCommitNoBuffer = true;
+        struct {
+            Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
+            Hyprutils::Memory::CSharedPointer<CSwapchain> cursorSwapchain;
+        } mgpu;
+
+        bool lastCommitNoBuffer = true;
 
         friend struct SDRMConnector;
         friend class CDRMLease;
@@ -365,7 +370,6 @@ namespace Aquamarine {
         // multigpu state, only present if this backend is not primary, aka if this->primary != nullptr
         struct {
             Hyprutils::Memory::CSharedPointer<IAllocator>   allocator;
-            Hyprutils::Memory::CSharedPointer<CSwapchain>   swapchain;
             Hyprutils::Memory::CSharedPointer<CDRMRenderer> renderer;
         } mgpu;
 
