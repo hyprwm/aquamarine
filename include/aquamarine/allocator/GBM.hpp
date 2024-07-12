@@ -21,6 +21,7 @@ namespace Aquamarine {
         virtual bool                                   good();
         virtual SDMABUFAttrs                           dmabuf();
         virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);
+        virtual void                                   endDataPtr();
 
       private:
         CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain);
