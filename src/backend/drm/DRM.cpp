@@ -1358,6 +1358,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
             auto OPTIONS     = swapchain->currentOptions();
             OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
+            OPTIONS.cursor   = false;
+            OPTIONS.scanout  = true;
             if (!mgpu.swapchain->reconfigure(OPTIONS)) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain failed reconfiguring");
                 return false;

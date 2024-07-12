@@ -96,6 +96,7 @@ namespace Aquamarine {
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
         std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);
         bool                                                  initDRMFormats();
+        bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
         bool                                                  hasModifiers = false;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;

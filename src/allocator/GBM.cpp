@@ -62,8 +62,11 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     attrs.format = params.format;
     size         = attrs.size;
 
-    const bool            CURSOR   = params.cursor && params.scanout;
-    const bool            MULTIGPU = params.multigpu && params.scanout;
+    const bool CURSOR   = params.cursor && params.scanout;
+    const bool MULTIGPU = params.multigpu && params.scanout;
+
+    TRACE(allocator->backend->log(AQ_LOG_TRACE,
+                                  std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}", attrs.size, fourccToName(attrs.format), CURSOR, MULTIGPU)));
 
     const auto            FORMATS = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
 
@@ -95,8 +98,10 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     }
 
     // FIXME: Nvidia cannot render to linear buffers. What do?
-    if (MULTIGPU)
+    if (MULTIGPU) {
+        allocator->backend->log(AQ_LOG_DEBUG, "GBM: Buffer is marked as multigpu, forcing linear");
         explicitModifiers = {DRM_FORMAT_MOD_LINEAR};
+    }
 
     if (explicitModifiers.empty()) {
         // fall back to using a linear buffer.

@@ -541,6 +541,12 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
     EGLImageKHR rboImage = nullptr;
     GLuint      rboID = 0, fboID = 0;
     auto        toDma = to->dmabuf();
+
+    if (!verifyDestinationDMABUF(toDma)) {
+        backend->log(AQ_LOG_ERROR, "EGL (blit): failed to blit: destination dmabuf unsupported");
+        return false;
+    }
+
     {
         auto attachment = to->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
         if (attachment) {
@@ -672,6 +678,26 @@ void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachme
         egl.eglDestroyImageKHR(egl.display, attachment->eglImage);
 
     restoreEGL();
+}
+
+bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
+    for (auto& fmt : formats) {
+        if (fmt.drmFormat != attrs.format)
+            continue;
+
+        if (fmt.modifier != attrs.modifier)
+            continue;
+
+        if (fmt.external) {
+            backend->log(AQ_LOG_ERROR, "EGL (verifyDestinationDMABUF): FAIL, format is external-only");
+            return false;
+        }
+
+        return true;
+    }
+
+    backend->log(AQ_LOG_ERROR, "EGL (verifyDestinationDMABUF): FAIL, format is unsupported by EGL");
+    return false;
 }
 
 CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
