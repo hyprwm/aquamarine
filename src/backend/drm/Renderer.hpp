@@ -43,10 +43,10 @@ namespace Aquamarine {
         void                                                   onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
 
         struct {
-            struct {
+            struct SShader {
                 GLuint program = 0;
                 GLint  proj = -1, tex = -1, posAttrib = -1, texAttrib = -1;
-            } shader;
+            } shader, shaderExt;
         } gl;
 
         struct {

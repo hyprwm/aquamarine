@@ -83,6 +83,16 @@ void main() {
     gl_FragColor = texture2D(tex, v_texcoord);
 })#";
 
+inline const std::string FRAG_SRC_EXT = R"#(
+#extension GL_OES_EGL_image_external : require
+precision highp float;
+varying vec2 v_texcoord; // is in 0-1
+uniform samplerExternalOES texture0;
+
+void main() {
+    gl_FragColor = texture2D(texture0, v_texcoord);
+})#";
+
 // ------------------- gbm stuff
 
 static int openRenderNode(int drmFd) {
@@ -150,19 +160,12 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     egl.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len);
 
     std::vector<std::pair<uint64_t, bool>> result;
-    bool                                   linearIsExternal = false;
     for (size_t i = 0; i < mods.size(); ++i) {
-        if (external.at(i)) {
-            if (mods.at(i) == DRM_FORMAT_MOD_LINEAR)
-                linearIsExternal = true;
-        }
-
         result.push_back({mods.at(i), external.at(i)});
     }
 
-    // if the driver doesn't mark linear as external, add it. It's allowed unless the driver says otherwise. (e.g. nvidia)
-    if (!linearIsExternal && std::find(mods.begin(), mods.end(), DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
-        result.push_back({DRM_FORMAT_MOD_LINEAR, false});
+    if (std::find(mods.begin(), mods.end(), DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
+        result.push_back({DRM_FORMAT_MOD_LINEAR, true});
 
     return result;
 }
@@ -209,7 +212,7 @@ bool CDRMRenderer::initDRMFormats() {
         TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL: GPU Supports Format {} (0x{:x})", fourccToName((uint32_t)fmt), fmt)));
         for (auto& [mod, external] : mods) {
             auto modName = drmGetFormatModifierName(mod);
-            TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL:  | with modifier 0x{:x}: {}", mod, modName ? modName : "?unknown?")));
+            TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL:  | {}with modifier 0x{:x}: {}", (external ? "external only " : ""), mod, modName ? modName : "?unknown?")));
             free(modName);
         }
     }
@@ -367,6 +370,17 @@ SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
     renderer->gl.shader.posAttrib = glGetAttribLocation(renderer->gl.shader.program, "pos");
     renderer->gl.shader.texAttrib = glGetAttribLocation(renderer->gl.shader.program, "texcoord");
     renderer->gl.shader.tex       = glGetUniformLocation(renderer->gl.shader.program, "tex");
+
+    renderer->gl.shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
+    if (renderer->gl.shaderExt.program == 0) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, shaderExt failed");
+        return nullptr;
+    }
+
+    renderer->gl.shaderExt.proj      = glGetUniformLocation(renderer->gl.shaderExt.program, "proj");
+    renderer->gl.shaderExt.posAttrib = glGetAttribLocation(renderer->gl.shaderExt.program, "pos");
+    renderer->gl.shaderExt.texAttrib = glGetAttribLocation(renderer->gl.shaderExt.program, "texcoord");
+    renderer->gl.shaderExt.tex       = glGetUniformLocation(renderer->gl.shaderExt.program, "tex");
 
     renderer->restoreEGL();
 
@@ -533,7 +547,9 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
         }
     }
 
-    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (blit): fromTex id {}, image 0x{:x}", fromTex.texid, (uintptr_t)fromTex.image)));
+    TRACE(backend->log(AQ_LOG_TRACE,
+                       std::format("EGL (blit): fromTex id {}, image 0x{:x}, target {}", fromTex.texid, (uintptr_t)fromTex.image,
+                                   fromTex.target == GL_TEXTURE_2D ? "GL_TEXTURE_2D" : "GL_TEXTURE_EXTERNAL_OES")));
 
     // then, get a rbo from our to buffer
     // if it has an attachment, use that
@@ -568,7 +584,7 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
 
             GLCALL(glGenRenderbuffers(1, &rboID));
             GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
-            egl.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage);
+            GLCALL(egl.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage));
             GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
             GLCALL(glGenFramebuffers(1, &fboID));
@@ -608,6 +624,8 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
     float monitorProj[9];
     matrixIdentity(base);
 
+    auto& SHADER = fromTex.target == GL_TEXTURE_2D ? gl.shader : gl.shaderExt;
+
     // KMS uses flipped y, we have to do FLIPPED_180
     matrixTranslate(base, toDma.size.x / 2.0, toDma.size.y / 2.0);
     matrixTransform(base, HYPRUTILS_TRANSFORM_FLIPPED_180);
@@ -628,25 +646,25 @@ bool CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to) {
     GLCALL(glTexParameteri(fromTex.target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GLCALL(glTexParameteri(fromTex.target, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
 
-    GLCALL(glUseProgram(gl.shader.program));
+    GLCALL(glUseProgram(SHADER.program));
     GLCALL(glDisable(GL_BLEND));
     GLCALL(glDisable(GL_SCISSOR_TEST));
 
     matrixTranspose(glMtx, glMtx);
-    GLCALL(glUniformMatrix3fv(gl.shader.proj, 1, GL_FALSE, glMtx));
+    GLCALL(glUniformMatrix3fv(SHADER.proj, 1, GL_FALSE, glMtx));
 
-    GLCALL(glUniform1i(gl.shader.tex, 0));
+    GLCALL(glUniform1i(SHADER.tex, 0));
 
-    GLCALL(glVertexAttribPointer(gl.shader.posAttrib, 2, GL_FLOAT, GL_FALSE, 0, fullVerts));
-    GLCALL(glVertexAttribPointer(gl.shader.texAttrib, 2, GL_FLOAT, GL_FALSE, 0, fullVerts));
+    GLCALL(glVertexAttribPointer(SHADER.posAttrib, 2, GL_FLOAT, GL_FALSE, 0, fullVerts));
+    GLCALL(glVertexAttribPointer(SHADER.texAttrib, 2, GL_FLOAT, GL_FALSE, 0, fullVerts));
 
-    GLCALL(glEnableVertexAttribArray(gl.shader.posAttrib));
-    GLCALL(glEnableVertexAttribArray(gl.shader.texAttrib));
+    GLCALL(glEnableVertexAttribArray(SHADER.posAttrib));
+    GLCALL(glEnableVertexAttribArray(SHADER.texAttrib));
 
     GLCALL(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
 
-    GLCALL(glDisableVertexAttribArray(gl.shader.posAttrib));
-    GLCALL(glDisableVertexAttribArray(gl.shader.texAttrib));
+    GLCALL(glDisableVertexAttribArray(SHADER.posAttrib));
+    GLCALL(glDisableVertexAttribArray(SHADER.texAttrib));
 
     GLCALL(glBindTexture(fromTex.target, 0));
 
