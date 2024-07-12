@@ -12,6 +12,8 @@
 
 namespace Aquamarine {
 
+    class CGBMAllocator;
+
     struct SGLTex {
         EGLImage image  = nullptr;
         GLuint   texid  = 0;
@@ -38,7 +40,8 @@ namespace Aquamarine {
 
     class CDRMRenderer {
       public:
-        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(int drmfd, Hyprutils::Memory::CSharedPointer<CBackend> backend_);
+        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_,
+                                                                       Hyprutils::Memory::CSharedPointer<CBackend>      backend_);
 
         int                                                    drmFD = -1;
 
@@ -55,11 +58,6 @@ namespace Aquamarine {
                 GLint  proj = -1, tex = -1, posAttrib = -1, texAttrib = -1;
             } shader, shaderExt;
         } gl;
-
-        struct {
-            int         fd     = -1;
-            gbm_device* device = nullptr;
-        } gbm;
 
         struct {
             EGLDisplay                                    display = nullptr;

@@ -64,5 +64,6 @@ namespace Aquamarine {
         std::string drmName              = "";
 
         friend class CGBMBuffer;
+        friend class CDRMRenderer;
     };
 };

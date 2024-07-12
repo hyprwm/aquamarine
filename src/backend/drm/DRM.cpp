@@ -475,14 +475,15 @@ bool Aquamarine::CDRMBackend::initMgpu() {
     if (!primary)
         return true;
 
-    mgpu.allocator = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
+    auto newAllocator = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
+    mgpu.allocator    = newAllocator;
 
     if (!mgpu.allocator) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no allocator");
         return false;
     }
 
-    mgpu.renderer = CDRMRenderer::attempt(gpu->fd, backend.lock());
+    mgpu.renderer = CDRMRenderer::attempt(newAllocator, backend.lock());
 
     if (!mgpu.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");

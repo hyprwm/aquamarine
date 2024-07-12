@@ -7,6 +7,7 @@
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
 #include <xf86drm.h>
+#include <aquamarine/allocator/GBM.hpp>
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -92,39 +93,6 @@ uniform samplerExternalOES texture0;
 void main() {
     gl_FragColor = texture2D(texture0, v_texcoord);
 })#";
-
-// ------------------- gbm stuff
-
-static int openRenderNode(int drmFd) {
-    auto renderName = drmGetRenderDeviceNameFromFd(drmFd);
-    if (!renderName) {
-        // This can happen on split render/display platforms, fallback to
-        // primary node
-        renderName = drmGetPrimaryDeviceNameFromFd(drmFd);
-        if (!renderName) {
-            gBackend->log(AQ_LOG_ERROR, "drmRenderer: drmGetPrimaryDeviceNameFromFd failed");
-            return -1;
-        }
-        gBackend->log(AQ_LOG_WARNING, std::format("DRM dev {} has no render node, falling back to primary", renderName));
-
-        drmVersion* render_version = drmGetVersion(drmFd);
-        if (render_version && render_version->name) {
-            if (strcmp(render_version->name, "evdi") == 0) {
-                free(renderName);
-                renderName = (char*)malloc(sizeof(char) * 15);
-                strcpy(renderName, "/dev/dri/card0");
-            }
-            drmFreeVersion(render_version);
-        }
-    }
-
-    int renderFD = open(renderName, O_RDWR | O_CLOEXEC);
-    if (renderFD < 0)
-        gBackend->log(AQ_LOG_ERROR, std::format("openRenderNode failed to open drm device {}", renderName));
-
-    free(renderName);
-    return renderFD;
-}
 
 // ------------------- egl stuff
 
@@ -228,9 +196,9 @@ bool CDRMRenderer::initDRMFormats() {
     return true;
 }
 
-SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
+SP<CDRMRenderer> CDRMRenderer::attempt(Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, SP<CBackend> backend_) {
     SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
-    renderer->drmFD           = drmfd;
+    renderer->drmFD           = allocator_->drmFD();
     renderer->backend         = backend_;
     gBackend                  = backend_;
 
@@ -238,20 +206,6 @@ SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
 
     if (!EGLEXTENSIONS.contains("KHR_platform_gbm")) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no gbm support");
-        return nullptr;
-    }
-
-    // init gbm stuff
-
-    renderer->gbm.fd = openRenderNode(drmfd);
-    if (!renderer->gbm.fd) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no gbm fd");
-        return nullptr;
-    }
-
-    renderer->gbm.device = gbm_create_device(renderer->gbm.fd);
-    if (!renderer->gbm.device) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no gbm device");
         return nullptr;
     }
 
@@ -291,7 +245,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(int drmfd, SP<CBackend> backend_) {
     }
 
     std::vector<EGLint> attrs = {EGL_NONE};
-    renderer->egl.display     = renderer->egl.eglGetPlatformDisplayEXT(EGL_PLATFORM_GBM_KHR, renderer->gbm.device, attrs.data());
+    renderer->egl.display     = renderer->egl.eglGetPlatformDisplayEXT(EGL_PLATFORM_GBM_KHR, allocator_->gbmDevice, attrs.data());
     if (renderer->egl.display == EGL_NO_DISPLAY) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, eglGetPlatformDisplayEXT failed");
         return nullptr;
