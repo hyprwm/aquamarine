@@ -1617,7 +1617,7 @@ void Aquamarine::CDRMFB::import() {
     TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: new buffer {}", id)));
 
     // FIXME: why does this implode when it doesnt on wlroots or kwin?
-    // closeHandles();
+    closeHandles();
 
     listeners.destroyBuffer = buffer->events.destroy.registerListener([this](std::any d) {
         drop();

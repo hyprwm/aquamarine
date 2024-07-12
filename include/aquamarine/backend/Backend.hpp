@@ -112,6 +112,9 @@ namespace Aquamarine {
         /* remove an idle event from the queue */
         void removeIdleEvent(Hyprutils::Memory::CSharedPointer<std::function<void(void)>> pfn);
 
+        // utils
+        int reopenDRMNode(int drmFD, bool allowRenderNode = true);
+
         struct {
             Hyprutils::Signal::CSignal newOutput;
             Hyprutils::Signal::CSignal newPointer;
