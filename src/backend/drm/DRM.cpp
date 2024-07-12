@@ -1444,7 +1444,7 @@ SP<IBackendImplementation> Aquamarine::CDRMOutput::getBackend() {
 }
 
 bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotspot) {
-    if (!buffer->dmabuf().success) {
+    if (buffer && !buffer->dmabuf().success) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer has to be a dmabuf");
         return false;
     }
