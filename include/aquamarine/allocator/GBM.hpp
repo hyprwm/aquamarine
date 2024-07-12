@@ -14,12 +14,14 @@ namespace Aquamarine {
       public:
         virtual ~CGBMBuffer();
 
-        virtual eBufferCapability caps();
-        virtual eBufferType       type();
-        virtual void              update(const Hyprutils::Math::CRegion& damage);
-        virtual bool              isSynchronous();
-        virtual bool              good();
-        virtual SDMABUFAttrs      dmabuf();
+        virtual eBufferCapability                      caps();
+        virtual eBufferType                            type();
+        virtual void                                   update(const Hyprutils::Math::CRegion& damage);
+        virtual bool                                   isSynchronous();
+        virtual bool                                   good();
+        virtual SDMABUFAttrs                           dmabuf();
+        virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);
+        virtual void                                   endDataPtr();
 
       private:
         CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain);
@@ -27,7 +29,9 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator;
 
         // gbm stuff
-        gbm_bo*      bo = nullptr;
+        gbm_bo*      bo         = nullptr;
+        void*        boBuffer   = nullptr;
+        void*        gboMapping = nullptr;
         SDMABUFAttrs attrs{.success = false};
 
         friend class CGBMAllocator;
