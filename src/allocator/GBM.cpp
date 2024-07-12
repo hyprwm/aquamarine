@@ -196,7 +196,7 @@ std::tuple<uint8_t*, uint32_t, size_t> Aquamarine::CGBMBuffer::beginDataPtr(uint
     uint32_t dst_stride = 0;
     if (!boBuffer)
         boBuffer = gbm_bo_map(bo, 0, 0, attrs.size.x, attrs.size.y, flags, &dst_stride, &gboMapping);
-    // FIXME: assumes cursor with DRM_FORMAT_ARGB8888
+    // FIXME: assumes a 32-bit pixel format
     return {(uint8_t*)boBuffer, attrs.format, attrs.size.x * attrs.size.y * 4};
 }
 
