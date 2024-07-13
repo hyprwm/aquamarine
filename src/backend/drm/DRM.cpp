@@ -746,7 +746,7 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
 
     uint32_t flags = IOutput::AQ_OUTPUT_PRESENT_VSYNC | IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK | IOutput::AQ_OUTPUT_PRESENT_HW_COMPLETION | IOutput::AQ_OUTPUT_PRESENT_ZEROCOPY;
 
-    timespec presented = {.tv_sec = tv_sec, .tv_nsec = tv_usec * 1000};
+    timespec presented = {.tv_sec = (time_t)tv_sec, .tv_nsec = (long)(tv_usec * 1000)};
 
     pageFlip->connector->output->events.present.emit(IOutput::SPresentEvent{
         .presented = BACKEND->sessionActive(),
