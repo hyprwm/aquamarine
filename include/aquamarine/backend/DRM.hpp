@@ -199,6 +199,7 @@ namespace Aquamarine {
         virtual void                                                      setCursorVisible(bool visible);
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
         virtual size_t                                                    getGammaSize();
+        virtual std::vector<SDRMFormat>                                   getRenderFormats();
 
         int                                                               getConnectorID();
 

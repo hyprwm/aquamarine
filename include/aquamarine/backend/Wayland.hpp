@@ -49,6 +49,7 @@ namespace Aquamarine {
         virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
         virtual bool                                                      destroy();
+        virtual std::vector<SDRMFormat>                                   getRenderFormats();
 
         Hyprutils::Memory::CWeakPointer<CWaylandOutput>                   self;
 

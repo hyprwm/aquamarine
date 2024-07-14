@@ -1533,6 +1533,10 @@ size_t Aquamarine::CDRMOutput::getGammaSize() {
     return size;
 }
 
+std::vector<SDRMFormat> Aquamarine::CDRMOutput::getRenderFormats() {
+    return connector->crtc->primary->formats;
+}
+
 int Aquamarine::CDRMOutput::getConnectorID() {
     return connector->id;
 }
