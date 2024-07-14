@@ -501,6 +501,13 @@ Aquamarine::CWaylandOutput::~CWaylandOutput() {
         waylandState.surface->sendDestroy();
 }
 
+std::vector<SDRMFormat> Aquamarine::CWaylandOutput::getRenderFormats() {
+    // TODO
+    // this is technically wrong because this returns the format table formats
+    // the actually supported formats are given by tranche formats
+    return backend->getRenderFormats();
+}
+
 bool Aquamarine::CWaylandOutput::destroy() {
     events.destroy.emit();
     waylandState.surface->sendAttach(nullptr, 0, 0);

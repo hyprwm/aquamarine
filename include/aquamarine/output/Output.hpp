@@ -9,6 +9,7 @@
 #include <xf86drmMode.h>
 #include "../allocator/Swapchain.hpp"
 #include "../buffer/Buffer.hpp"
+#include "../backend/Misc.hpp"
 
 namespace Aquamarine {
 
@@ -114,9 +115,10 @@ namespace Aquamarine {
             AQ_SCHEDULE_NEEDS_FRAME,
         };
 
-        virtual bool                                                      commit()     = 0;
-        virtual bool                                                      test()       = 0;
-        virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend() = 0;
+        virtual bool                                                      commit()           = 0;
+        virtual bool                                                      test()             = 0;
+        virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend()       = 0;
+        virtual std::vector<SDRMFormat>                                   getRenderFormats() = 0;
         virtual Hyprutils::Memory::CSharedPointer<SOutputMode>            preferredMode();
         virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
         virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord); // includes the hotspot

@@ -17,6 +17,7 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend();
         virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual bool                                                      destroy();
+        virtual std::vector<SDRMFormat>                                   getRenderFormats();
 
         Hyprutils::Memory::CWeakPointer<CHeadlessOutput>                  self;
 

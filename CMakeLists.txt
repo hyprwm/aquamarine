@@ -31,6 +31,7 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
 configure_file(aquamarine.pc.in aquamarine.pc @ONLY)
 
 set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
     message(STATUS "Configuring aquamarine in Debug")

@@ -50,6 +50,11 @@ bool Aquamarine::CHeadlessOutput::test() {
     return true;
 }
 
+std::vector<SDRMFormat> Aquamarine::CHeadlessOutput::getRenderFormats() {
+    // not sure if this is right but prob doest matter
+    return backend->getRenderFormats();
+}
+
 Hyprutils::Memory::CSharedPointer<IBackendImplementation> Aquamarine::CHeadlessOutput::getBackend() {
     return backend.lock();
 }
