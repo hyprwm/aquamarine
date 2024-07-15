@@ -238,6 +238,9 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
         }
 
         backends.emplace_back(drmBackend);
+
+        // so that session can handle udev change/remove events for this gpu
+        backend->session->sessionDevices.push_back(gpu);
     }
 
     return backends;
@@ -1024,7 +1027,6 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     if (crtc->props.mode_id) {
         size_t size = 0;
         return (drmModeModeInfo*)getDRMPropBlob(backend->gpu->fd, crtc->id, crtc->props.mode_id, &size);
-        ;
     }
 
     auto drmCrtc = drmModeGetCrtc(backend->gpu->fd, crtc->id);
@@ -1095,14 +1097,14 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
             continue;
         }
 
-        if (i == 1)
-            fallbackModeInfo = drmMode;
-
         auto aqMode         = makeShared<SOutputMode>();
         aqMode->pixelSize   = {drmMode.hdisplay, drmMode.vdisplay};
         aqMode->refreshRate = calculateRefresh(drmMode);
         aqMode->preferred   = (drmMode.type & DRM_MODE_TYPE_PREFERRED);
         aqMode->modeInfo    = drmMode;
+
+        if (i == 1)
+            fallbackMode = aqMode;
 
         output->modes.emplace_back(aqMode);
 
@@ -1118,6 +1120,11 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         backend->backend->log(AQ_LOG_DEBUG,
                               std::format("drm: Mode {}: {}x{}@{:.2f}Hz {}", i, (int)aqMode->pixelSize.x, (int)aqMode->pixelSize.y, aqMode->refreshRate / 1000.0,
                                           aqMode->preferred ? " (preferred)" : ""));
+    }
+
+    if (!currentModeInfo) {
+        output->state->setMode(fallbackMode);
+        crtc->refresh = calculateRefresh(fallbackMode->modeInfo.value());
     }
 
     output->physicalSize = {(double)connector->mmWidth, (double)connector->mmHeight};
@@ -1181,7 +1188,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
 
     output->swapchain = CSwapchain::create(backend->backend->primaryAllocator, backend->self.lock());
-    backend->backend->events.newOutput.emit(output);
+    backend->backend->events.newOutput.emit(SP<IOutput>(output));
     output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
 }
 
@@ -1400,7 +1407,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         // fail to be created from gbm
         // TODO: add an API to detect this and request drm_dumb linear buffers. Or do something,
         // idk
-        if (data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID) {
+        if (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID) {
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Dropping invalid buffer for cursor plane"));
             data.cursorFB = nullptr;
         }
