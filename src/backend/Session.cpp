@@ -306,8 +306,10 @@ void Aquamarine::CSession::dispatchUdevEvents() {
     dev_t              deviceNum = udev_device_get_devnum(device);
     SP<CSessionDevice> sessionDevice;
     for (auto& sDev : sessionDevices) {
-        if (sDev->dev == deviceNum)
+        if (sDev->dev == deviceNum) {
             sessionDevice = sDev;
+            break;
+        }
     }
 
     if (!sessionDevice) {

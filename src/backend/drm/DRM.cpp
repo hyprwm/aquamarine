@@ -796,7 +796,6 @@ void Aquamarine::CDRMBackend::onReady() {
         // swapchain has to be created here because allocator is absent in connect if not ready
         c->output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
         c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!primary}); // mark the swapchain for scanout
-        c->output->setCursor(nullptr, {});
         c->output->needsFrame = true;
 
         backend->events.newOutput.emit(SP<IOutput>(c->output));
@@ -1189,7 +1188,6 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
 
     output->swapchain = CSwapchain::create(backend->backend->primaryAllocator, backend->self.lock());
-    output->setCursor(nullptr, {});
     backend->backend->events.newOutput.emit(SP<IOutput>(output));
     output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
 }
@@ -1404,12 +1402,12 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     else
         data.cursorFB = connector->crtc->cursor->front;
 
-    if (data.cursorFB && data.cursorFB->buffer) {
+    if (data.cursorFB) {
         // verify cursor format. This might be wrong on NVIDIA where linear buffers
         // fail to be created from gbm
         // TODO: add an API to detect this and request drm_dumb linear buffers. Or do something,
         // idk
-        if (data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID) {
+        if (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID) {
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Dropping invalid buffer for cursor plane"));
             data.cursorFB = nullptr;
         }
@@ -1448,13 +1446,9 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         return false;
     }
 
-    if (!buffer) {
-        connector->crtc->pendingCursor.reset();
-        connector->crtc->cursor->front.reset();
-        connector->crtc->cursor->back.reset();
-        connector->crtc->cursor->last.reset();
+    if (!buffer)
         setCursorVisible(false);
-    } else {
+    else {
         SP<CDRMFB> fb;
 
         if (backend->primary) {
