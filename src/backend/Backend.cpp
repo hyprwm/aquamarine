@@ -11,6 +11,7 @@
 #include <string.h>
 #include <xf86drm.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 using namespace Hyprutils::Memory;
 using namespace Aquamarine;
