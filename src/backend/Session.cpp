@@ -303,46 +303,47 @@ void Aquamarine::CSession::dispatchUdevEvents() {
         return;
     }
 
+    dev_t              deviceNum = udev_device_get_devnum(device);
+    SP<CSessionDevice> sessionDevice;
+    for (auto& sDev : sessionDevices) {
+        if (sDev->dev == deviceNum)
+            sessionDevice = sDev;
+    }
+
+    if (!sessionDevice) {
+        udev_device_unref(device);
+        return;
+    }
+
     if (action == std::string{"add"})
         events.addDrmCard.emit(SAddDrmCardEvent{.path = devnode});
-    else if (action == std::string{"change"} || action == std::string{"remove"}) {
-        dev_t deviceNum = udev_device_get_devnum(device);
+    else if (action == std::string{"change"}) {
+        backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} changed", sysname ? sysname : "unknown"));
 
-        for (auto& d : sessionDevices) {
-            if (d->dev != deviceNum)
-                continue;
+        CSessionDevice::SChangeEvent event;
 
-            if (action == std::string{"change"}) {
-                backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} changed", sysname ? sysname : "unknown"));
+        //
+        auto prop = udev_device_get_property_value(device, "HOTPLUG");
+        if (prop && prop == std::string{"1"}) {
+            event.type = CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG;
 
-                CSessionDevice::SChangeEvent event;
+            prop = udev_device_get_property_value(device, "CONNECTOR");
+            if (prop)
+                event.hotplug.connectorID = std::stoull(prop);
 
-                auto                         prop = udev_device_get_property_value(device, "HOTPLUG");
-                if (prop && prop == std::string{"1"}) {
-                    event.type = CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG;
-
-                    prop = udev_device_get_property_value(device, "CONNECTOR");
-                    if (prop)
-                        event.hotplug.connectorID = std::stoull(prop);
-
-                    prop = udev_device_get_property_value(device, "PROPERTY");
-                    if (prop)
-                        event.hotplug.propID = std::stoull(prop);
-                } else if (prop = udev_device_get_property_value(device, "LEASE"); prop && prop == std::string{"1"}) {
-                    event.type = CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE;
-                } else {
-                    backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} change event unrecognized", sysname ? sysname : "unknown"));
-                    break;
-                }
-
-                d->events.change.emit(event);
-            } else if (action == std::string{"remove"}) {
-                backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} removed", sysname ? sysname : "unknown"));
-                d->events.remove.emit();
-            }
-
-            break;
+            prop = udev_device_get_property_value(device, "PROPERTY");
+            if (prop)
+                event.hotplug.propID = std::stoull(prop);
+        } else if (prop = udev_device_get_property_value(device, "LEASE"); prop && prop == std::string{"1"}) {
+            event.type = CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE;
+        } else {
+            backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} change event unrecognized", sysname ? sysname : "unknown"));
         }
+
+        sessionDevice->events.change.emit(event);
+    } else if (action == std::string{"remove"}) {
+        backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} removed", sysname ? sysname : "unknown"));
+        sessionDevice->events.remove.emit();
     }
 
     udev_device_unref(device);

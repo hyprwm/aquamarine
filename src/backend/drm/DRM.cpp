@@ -238,6 +238,9 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
         }
 
         backends.emplace_back(drmBackend);
+
+        // so that session can handle udev change/remove events for this gpu
+        backend->session->sessionDevices.push_back(gpu);
     }
 
     return backends;
@@ -793,6 +796,7 @@ void Aquamarine::CDRMBackend::onReady() {
         // swapchain has to be created here because allocator is absent in connect if not ready
         c->output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
         c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!primary}); // mark the swapchain for scanout
+        c->output->setCursor(nullptr, {});
         c->output->needsFrame = true;
 
         backend->events.newOutput.emit(SP<IOutput>(c->output));
@@ -1024,7 +1028,6 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     if (crtc->props.mode_id) {
         size_t size = 0;
         return (drmModeModeInfo*)getDRMPropBlob(backend->gpu->fd, crtc->id, crtc->props.mode_id, &size);
-        ;
     }
 
     auto drmCrtc = drmModeGetCrtc(backend->gpu->fd, crtc->id);
@@ -1095,14 +1098,14 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
             continue;
         }
 
-        if (i == 1)
-            fallbackModeInfo = drmMode;
-
         auto aqMode         = makeShared<SOutputMode>();
         aqMode->pixelSize   = {drmMode.hdisplay, drmMode.vdisplay};
         aqMode->refreshRate = calculateRefresh(drmMode);
         aqMode->preferred   = (drmMode.type & DRM_MODE_TYPE_PREFERRED);
         aqMode->modeInfo    = drmMode;
+
+        if (i == 1)
+            fallbackMode = aqMode;
 
         output->modes.emplace_back(aqMode);
 
@@ -1118,6 +1121,11 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         backend->backend->log(AQ_LOG_DEBUG,
                               std::format("drm: Mode {}: {}x{}@{:.2f}Hz {}", i, (int)aqMode->pixelSize.x, (int)aqMode->pixelSize.y, aqMode->refreshRate / 1000.0,
                                           aqMode->preferred ? " (preferred)" : ""));
+    }
+
+    if (!currentModeInfo) {
+        output->state->setMode(fallbackMode);
+        crtc->refresh = calculateRefresh(fallbackMode->modeInfo.value());
     }
 
     output->physicalSize = {(double)connector->mmWidth, (double)connector->mmHeight};
@@ -1181,7 +1189,8 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
 
     output->swapchain = CSwapchain::create(backend->backend->primaryAllocator, backend->self.lock());
-    backend->backend->events.newOutput.emit(output);
+    output->setCursor(nullptr, {});
+    backend->backend->events.newOutput.emit(SP<IOutput>(output));
     output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
 }
 
@@ -1395,7 +1404,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     else
         data.cursorFB = connector->crtc->cursor->front;
 
-    if (data.cursorFB) {
+    if (data.cursorFB && data.cursorFB->buffer) {
         // verify cursor format. This might be wrong on NVIDIA where linear buffers
         // fail to be created from gbm
         // TODO: add an API to detect this and request drm_dumb linear buffers. Or do something,
@@ -1439,9 +1448,13 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         return false;
     }
 
-    if (!buffer)
+    if (!buffer) {
+        connector->crtc->pendingCursor.reset();
+        connector->crtc->cursor->front.reset();
+        connector->crtc->cursor->back.reset();
+        connector->crtc->cursor->last.reset();
         setCursorVisible(false);
-    else {
+    } else {
         SP<CDRMFB> fb;
 
         if (backend->primary) {

@@ -287,7 +287,7 @@ namespace Aquamarine {
         SDRMPageFlip                                   pendingPageFlip;
         bool                                           frameEventScheduled = false;
 
-        drmModeModeInfo                                fallbackModeInfo;
+        Hyprutils::Memory::CSharedPointer<SOutputMode> fallbackMode;
 
         struct {
             bool vrrEnabled = false;
