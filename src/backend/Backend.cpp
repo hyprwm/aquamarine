@@ -311,7 +311,7 @@ int Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {
     free(name);
 
     // We need to authenticate if we are using a DRM primary node and are the master
-    if (drmIsMaster(drmFD) && drmGetNodeTypeFromFd(drmFD) == DRM_NODE_PRIMARY) {
+    if (drmIsMaster(drmFD) && drmGetNodeTypeFromFd(newFD) == DRM_NODE_PRIMARY) {
         drm_magic_t magic;
         if (int ret = drmGetMagic(newFD, &magic); ret < 0) {
             log(AQ_LOG_ERROR, std::format("reopenDRMNode: drmGetMagic failed: {}", strerror(-ret)));
@@ -319,7 +319,7 @@ int Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {
             return -1;
         }
 
-        if (int ret = drmAuthMagic(newFD, magic); ret < 0) {
+        if (int ret = drmAuthMagic(drmFD, magic); ret < 0) {
             log(AQ_LOG_ERROR, std::format("reopenDRMNode: drmAuthMagic failed: {}", strerror(-ret)));
             close(newFD);
             return -1;
