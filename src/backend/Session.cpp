@@ -136,10 +136,11 @@ Aquamarine::CSessionDevice::CSessionDevice(Hyprutils::Memory::CSharedPointer<CSe
 }
 
 Aquamarine::CSessionDevice::~CSessionDevice() {
-    if (fd < 0)
-        return;
-    libseat_close_device(session->libseatHandle, fd);
-    close(fd);
+    if (deviceID >= 0)
+        if (libseat_close_device(session->libseatHandle, deviceID) < 0)
+            session->backend->log(AQ_LOG_ERROR, std::format("libseat: Couldn't close device at {}", path));
+    if (fd >= 0)
+        close(fd);
 }
 
 bool Aquamarine::CSessionDevice::supportsKMS() {
