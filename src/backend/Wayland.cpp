@@ -479,6 +479,9 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
 
     waylandState.xdgToplevel->setClose([this](CCXdgToplevel* r) { destroy(); });
 
+    waylandState.xdgToplevel->sendSetTitle(std::format("aquamarine - {}", name).c_str());
+    waylandState.xdgToplevel->sendSetAppId("aquamarine");
+
     auto inputRegion = makeShared<CCWlRegion>(backend->waylandState.compositor->sendCreateRegion());
     inputRegion->sendAdd(0, 0, INT32_MAX, INT32_MAX);
 
