@@ -81,6 +81,8 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
                        std::format("atomic addConnector blobs: mode_id {}, active {}, crtc_id {}, link_status {}, content_type {}", connector->crtc->props.mode_id,
                                    connector->crtc->props.active, connector->props.crtc_id, connector->props.link_status, connector->props.content_type)));
 
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
+
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
 
     if (data.modeset) {
