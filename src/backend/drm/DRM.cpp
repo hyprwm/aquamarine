@@ -1336,6 +1336,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             flags |= DRM_MODE_PAGE_FLIP_ASYNC;
     }
 
+    // we can't go further without a blit
+    if (backend->primary && onlyTest)
+        return true;
+
     SDRMConnectorCommitData data;
 
     if (STATE.buffer) {
