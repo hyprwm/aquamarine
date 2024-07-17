@@ -1355,7 +1355,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 mgpu.swapchain = CSwapchain::create(backend->mgpu.allocator, backend.lock());
             }
 
-            auto OPTIONS     = swapchain->currentOptions();
+            auto OPTIONS = swapchain->currentOptions();
+            auto bufDma  = STATE.buffer->dmabuf();
+            OPTIONS.size = STATE.buffer->size;
+            if (OPTIONS.format == DRM_FORMAT_INVALID)
+                OPTIONS.format = bufDma.format;
             OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
             OPTIONS.cursor   = false;
             OPTIONS.scanout  = true;
@@ -1428,6 +1432,18 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     bool ok = connector->commitState(data);
 
+    if (!ok && !data.modeset && !connector->commitTainted) {
+        // attempt to re-modeset, however, flip a tainted flag if the modesetting fails
+        // to avoid doing this over and over.
+        data.modeset  = true;
+        data.blocking = true;
+        data.flags    = DRM_MODE_PAGE_FLIP_EVENT;
+        ok            = connector->commitState(data);
+
+        if (!ok)
+            connector->commitTainted = true;
+    }
+
     if (onlyTest || !ok)
         return ok;
 
@@ -1436,6 +1452,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     lastCommitNoBuffer = !data.mainFB;
     needsFrame         = false;
+
+    if (ok)
+        connector->commitTainted = false;
 
     return ok;
 }

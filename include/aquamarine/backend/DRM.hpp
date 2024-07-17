@@ -287,6 +287,9 @@ namespace Aquamarine {
         SDRMPageFlip                                   pendingPageFlip;
         bool                                           frameEventScheduled = false;
 
+        // the current state is invalid and won't commit, don't try to modeset.
+        bool                                           commitTainted = false;
+
         Hyprutils::Memory::CSharedPointer<SOutputMode> fallbackMode;
 
         struct {
