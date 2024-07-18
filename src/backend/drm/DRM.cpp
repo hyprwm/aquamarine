@@ -1122,7 +1122,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
                                           aqMode->preferred ? " (preferred)" : ""));
     }
 
-    if (!currentModeInfo) {
+    if (!currentModeInfo && fallbackMode) {
         output->state->setMode(fallbackMode);
         crtc->refresh = calculateRefresh(fallbackMode->modeInfo.value());
     }
