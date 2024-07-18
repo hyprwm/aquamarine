@@ -533,8 +533,13 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             continue;
 
         bool assigned = false;
+
+        // try to use a connected connector
         for (auto& c : recheck) {
             if (!(c->possibleCrtcs & (1 << i)))
+                continue;
+
+            if (c->status != DRM_MODE_CONNECTED)
                 continue;
 
             // deactivate old output
@@ -543,7 +548,8 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
                 c->output->commit();
             }
 
-            backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} assigned to {} (old {})", i, crtcs.at(i)->id, c->szName, c->crtc ? (int)c->crtc->id : -1));
+            backend->log(AQ_LOG_DEBUG,
+                         std::format("drm: connected slot {} crtc {} assigned to {}{}", i, crtcs.at(i)->id, c->szName, c->crtc ? std::format(" (old {})", c->crtc->id) : ""));
             c->crtc  = crtcs.at(i);
             assigned = true;
             changed.emplace_back(c);
@@ -553,6 +559,13 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
         if (!assigned)
             backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} unassigned", i, crtcs.at(i)->id));
+    }
+
+    for (auto& c : connectors) {
+        if (c->status == DRM_MODE_CONNECTED)
+            continue;
+
+        backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} is not connected{}", c->szName, c->crtc ? std::format(", removing old crtc {}", c->crtc->id) : ""));
     }
 
     // if any connectors get a crtc and are connected, we need to rescan to assign them outputs.
@@ -597,6 +610,7 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
             scanConnectors();
+            recheckCRTCs();
         } else if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a lease event for {}", gpuName));
             scanLeases();
@@ -652,6 +666,8 @@ void Aquamarine::CDRMBackend::scanConnectors() {
             conn = *it;
         }
 
+        conn->status = drmConn->connection;
+
         if (!conn->crtc) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Ignoring connector {} because it has no CRTC", connectorID));
             continue;
@@ -659,10 +675,10 @@ void Aquamarine::CDRMBackend::scanConnectors() {
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connection state: {}", connectorID, (int)drmConn->connection));
 
-        if (conn->status == DRM_MODE_DISCONNECTED && drmConn->connection == DRM_MODE_CONNECTED) {
+        if (conn->status == DRM_MODE_CONNECTED && !conn->output) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
             conn->connect(drmConn);
-        } else if (conn->status == DRM_MODE_CONNECTED && drmConn->connection == DRM_MODE_DISCONNECTED) {
+        } else if (conn->status != DRM_MODE_CONNECTED && conn->output) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} disconnected", conn->szName));
             conn->disconnect();
         }
