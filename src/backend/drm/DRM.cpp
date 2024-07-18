@@ -1237,7 +1237,7 @@ void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& da
 void Aquamarine::SDRMConnector::onPresent() {
     crtc->primary->last  = crtc->primary->front;
     crtc->primary->front = crtc->primary->back;
-    if (crtc->cursor && crtc->cursor->back /* Don't shift if it hasn't updated */) {
+    if (crtc->cursor) {
         crtc->cursor->last  = crtc->cursor->front;
         crtc->cursor->front = crtc->cursor->back;
     }
