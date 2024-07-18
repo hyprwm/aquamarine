@@ -14,12 +14,12 @@ Aquamarine::CDRMLegacyImpl::CDRMLegacyImpl(Hyprutils::Memory::CSharedPointer<CDR
     ;
 }
 
-bool Aquamarine::CDRMLegacyImpl::moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+bool Aquamarine::CDRMLegacyImpl::moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, bool skipShedule) {
     if (!connector->output->cursorVisible || !connector->output->state->state().enabled || !connector->crtc || !connector->crtc->cursor)
         return true;
 
-    connector->output->needsFrame = true;
-    connector->output->scheduleFrame(IOutput::AQ_SCHEDULE_CURSOR_MOVE);
+    if (!skipShedule)
+        connector->output->scheduleFrame(IOutput::AQ_SCHEDULE_CURSOR_MOVE);
 
     return true;
 }

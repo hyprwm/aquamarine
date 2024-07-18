@@ -324,12 +324,14 @@ bool Aquamarine::CDRMAtomicImpl::reset() {
     return request.commit(DRM_MODE_ATOMIC_ALLOW_MODESET);
 }
 
-bool Aquamarine::CDRMAtomicImpl::moveCursor(SP<SDRMConnector> connector) {
+bool Aquamarine::CDRMAtomicImpl::moveCursor(SP<SDRMConnector> connector, bool skipShedule) {
     if (!connector->output->cursorVisible || !connector->output->state->state().enabled || !connector->crtc || !connector->crtc->cursor)
         return true;
 
-    connector->output->needsFrame = true;
-    connector->output->scheduleFrame(IOutput::AQ_SCHEDULE_CURSOR_MOVE);
+    if (!skipShedule) {
+        TRACE(connector->backend->log(AQ_LOG_TRACE, "atomic moveCursor"));
+        connector->output->scheduleFrame(IOutput::AQ_SCHEDULE_CURSOR_MOVE);
+    }
 
     return true;
 }

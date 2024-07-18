@@ -1289,7 +1289,6 @@ bool Aquamarine::CDRMOutput::test() {
 
 void Aquamarine::CDRMOutput::setCursorVisible(bool visible) {
     cursorVisible = visible;
-    needsFrame    = true;
     scheduleFrame(AQ_SCHEDULE_CURSOR_VISIBLE);
 }
 
@@ -1549,15 +1548,14 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         cursorVisible = true;
     }
 
-    needsFrame = true;
     scheduleFrame(AQ_SCHEDULE_CURSOR_SHAPE);
     return true;
 }
 
-void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord) {
-    cursorPos     = coord;
-    cursorVisible = true;
-    backend->impl->moveCursor(connector);
+void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord, bool skipShedule) {
+    cursorPos = coord;
+    // cursorVisible = true;
+    backend->impl->moveCursor(connector, skipShedule);
 }
 
 void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
