@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.19)
 
-set(AQUAMARINE_VERSION "0.1.0")
+file(READ "${CMAKE_SOURCE_DIR}/VERSION" VER_RAW)
+string(STRIP ${VER_RAW} AQUAMARINE_VERSION)
+
 add_compile_definitions(AQUAMARINE_VERSION="${AQUAMARINE_VERSION}")
 
 project(aquamarine
