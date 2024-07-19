@@ -1236,6 +1236,11 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     if (crtc->cursor && data.cursorFB)
         crtc->cursor->back = data.cursorFB;
 
+    if (data.mainFB)
+        data.mainFB->buffer->lockedByBackend = true;
+    if (crtc->cursor && data.cursorFB)
+        data.cursorFB->buffer->lockedByBackend = true;
+
     pendingCursorFB.reset();
 
     if (output->state->state().committed & COutputState::AQ_OUTPUT_STATE_MODE)
@@ -1253,9 +1258,18 @@ void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& da
 void Aquamarine::SDRMConnector::onPresent() {
     crtc->primary->last  = crtc->primary->front;
     crtc->primary->front = crtc->primary->back;
+    if (crtc->primary->last && crtc->primary->last->buffer) {
+        crtc->primary->last->buffer->lockedByBackend = false;
+        crtc->primary->last->buffer->events.backendRelease.emit();
+    }
+
     if (crtc->cursor) {
         crtc->cursor->last  = crtc->cursor->front;
         crtc->cursor->front = crtc->cursor->back;
+        if (crtc->cursor->last && crtc->cursor->last->buffer) {
+            crtc->cursor->last->buffer->lockedByBackend = false;
+            crtc->cursor->last->buffer->events.backendRelease.emit();
+        }
     }
 }
 

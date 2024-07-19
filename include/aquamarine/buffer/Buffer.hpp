@@ -62,12 +62,14 @@ namespace Aquamarine {
         virtual bool                                   locked();
 
         Hyprutils::Math::Vector2D                      size;
-        bool                                           opaque = false;
+        bool                                           opaque          = false;
+        bool                                           lockedByBackend = false;
 
         CAttachmentManager                             attachments;
 
         struct {
             Hyprutils::Signal::CSignal destroy;
+            Hyprutils::Signal::CSignal backendRelease;
         } events;
 
       private:
