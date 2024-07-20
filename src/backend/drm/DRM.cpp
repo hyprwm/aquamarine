@@ -1344,6 +1344,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     const auto MODE = STATE.mode ? STATE.mode : STATE.customMode;
 
+    if (!MODE) // modeless commits are invalid
+        return false;
+
     uint32_t   flags = 0;
 
     if (!onlyTest) {
