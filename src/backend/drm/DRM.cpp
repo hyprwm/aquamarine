@@ -1437,7 +1437,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     if (connector->crtc->pendingCursor)
         data.cursorFB = connector->crtc->pendingCursor;
-    else
+    else if (connector->crtc->cursor)
         data.cursorFB = connector->crtc->cursor->front;
 
     if (data.cursorFB) {
