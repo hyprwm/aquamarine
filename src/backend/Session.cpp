@@ -596,6 +596,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             hlDevice->touch->events.down.emit(ITouch::SDownEvent{
                 .timeMs  = (uint32_t)(libinput_event_touch_get_time_usec(te) / 1000),
                 .touchID = libinput_event_touch_get_seat_slot(te),
+                .pos     = {libinput_event_touch_get_x_transformed(te, 1), libinput_event_touch_get_y_transformed(te, 1)},
             });
             break;
         }
