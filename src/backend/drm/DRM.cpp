@@ -600,9 +600,8 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     gpuName = drmName;
 
     auto drmVerName = drmVer->name ? drmVer->name : "unknown";
-    if (std::string_view(drmVerName) == "evdi") {
+    if (std::string_view(drmVerName) == "evdi")
         primary = {};
-    }
 
     backend->log(AQ_LOG_DEBUG,
                  std::format("drm: Starting backend for {}, with driver {}{}", drmName ? drmName : "unknown", drmVerName,
