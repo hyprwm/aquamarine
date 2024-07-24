@@ -68,9 +68,8 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
                                   std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}, scanout: {}", attrs.size, fourccToName(attrs.format), CURSOR,
                                               MULTIGPU, params.scanout)));
 
-    const auto            FORMATS = CURSOR ?
-                   swapchain->backendImpl->getCursorFormats() :
-                   (swapchain->backendImpl->getRenderableFormats().size() == 0 ? swapchain->backendImpl->getRenderFormats() : swapchain->backendImpl->getRenderableFormats());
+    const auto            FORMATS    = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
+    const auto            RENDERABLE = swapchain->backendImpl->getRenderableFormats();
 
     std::vector<uint64_t> explicitModifiers;
 
@@ -94,6 +93,21 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         for (auto& m : f.modifiers) {
             if (m == DRM_FORMAT_MOD_INVALID)
                 continue;
+
+            if (!RENDERABLE.empty() && params.scanout && !CURSOR && !MULTIGPU) {
+                // regular scanout plane, check if the format is renderable
+                auto rformat = std::find_if(RENDERABLE.begin(), RENDERABLE.end(), [f](const auto& e) { return e.drmFormat == f.drmFormat; });
+
+                if (rformat == RENDERABLE.end()) {
+                    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping format {} as it's not renderable", fourccToName(f.drmFormat))));
+                    break;
+                }
+
+                if (std::find(rformat->modifiers.begin(), rformat->modifiers.end(), m) == rformat->modifiers.end()) {
+                    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping modifier 0x{:x} as it's not renderable", m)));
+                    continue;
+                }
+            }
 
             explicitModifiers.push_back(m);
         }
