@@ -314,3 +314,7 @@ int Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {
 
     return newFD;
 }
+
+std::vector<SDRMFormat> Aquamarine::IBackendImplementation::getRenderableFormats() {
+    return {};
+}

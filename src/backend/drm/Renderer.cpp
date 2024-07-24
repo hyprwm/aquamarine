@@ -153,7 +153,7 @@ bool CDRMRenderer::initDRMFormats() {
 
     TRACE(backend->log(AQ_LOG_TRACE, "EGL: Supported formats:"));
 
-    std::vector<GLFormat> dmaFormats;
+    std::vector<SGLFormat> dmaFormats;
 
     for (auto& fmt : formats) {
         std::vector<std::pair<uint64_t, bool>> mods;
@@ -170,7 +170,7 @@ bool CDRMRenderer::initDRMFormats() {
         mods.push_back({DRM_FORMAT_MOD_INVALID, true});
 
         for (auto& [mod, external] : mods) {
-            dmaFormats.push_back(GLFormat{
+            dmaFormats.push_back(SGLFormat{
                 .drmFormat = (uint32_t)fmt,
                 .modifier  = mod,
                 .external  = external,

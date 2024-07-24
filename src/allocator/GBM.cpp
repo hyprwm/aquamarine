@@ -67,7 +67,9 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     TRACE(allocator->backend->log(AQ_LOG_TRACE,
                                   std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}", attrs.size, fourccToName(attrs.format), CURSOR, MULTIGPU)));
 
-    const auto            FORMATS = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
+    const auto            FORMATS = CURSOR ?
+                   swapchain->backendImpl->getCursorFormats() :
+                   (swapchain->backendImpl->getRenderableFormats().size() == 0 ? swapchain->backendImpl->getRenderFormats() : swapchain->backendImpl->getRenderableFormats());
 
     std::vector<uint64_t> explicitModifiers;
 
@@ -119,7 +121,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         for (auto& mod : explicitModifiers) {
             TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod 0x{:x}", mod)));
         }
-        bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size());
+        bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size(), flags);
 
         if (!bo) {
             allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
