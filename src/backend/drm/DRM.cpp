@@ -495,7 +495,30 @@ bool Aquamarine::CDRMBackend::initMgpu() {
 
     mgpu.renderer->self = mgpu.renderer;
 
+    buildGlFormats(mgpu.renderer->formats);
+
     return true;
+}
+
+void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts) {
+    std::vector<SDRMFormat> result;
+
+    for (auto& fmt : fmts) {
+        if (fmt.external)
+            continue;
+
+        if (auto it = std::find_if(result.begin(), result.end(), [fmt] (const auto& e) { return fmt.drmFormat == e.drmFormat; }); it != result.end()) {
+            it->modifiers.emplace_back(fmt.modifier);
+            continue;
+        }
+
+        result.emplace_back(SDRMFormat{
+            fmt.drmFormat,
+            {fmt.modifier},
+        });
+    }
+
+    glFormats = result;
 }
 
 void Aquamarine::CDRMBackend::recheckCRTCs() {
@@ -802,6 +825,25 @@ bool Aquamarine::CDRMBackend::setCursor(SP<IBuffer> buffer, const Hyprutils::Mat
 void Aquamarine::CDRMBackend::onReady() {
     backend->log(AQ_LOG_DEBUG, std::format("drm: Connectors size2 {}", connectors.size()));
 
+    // init a drm renderer to gather gl formats.
+    // if we are secondary, initMgpu will have done that
+    if (!primary) {
+        auto a = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
+        if (!a)
+            backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
+        else {
+            auto r = CDRMRenderer::attempt(a, backend.lock());
+            if (!r)
+                backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
+            else {
+                TRACE(backend->log(AQ_LOG_TRACE, std::format("drm: onReady: gathered {} gl formats", r->formats.size())));
+                buildGlFormats(r->formats);
+                r.reset();
+                a.reset();
+            }
+        }
+    }
+
     for (auto& c : connectors) {
         backend->log(AQ_LOG_DEBUG, std::format("drm: onReady: connector {}", c->id));
         if (!c->output)
@@ -832,6 +874,10 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getRenderFormats() {
     }
 
     return {};
+}
+
+std::vector<SDRMFormat> Aquamarine::CDRMBackend::getRenderableFormats() {
+    return glFormats;
 }
 
 std::vector<SDRMFormat> Aquamarine::CDRMBackend::getCursorFormats() {
@@ -1346,7 +1392,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     if (!MODE) // modeless commits are invalid
         return false;
 
-    uint32_t   flags = 0;
+    uint32_t flags = 0;
 
     if (!onlyTest) {
         if (NEEDS_RECONFIG) {

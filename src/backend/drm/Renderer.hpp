@@ -1,6 +1,7 @@
 #pragma once
 
 #include <aquamarine/backend/DRM.hpp>
+#include "FormatUtils.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
@@ -19,6 +20,7 @@ namespace Aquamarine {
         GLuint   texid  = 0;
         GLuint   target = GL_TEXTURE_2D;
     };
+
     class CDRMRendererBufferAttachment : public IAttachment {
       public:
         CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
@@ -78,16 +80,10 @@ namespace Aquamarine {
             EGLSurface draw = nullptr, read = nullptr;
         } savedEGLState;
 
-        struct GLFormat {
-            uint32_t drmFormat = 0;
-            uint64_t modifier  = 0;
-            bool     external  = false;
-        };
-
         SGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
-        std::vector<GLFormat>                         formats;
+        std::vector<SGLFormat>                        formats;
 
       private:
         CDRMRenderer() = default;
