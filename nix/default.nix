@@ -19,6 +19,7 @@
   pixman,
   pkg-config,
   udev,
+  seatd,
   wayland,
   wayland-protocols,
   version ? "git",
@@ -47,6 +48,7 @@ stdenv.mkDerivation {
     libpng
     libinput
     libseat
+    seatd
     mesa
     pixman
     udev
