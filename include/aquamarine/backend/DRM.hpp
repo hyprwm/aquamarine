@@ -7,7 +7,6 @@
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
-#include "FormatUtils.hpp"
 
 namespace Aquamarine {
     class CDRMBackend;
