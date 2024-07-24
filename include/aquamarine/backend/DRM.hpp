@@ -342,6 +342,7 @@ namespace Aquamarine {
         virtual std::vector<SDRMFormat>                                 getCursorFormats();
         virtual bool                                                    createOutput(const std::string& name = "");
         virtual Hyprutils::Memory::CSharedPointer<IAllocator>           preferredAllocator();
+        virtual std::vector<SDRMFormat>                                 getRenderableFormats();
 
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                    self;
 
@@ -366,6 +367,7 @@ namespace Aquamarine {
         void scanLeases();
         void restoreAfterVT();
         void recheckCRTCs();
+        void buildGlFormats(const std::vector<SGLFormat>& fmts);
 
         Hyprutils::Memory::CSharedPointer<CSessionDevice>     gpu;
         Hyprutils::Memory::CSharedPointer<IDRMImplementation> impl;
@@ -383,6 +385,7 @@ namespace Aquamarine {
         std::vector<Hyprutils::Memory::CSharedPointer<SDRMPlane>>     planes;
         std::vector<Hyprutils::Memory::CSharedPointer<SDRMConnector>> connectors;
         std::vector<SDRMFormat>                                       formats;
+        std::vector<SDRMFormat>                                       glFormats;
 
         bool                                                          atomic = false;
 
