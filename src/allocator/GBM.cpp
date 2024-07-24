@@ -127,7 +127,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size(), flags);
 
         if (!bo && CURSOR) {
-            // allow non-renderable cursor buffer
+            // allow non-renderable cursor buffer for nvidia
             allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers and flags failed, falling back to modifiers without flags");
             bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size());
         }
