@@ -53,7 +53,8 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) 
 }
 
 Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
-                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) : allocator(allocator_) {
+                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
+    allocator(allocator_) {
     if (!allocator)
         return;
 
@@ -112,6 +113,8 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     uint32_t flags = GBM_BO_USE_RENDERING;
     if (params.scanout)
         flags |= GBM_BO_USE_SCANOUT;
+    if (CURSOR)
+        flags |= GBM_BO_USE_CURSOR; // make implicit fail for nvidia - avoids freezing with incorrect formats for cursor plane
 
     if (explicitModifiers.empty()) {
         allocator->backend->log(AQ_LOG_WARNING, "GBM: Using modifier-less allocation");
@@ -122,6 +125,12 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
             TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod 0x{:x}", mod)));
         }
         bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size(), flags);
+
+        if (!bo && CURSOR) {
+            // allow non-renderable cursor buffer
+            allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers and flags failed, falling back to modifiers without flags");
+            bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size());
+        }
 
         if (!bo) {
             allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
