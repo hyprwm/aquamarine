@@ -599,8 +599,13 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
 
     gpuName = drmName;
 
+    auto drmVerName = drmVer->name ? drmVer->name : "unknown";
+    if (std::string_view(drmVerName) == "evdi") {
+        primary = {};
+    }
+
     backend->log(AQ_LOG_DEBUG,
-                 std::format("drm: Starting backend for {}, with driver {}{}", drmName ? drmName : "unknown", drmVer->name ? drmVer->name : "unknown",
+                 std::format("drm: Starting backend for {}, with driver {}{}", drmName ? drmName : "unknown", drmVerName,
                              (primary ? std::format(" with primary {}", primary->gpu->path) : "")));
 
     drmFreeVersion(drmVer);
@@ -1346,7 +1351,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     if (!MODE) // modeless commits are invalid
         return false;
 
-    uint32_t   flags = 0;
+    uint32_t flags = 0;
 
     if (!onlyTest) {
         if (NEEDS_RECONFIG) {
