@@ -5,11 +5,7 @@
   hwdata,
   hyprutils,
   hyprwayland-scanner,
-  libcap,
   libdisplay-info,
-  ffmpeg,
-  libliftoff,
-  libpng,
   libdrm,
   libffi,
   libGL,
@@ -39,13 +35,9 @@ stdenv.mkDerivation {
   buildInputs = [
     hyprutils
     libdisplay-info
-    libcap
-    ffmpeg
-    libliftoff
     libdrm
     libffi
     libGL
-    libpng
     libinput
     libseat
     seatd
