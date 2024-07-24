@@ -65,7 +65,8 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     const bool MULTIGPU = params.multigpu && params.scanout;
 
     TRACE(allocator->backend->log(AQ_LOG_TRACE,
-                                  std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}", attrs.size, fourccToName(attrs.format), CURSOR, MULTIGPU)));
+                                  std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}, scanout: {}", attrs.size, fourccToName(attrs.format), CURSOR,
+                                              MULTIGPU, params.scanout)));
 
     const auto            FORMATS = CURSOR ?
                    swapchain->backendImpl->getCursorFormats() :
