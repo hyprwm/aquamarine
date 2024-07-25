@@ -137,15 +137,20 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
         backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit device list {}", explicitGpus));
         Hyprutils::String::CVarList explicitDevices(explicitGpus, 0, ':', true);
 
+        // Iterate over GPUs and canonicalize the paths
         for (auto& d : explicitDevices) {
           std::error_code ec;
-          auto temp = std::filesystem::canonical(d, ec);
+          
+          auto canonicalFilePath = std::filesystem::canonical(d, ec);
+          
+          // If there is an error, log and continue.
+          // TODO: Verify that the path is a valid DRM device. (https://gitlab.freedesktop.org/wlroots/wlroots/-/blob/master/backend/session/session.c?ref_type=heads#L369-387)
           if (ec) {
               backend->log(AQ_LOG_ERROR, std::format("drm: Failed to canonicalize path {}", d));
               continue;
           }
 
-          d = temp.string();
+          d = canonicalFilePath.string();
         }
 
         for (auto& d : explicitDevices) {
