@@ -136,6 +136,10 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
         Hyprutils::String::CVarList explicitDevices(explicitGpus, 0, ':', true);
 
         for (auto& d : explicitDevices) {
+          d = std::filesystem::canonical(d);
+        }
+
+        for (auto& d : explicitDevices) {
             bool found = false;
             for (auto& vd : devices) {
                 if (vd->path == d) {
