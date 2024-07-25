@@ -496,6 +496,7 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
 
 Aquamarine::CWaylandOutput::~CWaylandOutput() {
     backend->idleCallbacks.clear(); // FIXME: mega hack to avoid a UAF in frame events
+    events.destroy.emit();
     if (waylandState.xdgToplevel)
         waylandState.xdgToplevel->sendDestroy();
     if (waylandState.xdgSurface)
