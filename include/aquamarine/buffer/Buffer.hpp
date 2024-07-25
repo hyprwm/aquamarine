@@ -16,6 +16,7 @@ namespace Aquamarine {
         BUFFER_TYPE_DMABUF = 0,
         BUFFER_TYPE_SHM,
         BUFFER_TYPE_MISC,
+        BUFFER_TYPE_DMABUF_DUMB,
     };
 
     class CWLBufferResource;
