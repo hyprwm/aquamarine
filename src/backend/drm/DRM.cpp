@@ -8,6 +8,8 @@
 #include <thread>
 #include <deque>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 #include <sys/mman.h>
 #include <fcntl.h>
 
@@ -136,7 +138,14 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
         Hyprutils::String::CVarList explicitDevices(explicitGpus, 0, ':', true);
 
         for (auto& d : explicitDevices) {
-          d = std::filesystem::canonical(d);
+          std::error_code ec;
+          auto temp = std::filesystem::canonical(d, ec);
+          if (ec) {
+              backend->log(AQ_LOG_ERROR, std::format("drm: Failed to canonicalize path {}", d));
+              continue;
+          }
+
+          d = temp.string();
         }
 
         for (auto& d : explicitDevices) {
