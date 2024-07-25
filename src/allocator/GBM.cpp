@@ -251,9 +251,9 @@ Aquamarine::CGBMAllocator::CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointe
     backend->log(AQ_LOG_TRACE, std::format("New File Descriptor: {}", newFd));
 
     fd = newFd;
-    auto drmName_        = drmGetDeviceNameFromFd2(newFd);
-    backend->log(AQ_LOG_TRACE, std::format("drmGetDeviceNameFromFd2: {}", drmName_));
-    free(drmName_);
+    auto newDrmName_ = drmGetDeviceNameFromFd2(newFd);
+    backend->log(AQ_LOG_TRACE, std::format("drmGetDeviceNameFromFd2: {}", newDrmName_));
+    free(newDrmName_);
 
     gbmDevice = gbm_create_device(newFd);
     if (!gbmDevice) {
