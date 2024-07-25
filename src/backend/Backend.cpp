@@ -271,6 +271,31 @@ void Aquamarine::CBackend::dispatchIdle() {
 // Yoinked from wlroots, render/allocator/allocator.c
 // Ref-counting reasons, see https://gitlab.freedesktop.org/mesa/drm/-/merge_requests/110
 int Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {
+
+    if (drmIsMaster(drmFD)) {
+        // Only recent kernels support empty leases
+        uint32_t lesseeID = 0;
+        int      leaseFD  = drmModeCreateLease(drmFD, nullptr, 0, O_CLOEXEC, &lesseeID);
+        log(AQ_LOG_TRACE, std::format("lesseeID: {}, leaseFD: {}", lesseeID, leaseFD));
+        if (leaseFD >= 0) {
+            log(AQ_LOG_TRACE, std::format("leaseFD Passed: {}", leaseFD));
+            char* name = nullptr;
+            if (allowRenderNode)
+                name = drmGetRenderDeviceNameFromFd(leaseFD);
+
+            if(name) {
+              log(AQ_LOG_TRACE, std::format("Render device has name inside drmIsMaster: {}", name));
+            }
+
+            free(name);
+            return leaseFD;
+        } else if (leaseFD != -EINVAL && leaseFD != -EOPNOTSUPP) {
+            log(AQ_LOG_ERROR, "reopenDRMNode: drmModeCreateLease failed");
+            return -1;
+        }
+        log(AQ_LOG_DEBUG, "reopenDRMNode: drmModeCreateLease failed, falling back to open");
+    }
+
     char* name = nullptr;
     if (allowRenderNode)
         name = drmGetRenderDeviceNameFromFd(drmFD);
