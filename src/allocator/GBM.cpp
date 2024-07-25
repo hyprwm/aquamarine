@@ -53,8 +53,7 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) 
 }
 
 Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
-                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
-    allocator(allocator_) {
+                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) : allocator(allocator_) {
     if (!allocator)
         return;
 
@@ -128,8 +127,6 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     uint32_t flags = GBM_BO_USE_RENDERING;
     if (params.scanout)
         flags |= GBM_BO_USE_SCANOUT;
-    if (CURSOR)
-        flags |= GBM_BO_USE_CURSOR; // make implicit fail for nvidia - avoids freezing with incorrect formats for cursor plane
 
     if (explicitModifiers.empty()) {
         allocator->backend->log(AQ_LOG_WARNING, "GBM: Using modifier-less allocation");
@@ -148,7 +145,11 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         }
 
         if (!bo) {
-            allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
+            if (explicitModifiers.size() == 1 && explicitModifiers[0] == DRM_FORMAT_MOD_LINEAR) {
+                flags |= GBM_BO_USE_LINEAR;
+                allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to modifier-less allocation");
+            } else
+                allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
             bo = gbm_bo_create(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, flags);
         }
     }
@@ -159,7 +160,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     }
 
     attrs.planes   = gbm_bo_get_plane_count(bo);
-    attrs.modifier = gbm_bo_get_modifier(bo);
+    attrs.modifier = (flags & GBM_BO_USE_LINEAR) ? DRM_FORMAT_MOD_LINEAR : gbm_bo_get_modifier(bo);
 
     for (size_t i = 0; i < (size_t)attrs.planes; ++i) {
         attrs.strides.at(i) = gbm_bo_get_stride_for_plane(bo, i);
