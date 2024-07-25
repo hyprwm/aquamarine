@@ -65,11 +65,11 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     const bool MULTIGPU = params.multigpu && params.scanout;
 
     TRACE(allocator->backend->log(AQ_LOG_TRACE,
-                                  std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}", attrs.size, fourccToName(attrs.format), CURSOR, MULTIGPU)));
+                                  std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}, scanout: {}", attrs.size, fourccToName(attrs.format), CURSOR,
+                                              MULTIGPU, params.scanout)));
 
-    const auto            FORMATS = CURSOR ?
-                   swapchain->backendImpl->getCursorFormats() :
-                   (swapchain->backendImpl->getRenderableFormats().size() == 0 ? swapchain->backendImpl->getRenderFormats() : swapchain->backendImpl->getRenderableFormats());
+    const auto            FORMATS    = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
+    const auto            RENDERABLE = swapchain->backendImpl->getRenderableFormats();
 
     std::vector<uint64_t> explicitModifiers;
 
@@ -93,6 +93,21 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         for (auto& m : f.modifiers) {
             if (m == DRM_FORMAT_MOD_INVALID)
                 continue;
+
+            if (!RENDERABLE.empty() && params.scanout && !CURSOR && !MULTIGPU) {
+                // regular scanout plane, check if the format is renderable
+                auto rformat = std::find_if(RENDERABLE.begin(), RENDERABLE.end(), [f](const auto& e) { return e.drmFormat == f.drmFormat; });
+
+                if (rformat == RENDERABLE.end()) {
+                    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping format {} as it's not renderable", fourccToName(f.drmFormat))));
+                    break;
+                }
+
+                if (std::find(rformat->modifiers.begin(), rformat->modifiers.end(), m) == rformat->modifiers.end()) {
+                    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping modifier 0x{:x} as it's not renderable", m)));
+                    continue;
+                }
+            }
 
             explicitModifiers.push_back(m);
         }
@@ -123,8 +138,18 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         }
         bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size(), flags);
 
+        if (!bo && CURSOR) {
+            // allow non-renderable cursor buffer for nvidia
+            allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers and flags failed, falling back to modifiers without flags");
+            bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size());
+        }
+
         if (!bo) {
-            allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
+            if (explicitModifiers.size() == 1 && explicitModifiers[0] == DRM_FORMAT_MOD_LINEAR) {
+                flags |= GBM_BO_USE_LINEAR;
+                allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to modifier-less allocation");
+            } else
+                allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
             bo = gbm_bo_create(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, flags);
         }
     }
@@ -135,7 +160,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     }
 
     attrs.planes   = gbm_bo_get_plane_count(bo);
-    attrs.modifier = gbm_bo_get_modifier(bo);
+    attrs.modifier = (flags & GBM_BO_USE_LINEAR) ? DRM_FORMAT_MOD_LINEAR : gbm_bo_get_modifier(bo);
 
     for (size_t i = 0; i < (size_t)attrs.planes; ++i) {
         attrs.strides.at(i) = gbm_bo_get_stride_for_plane(bo, i);

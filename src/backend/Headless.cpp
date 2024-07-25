@@ -73,6 +73,7 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
 }
 
 bool Aquamarine::CHeadlessOutput::destroy() {
+    events.destroy.emit();
     std::erase(backend->outputs, self.lock());
     return true;
 }

@@ -520,7 +520,7 @@ void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts)
         if (fmt.external)
             continue;
 
-        if (auto it = std::find_if(result.begin(), result.end(), [fmt] (const auto& e) { return fmt.drmFormat == e.drmFormat; }); it != result.end()) {
+        if (auto it = std::find_if(result.begin(), result.end(), [fmt](const auto& e) { return fmt.drmFormat == e.drmFormat; }); it != result.end()) {
             it->modifiers.emplace_back(fmt.modifier);
             continue;
         }
