@@ -243,18 +243,6 @@ SP<CGBMAllocator> Aquamarine::CGBMAllocator::create(int drmfd_, Hyprutils::Memor
 }
 
 Aquamarine::CGBMAllocator::CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) : fd(fd_), backend(backend_) {
-
-    backend->log(AQ_LOG_TRACE, std::format("Reopening DRM Node {}", fd_));
-
-    auto newFd = backend->reopenDRMNode(fd_, false);
-
-    backend->log(AQ_LOG_TRACE, std::format("New File Descriptor: {}", newFd));
-
-    fd = newFd;
-    auto newDrmName_ = drmGetDeviceNameFromFd2(newFd);
-    backend->log(AQ_LOG_TRACE, std::format("drmGetDeviceNameFromFd2: {}", newDrmName_));
-    free(newDrmName_);
-
     gbmDevice = gbm_create_device(newFd);
     if (!gbmDevice) {
         backend->log(AQ_LOG_ERROR, std::format("Couldn't open a GBM device at fd {}", fd_));
