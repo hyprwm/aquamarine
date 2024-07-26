@@ -2,8 +2,6 @@
 
 #include "Allocator.hpp"
 
-struct gbm_device;
-
 namespace Aquamarine {
     class CDumbAllocator;
     class CBackend;
@@ -28,8 +26,8 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDumbAllocator> allocator;
 
         // dumb stuff
-        int       drmFd;
-        uint32_t  handle;
+        int       drmFd  = -1;
+        uint32_t  handle = 0;
         void*     data   = nullptr;
         size_t    length = 0;
 
@@ -51,18 +49,13 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDumbAllocator> self;
 
       private:
-        CDumbAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
+        CDumbAllocator(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
 
         // a vector purely for tracking (debugging) the buffers and nothing more
         std::vector<Hyprutils::Memory::CWeakPointer<CDumbBuffer>> buffers;
 
         int                                                       fd = -1;
         Hyprutils::Memory::CWeakPointer<CBackend>                 backend;
-
-        // gbm stuff
-        gbm_device* gbmDevice            = nullptr;
-        std::string gbmDeviceBackendName = "";
-        std::string drmName              = "";
 
         friend class CDumbBuffer;
         friend class CDRMRenderer;

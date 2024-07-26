@@ -8,7 +8,6 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <xf86drm.h>
-#include <gbm.h>
 #include <unistd.h>
 
 using namespace Aquamarine;
@@ -27,22 +26,22 @@ Aquamarine::CDumbBuffer::CDumbBuffer(const SAllocatorBufferParams& params, Hypru
     };
 
     TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("DUMB: Allocating a dumb buffer: size {}, format {}", params.size, fourccToName(params.format))));
-    if (drmIoctl(gbm_device_get_fd(allocator->gbmDevice), DRM_IOCTL_MODE_CREATE_DUMB, &createArgs) != 0) {
+    if (drmIoctl(allocator->drmFD(), DRM_IOCTL_MODE_CREATE_DUMB, &createArgs) != 0) {
         allocator->backend->log(AQ_LOG_ERROR, std::format("DUMB: DRM_IOCTL_MODE_CREATE_DUMB failed {}", strerror(errno)));
         return;
     }
 
     int primeFd;
-    if (drmPrimeHandleToFD(gbm_device_get_fd(allocator->gbmDevice), createArgs.handle, DRM_CLOEXEC, &primeFd) != 0) {
+    if (drmPrimeHandleToFD(allocator->drmFD(), createArgs.handle, DRM_CLOEXEC, &primeFd) != 0) {
         allocator->backend->log(AQ_LOG_ERROR, std::format("DUMB: drmPrimeHandleToFD() failed {}", strerror(errno)));
         drm_mode_destroy_dumb destroyArgs{
             .handle = createArgs.handle,
         };
-        drmIoctl(gbm_device_get_fd(allocator->gbmDevice), DRM_IOCTL_MODE_DESTROY_DUMB, &destroyArgs);
+        drmIoctl(allocator->drmFD(), DRM_IOCTL_MODE_DESTROY_DUMB, &destroyArgs);
         return;
     }
 
-    drmFd  = gbm_device_get_fd(allocator->gbmDevice);
+    drmFd  = allocator->drmFD();
     handle = createArgs.handle;
     length = createArgs.pitch * params.size.y;
 
@@ -83,7 +82,7 @@ void Aquamarine::CDumbBuffer::update(const Hyprutils::Math::CRegion& damage) {
 }
 
 bool Aquamarine::CDumbBuffer::isSynchronous() {
-    return false; // FIXME is it correct?
+    return true;
 }
 
 bool Aquamarine::CDumbBuffer::good() {
@@ -124,44 +123,24 @@ void Aquamarine::CDumbBuffer::endDataPtr() {
     }
 }
 
-CDumbAllocator::~CDumbAllocator() {
-    if (gbmDevice)
-        gbm_device_destroy(gbmDevice);
-}
+CDumbAllocator::~CDumbAllocator() {}
 
 SP<CDumbAllocator> Aquamarine::CDumbAllocator::create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) {
-    uint64_t capabilities = 0;
-    if (drmGetCap(drmfd_, DRM_CAP_PRIME, &capabilities) || !(capabilities & DRM_PRIME_CAP_EXPORT)) {
-        backend_->log(AQ_LOG_ERROR, "Cannot create a Dumb Allocator: PRIME export is not supported by the gpu.");
-        return nullptr;
-    }
-
     auto allocator = SP<CDumbAllocator>(new CDumbAllocator(drmfd_, backend_));
 
-    if (!allocator->gbmDevice) {
-        backend_->log(AQ_LOG_ERROR, "Cannot create a Dumb Allocator: gbm failed to create a device.");
+    if (allocator->drmFD() < 0) {
+        backend_->log(AQ_LOG_ERROR, "Cannot create a Dumb Allocator: drm fd is required.");
         return nullptr;
     }
 
-    backend_->log(AQ_LOG_DEBUG, std::format("Created a Dumb Allocator with drm fd {}", drmfd_));
+    backend_->log(AQ_LOG_DEBUG, std::format("Created a Dumb Allocator"));
 
     allocator->self = allocator;
 
     return allocator;
 }
 
-Aquamarine::CDumbAllocator::CDumbAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) : fd(fd_), backend(backend_) {
-    gbmDevice = gbm_create_device(fd_);
-    if (!gbmDevice) {
-        backend->log(AQ_LOG_ERROR, std::format("Couldn't open a GBM device at fd {}", fd_));
-        return;
-    }
-
-    gbmDeviceBackendName = gbm_device_get_backend_name(gbmDevice);
-    auto drmName_        = drmGetDeviceNameFromFd2(fd_);
-    drmName              = drmName_;
-    free(drmName_);
-}
+Aquamarine::CDumbAllocator::CDumbAllocator(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) : fd(drmfd_), backend(backend_) {}
 
 SP<IBuffer> Aquamarine::CDumbAllocator::acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain_) {
     if (params.size.x < 1 || params.size.y < 1) {
