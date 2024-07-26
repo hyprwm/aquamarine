@@ -932,6 +932,10 @@ SP<IAllocator> Aquamarine::CDRMBackend::preferredAllocator() {
     return backend->primaryAllocator;
 }
 
+SP<IAllocator> Aquamarine::CDRMBackend::fallbackAllocator() {
+    return backend->fallbackAllocator;
+}
+
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     id = plane->plane_id;
 

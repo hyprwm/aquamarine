@@ -37,35 +37,6 @@ namespace Aquamarine {
         friend class CGBMAllocator;
     };
 
-    class CGBMDumbBuffer : public IBuffer {
-      public:
-        virtual ~CGBMDumbBuffer();
-
-        virtual eBufferCapability                      caps();
-        virtual eBufferType                            type();
-        virtual void                                   update(const Hyprutils::Math::CRegion& damage);
-        virtual bool                                   isSynchronous();
-        virtual bool                                   good();
-        virtual SDMABUFAttrs                           dmabuf();
-        virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);
-        virtual void                                   endDataPtr();
-
-      private:
-        CGBMDumbBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain);
-
-        Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator;
-
-        // dumb stuff
-        int          m_drmFd;
-        uint32_t     m_handle;
-        void*        m_data = nullptr;
-        size_t       m_size = 0;
-
-        SDMABUFAttrs attrs{.success = false};
-
-        friend class CGBMAllocator;
-    };
-
     class CGBMAllocator : public IAllocator {
       public:
         ~CGBMAllocator();
@@ -82,10 +53,10 @@ namespace Aquamarine {
         CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
 
         // a vector purely for tracking (debugging) the buffers and nothing more
-        std::vector<Hyprutils::Memory::CWeakPointer<IBuffer>> buffers;
+        std::vector<Hyprutils::Memory::CWeakPointer<CGBMBuffer>> buffers;
 
-        int                                                   fd = -1;
-        Hyprutils::Memory::CWeakPointer<CBackend>             backend;
+        int                                                      fd = -1;
+        Hyprutils::Memory::CWeakPointer<CBackend>                backend;
 
         // gbm stuff
         gbm_device* gbmDevice            = nullptr;
@@ -93,7 +64,6 @@ namespace Aquamarine {
         std::string drmName              = "";
 
         friend class CGBMBuffer;
-        friend class CGBMDumbBuffer;
         friend class CDRMRenderer;
     };
 };

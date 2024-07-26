@@ -3,6 +3,7 @@
 #include <aquamarine/backend/Headless.hpp>
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/allocator/GBM.hpp>
+#include <aquamarine/allocator/Dumb.hpp>
 #include <sys/poll.h>
 #include <thread>
 #include <chrono>
@@ -153,7 +154,8 @@ bool Aquamarine::CBackend::start() {
                 log(AQ_LOG_CRITICAL, "Failed to create an allocator (reopenDRMNode failed)");
                 return false;
             }
-            primaryAllocator = CGBMAllocator::create(fd, self);
+            primaryAllocator  = CGBMAllocator::create(fd, self);
+            fallbackAllocator = CDumbAllocator::create(fd, self);
             break;
         }
     }

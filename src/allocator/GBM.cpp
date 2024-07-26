@@ -3,9 +3,6 @@
 #include <aquamarine/allocator/Swapchain.hpp>
 #include "FormatUtils.hpp"
 #include "Shared.hpp"
-#include <cstring>
-#include <fcntl.h>
-#include <sys/mman.h>
 #include <xf86drm.h>
 #include <gbm.h>
 #include <unistd.h>
@@ -56,8 +53,7 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) 
 }
 
 Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
-                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
-    allocator(allocator_) {
+                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) : allocator(allocator_) {
     if (!allocator)
         return;
 
@@ -145,9 +141,9 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size(), flags);
 
         if (!bo && CURSOR) {
-            // use dumb buffers for cursors
-            allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers and flags failed for cursor plane, falling back to dumb");
-            return;
+            // allow non-renderable cursor buffer for nvidia
+            allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers and flags failed, falling back to modifiers without flags");
+            bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size());
         }
 
         if (!bo) {
@@ -243,118 +239,6 @@ void Aquamarine::CGBMBuffer::endDataPtr() {
     }
 }
 
-Aquamarine::CGBMDumbBuffer::CGBMDumbBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
-                                           Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
-    allocator(allocator_) {
-    if (!allocator)
-        return;
-
-    drm_mode_create_dumb createArgs{
-        .height = uint32_t(params.size.x),
-        .width  = uint32_t(params.size.y),
-        .bpp    = 32,
-    };
-
-    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Allocating a dumb buffer: size {}, format {}", params.size, fourccToName(params.format))));
-    if (drmIoctl(gbm_device_get_fd(allocator->gbmDevice), DRM_IOCTL_MODE_CREATE_DUMB, &createArgs) != 0) {
-        allocator->backend->log(AQ_LOG_ERROR, std::format("GBM: DRM_IOCTL_MODE_CREATE_DUMB failed {}", strerror(errno)));
-        return;
-    }
-
-    int primeFd;
-    if (drmPrimeHandleToFD(gbm_device_get_fd(allocator->gbmDevice), createArgs.handle, DRM_CLOEXEC, &primeFd) != 0) {
-        allocator->backend->log(AQ_LOG_ERROR, std::format("GBM: drmPrimeHandleToFD() failed {}", strerror(errno)));
-        drm_mode_destroy_dumb destroyArgs{
-            .handle = createArgs.handle,
-        };
-        drmIoctl(gbm_device_get_fd(allocator->gbmDevice), DRM_IOCTL_MODE_DESTROY_DUMB, &destroyArgs);
-        return;
-    }
-
-    m_drmFd  = gbm_device_get_fd(allocator->gbmDevice);
-    m_handle = createArgs.handle;
-    m_size   = createArgs.pitch * params.size.y;
-
-    attrs.planes   = 1;
-    attrs.size     = params.size;
-    attrs.format   = DRM_FORMAT_ARGB8888;
-    attrs.modifier = DRM_FORMAT_MOD_LINEAR;
-    attrs.offsets  = {0, 0, 0, 0};
-    attrs.fds      = {primeFd, 0, 0, 0};
-    attrs.strides  = {createArgs.pitch, 0, 0, 0};
-
-    attrs.success = true;
-
-    allocator->backend->log(AQ_LOG_DEBUG, std::format("GBM: Allocated a new dumb buffer with size {} and format {}", attrs.size, fourccToName(attrs.format)));
-}
-
-Aquamarine::CGBMDumbBuffer::~CGBMDumbBuffer() {
-    events.destroy.emit();
-
-    endDataPtr();
-
-    if (m_handle) {
-        drm_mode_destroy_dumb destroyArgs{
-            .handle = m_handle,
-        };
-        drmIoctl(m_drmFd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroyArgs);
-    }
-}
-
-eBufferCapability Aquamarine::CGBMDumbBuffer::caps() {
-    return BUFFER_CAPABILITY_DATAPTR;
-}
-
-eBufferType Aquamarine::CGBMDumbBuffer::type() {
-    return Aquamarine::eBufferType::BUFFER_TYPE_DMABUF_DUMB;
-}
-
-void Aquamarine::CGBMDumbBuffer::update(const Hyprutils::Math::CRegion& damage) {
-    ;
-}
-
-bool Aquamarine::CGBMDumbBuffer::isSynchronous() {
-    return false; // FIXME is it correct?
-}
-
-bool Aquamarine::CGBMDumbBuffer::good() {
-    return true;
-}
-
-SDMABUFAttrs Aquamarine::CGBMDumbBuffer::dmabuf() {
-    return attrs;
-}
-
-std::tuple<uint8_t*, uint32_t, size_t> Aquamarine::CGBMDumbBuffer::beginDataPtr(uint32_t flags) {
-    if (!m_data) {
-        drm_mode_map_dumb mapArgs{
-            .handle = m_handle,
-        };
-        if (drmIoctl(m_drmFd, DRM_IOCTL_MODE_MAP_DUMB, &mapArgs) != 0) {
-            allocator->backend->log(AQ_LOG_ERROR, std::format("GBM: DRM_IOCTL_MODE_MAP_DUMB failed {}", strerror(errno)));
-            return {};
-        }
-
-        void* address = mmap(nullptr, m_size, PROT_READ | PROT_WRITE, MAP_SHARED, m_drmFd, mapArgs.offset);
-        if (address == MAP_FAILED) {
-            allocator->backend->log(AQ_LOG_ERROR, std::format("GBM: mmap failed {}", strerror(errno)));
-            return {};
-        }
-
-        m_data = address;
-    }
-
-    // FIXME: assumes a 32-bit pixel format
-    return {(uint8_t*)m_data, attrs.format, attrs.strides[0]};
-}
-
-void Aquamarine::CGBMDumbBuffer::endDataPtr() {
-    if (m_data) {
-        munmap(m_data, m_size);
-        m_data = nullptr;
-    }
-}
-
 CGBMAllocator::~CGBMAllocator() {
     if (gbmDevice)
         gbm_device_destroy(gbmDevice);
@@ -400,17 +284,11 @@ SP<IBuffer> Aquamarine::CGBMAllocator::acquire(const SAllocatorBufferParams& par
         return nullptr;
     }
 
-    SP<IBuffer> newBuffer = SP<CGBMBuffer>(new CGBMBuffer(params, self, swapchain_));
+    auto newBuffer = SP<CGBMBuffer>(new CGBMBuffer(params, self, swapchain_));
 
     if (!newBuffer->good()) {
         backend->log(AQ_LOG_ERROR, std::format("Couldn't allocate a gbm buffer with size {} and format {}", params.size, fourccToName(params.format)));
-
-        newBuffer = SP<CGBMDumbBuffer>(new CGBMDumbBuffer(params, self, swapchain_));
-
-        if (!newBuffer->good()) {
-            backend->log(AQ_LOG_ERROR, std::format("Couldn't allocate a dumb gbm buffer with size {} and format {}", params.size, fourccToName(params.format)));
-            return nullptr;
-        }
+        return nullptr;
     }
 
     buffers.emplace_back(newBuffer);

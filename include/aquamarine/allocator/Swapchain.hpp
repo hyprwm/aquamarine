@@ -45,6 +45,6 @@ namespace Aquamarine {
         int                                                     lastAcquired = 0;
 
         friend class CGBMBuffer;
-        friend class CGBMDumbBuffer;
+        friend class CDumbBuffer;
     };
 };

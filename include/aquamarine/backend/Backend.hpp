@@ -77,7 +77,10 @@ namespace Aquamarine {
         virtual std::vector<SDRMFormat>                                 getCursorFormats()                         = 0;
         virtual bool                                                    createOutput(const std::string& name = "") = 0; // "" means auto
         virtual Hyprutils::Memory::CSharedPointer<IAllocator>           preferredAllocator()                       = 0;
-        virtual std::vector<SDRMFormat>                                 getRenderableFormats(); // empty = use getRenderFormats
+        virtual Hyprutils::Memory::CSharedPointer<IAllocator>           fallbackAllocator() {
+            return nullptr;
+        };
+        virtual std::vector<SDRMFormat> getRenderableFormats(); // empty = use getRenderFormats
     };
 
     class CBackend {
@@ -128,6 +131,7 @@ namespace Aquamarine {
         } events;
 
         Hyprutils::Memory::CSharedPointer<IAllocator> primaryAllocator;
+        Hyprutils::Memory::CSharedPointer<IAllocator> fallbackAllocator;
         bool                                          ready = false;
         Hyprutils::Memory::CSharedPointer<CSession>   session;
 
