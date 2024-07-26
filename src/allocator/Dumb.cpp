@@ -75,7 +75,7 @@ eBufferCapability Aquamarine::CDumbBuffer::caps() {
 }
 
 eBufferType Aquamarine::CDumbBuffer::type() {
-    return Aquamarine::eBufferType::BUFFER_TYPE_DMABUF_DUMB;
+    return Aquamarine::eBufferType::BUFFER_TYPE_DUMB;
 }
 
 void Aquamarine::CDumbBuffer::update(const Hyprutils::Math::CRegion& damage) {
