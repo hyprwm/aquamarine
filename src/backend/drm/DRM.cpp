@@ -1316,7 +1316,11 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
 }
 
 void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
-    // cursors are applied regardless.
+    // cursors are applied regardless,
+    // unless this was a test
+    if (data.test)
+        return;
+
     if (crtc->cursor && data.cursorFB)
         crtc->cursor->back = data.cursorFB;
 
