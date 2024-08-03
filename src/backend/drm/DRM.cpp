@@ -139,18 +139,18 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
 
         // Iterate over GPUs and canonicalize the paths
         for (auto& d : explicitDevices) {
-          std::error_code ec;
-          
-          auto canonicalFilePath = std::filesystem::canonical(d, ec);
-          
-          // If there is an error, log and continue.
-          // TODO: Verify that the path is a valid DRM device. (https://gitlab.freedesktop.org/wlroots/wlroots/-/blob/master/backend/session/session.c?ref_type=heads#L369-387)
-          if (ec) {
-              backend->log(AQ_LOG_ERROR, std::format("drm: Failed to canonicalize path {}", d));
-              continue;
-          }
+            std::error_code ec;
 
-          d = canonicalFilePath.string();
+            auto            canonicalFilePath = std::filesystem::canonical(d, ec);
+
+            // If there is an error, log and continue.
+            // TODO: Verify that the path is a valid DRM device. (https://gitlab.freedesktop.org/wlroots/wlroots/-/blob/master/backend/session/session.c?ref_type=heads#L369-387)
+            if (ec) {
+                backend->log(AQ_LOG_ERROR, std::format("drm: Failed to canonicalize path {}", d));
+                continue;
+            }
+
+            d = canonicalFilePath.string();
         }
 
         for (auto& d : explicitDevices) {
@@ -1436,8 +1436,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
         if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
             flags |= DRM_MODE_PAGE_FLIP_EVENT;
-        if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
+        if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) {
             flags |= DRM_MODE_PAGE_FLIP_ASYNC;
+            flags &= ~DRM_MODE_PAGE_FLIP_EVENT; // Do not request an event for immediate page flips, as it makes no sense.
+        }
     }
 
     // we can't go further without a blit
@@ -1505,6 +1507,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                                               fourccToName(STATE.drmFormat), fourccToName(params.format)));
             state->setFormat(params.format);
             formatMismatch = true;
+            // TODO: reject if tearing? We will miss a frame event!
             flags &= ~DRM_MODE_PAGE_FLIP_ASYNC; // we cannot modeset with async pf
         }
     }
@@ -1559,6 +1562,28 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     if (ok)
         connector->commitTainted = false;
+
+    if (data.flags & DRM_MODE_PAGE_FLIP_ASYNC) {
+        // for tearing commits, we will send presentation feedback instantly, and rotate
+        // drm framebuffers to properly send backendRelease events.
+        // the last FB should already be gone from KMS because it's been immediately replaced
+
+        // no completion and no vsync, because tearing
+        uint32_t flags = IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK | IOutput::AQ_OUTPUT_PRESENT_ZEROCOPY;
+
+        timespec presented;
+        clock_gettime(CLOCK_MONOTONIC, &presented);
+
+        connector->output->events.present.emit(IOutput::SPresentEvent{
+            .presented = backend->sessionActive(),
+            .when      = &presented,
+            .seq       = 0, /* unknown sequence for tearing */
+            .refresh   = (int)(connector->refresh ? (1000000000000LL / connector->refresh) : 0),
+            .flags     = flags,
+        });
+
+        connector->onPresent();
+    }
 
     return ok;
 }
