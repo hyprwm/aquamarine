@@ -1544,7 +1544,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         // to avoid doing this over and over.
         data.modeset  = true;
         data.blocking = true;
-        data.flags    = DRM_MODE_PAGE_FLIP_EVENT;
+        data.flags    = onlyTest ? 0 : DRM_MODE_PAGE_FLIP_EVENT;
         ok            = connector->commitState(data);
 
         if (!ok)
