@@ -640,6 +640,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
 
             if (ENABLED == hlDevice->switchy->state)
                 return;
+            hlDevice->switchy->state = ENABLED;
 
             switch (libinput_event_switch_get_switch(se)) {
                 case LIBINPUT_SWITCH_LID: hlDevice->switchy->type = ISwitch::AQ_SWITCH_TYPE_LID; break;
