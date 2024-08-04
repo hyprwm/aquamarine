@@ -1474,11 +1474,19 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 return false;
             }
 
-            auto NEWAQBUF = mgpu.swapchain->next(nullptr);
-            if (!backend->mgpu.renderer->blit(STATE.buffer, NEWAQBUF)) {
+            auto NEWAQBUF   = mgpu.swapchain->next(nullptr);
+            auto blitResult = backend->mgpu.renderer->blit(STATE.buffer, NEWAQBUF,
+                                                           (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+            if (!blitResult.success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but blit failed");
                 return false;
             }
+
+            // replace the explicit in fence if the blitting backend returned one, otherwise discard old. Passed fence from the client is wrong.
+            if (blitResult.syncFD.has_value())
+                state->setExplicitInFence(blitResult.syncFD.value());
+            else
+                state->setExplicitInFence(-1);
 
             drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
         } else
@@ -1625,7 +1633,7 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
             }
 
             auto NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
-            if (!backend->mgpu.renderer->blit(buffer, NEWAQBUF)) {
+            if (!backend->mgpu.renderer->blit(buffer, NEWAQBUF).success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but cursor blit failed");
                 return false;
             }

@@ -47,12 +47,17 @@ namespace Aquamarine {
 
         int                                                    drmFD = -1;
 
-        bool                                                   blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to);
+        struct SBlitResult {
+            bool               success = false;
+            std::optional<int> syncFD;
+        };
 
-        void                                                   setEGL();
-        void                                                   restoreEGL();
+        SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to, int waitFD = -1);
 
-        void                                                   onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
+        void        setEGL();
+        void        restoreEGL();
+
+        void        onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
 
         struct {
             struct SShader {
@@ -62,8 +67,10 @@ namespace Aquamarine {
         } gl;
 
         struct {
-            EGLDisplay                                    display = nullptr;
-            EGLContext                                    context = nullptr;
+            EGLDisplay                                    display        = nullptr;
+            EGLContext                                    context        = nullptr;
+            EGLSync                                       lastBlitSync   = nullptr;
+            int                                           lastBlitSyncFD = -1;
 
             PFNEGLGETPLATFORMDISPLAYEXTPROC               eglGetPlatformDisplayEXT               = nullptr;
             PFNEGLCREATEIMAGEKHRPROC                      eglCreateImageKHR                      = nullptr;
@@ -72,6 +79,10 @@ namespace Aquamarine {
             PFNGLEGLIMAGETARGETRENDERBUFFERSTORAGEOESPROC glEGLImageTargetRenderbufferStorageOES = nullptr;
             PFNEGLQUERYDMABUFFORMATSEXTPROC               eglQueryDmaBufFormatsEXT               = nullptr;
             PFNEGLQUERYDMABUFMODIFIERSEXTPROC             eglQueryDmaBufModifiersEXT             = nullptr;
+            PFNEGLDESTROYSYNCKHRPROC                      eglDestroySyncKHR                      = nullptr;
+            PFNEGLWAITSYNCKHRPROC                         eglWaitSyncKHR                         = nullptr;
+            PFNEGLCREATESYNCKHRPROC                       eglCreateSyncKHR                       = nullptr;
+            PFNEGLDUPNATIVEFENCEFDANDROIDPROC             eglDupNativeFenceFDANDROID             = nullptr;
         } egl;
 
         struct {
@@ -92,6 +103,8 @@ namespace Aquamarine {
         std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);
         bool                                                  initDRMFormats();
         bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
+        void                                                  waitOnSync(int fd);
+        int                                                   recreateBlitSync();
         bool                                                  hasModifiers = false;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
