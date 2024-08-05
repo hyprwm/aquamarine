@@ -1483,7 +1483,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             }
 
             // replace the explicit in fence if the blitting backend returned one, otherwise discard old. Passed fence from the client is wrong.
-            if (blitResult.syncFD.has_value())
+            static auto NO_EXPLICIT = envEnabled("AQ_MGPU_NO_EXPLICIT");
+            if (blitResult.syncFD.has_value() && !NO_EXPLICIT)
                 state->setExplicitInFence(blitResult.syncFD.value());
             else
                 state->setExplicitInFence(-1);
