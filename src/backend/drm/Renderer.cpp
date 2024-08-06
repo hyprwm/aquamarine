@@ -3,6 +3,7 @@
 #include <xf86drmMode.h>
 #include <cstring>
 #include <fcntl.h>
+#include <unistd.h>
 #include "Math.hpp"
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
