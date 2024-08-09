@@ -200,7 +200,7 @@ Aquamarine::CGBMBuffer::~CGBMBuffer() {
 }
 
 eBufferCapability Aquamarine::CGBMBuffer::caps() {
-    return (Aquamarine::eBufferCapability)0;
+    return BUFFER_CAPABILITY_DATAPTR;
 }
 
 eBufferType Aquamarine::CGBMBuffer::type() {
@@ -216,7 +216,7 @@ bool Aquamarine::CGBMBuffer::isSynchronous() {
 }
 
 bool Aquamarine::CGBMBuffer::good() {
-    return true;
+    return attrs.success;
 }
 
 SDMABUFAttrs Aquamarine::CGBMBuffer::dmabuf() {

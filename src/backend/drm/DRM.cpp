@@ -950,6 +950,10 @@ SP<IAllocator> Aquamarine::CDRMBackend::preferredAllocator() {
     return backend->primaryAllocator;
 }
 
+SP<IAllocator> Aquamarine::CDRMBackend::fallbackAllocator() {
+    return backend->fallbackAllocator;
+}
+
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     id = plane->plane_id;
 
@@ -1603,14 +1607,14 @@ SP<IBackendImplementation> Aquamarine::CDRMOutput::getBackend() {
 }
 
 bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotspot) {
-    if (buffer && !buffer->dmabuf().success) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer has to be a dmabuf");
-        return false;
-    }
-
     if (!buffer)
         setCursorVisible(false);
     else {
+        auto isDumb = buffer->type() == BUFFER_TYPE_DUMB;
+        if (!(buffer->dmabuf().success || (isDumb && buffer->shm().success))) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer has to be a dmabuf or dumb");
+            return false;
+        }
         SP<CDRMFB> fb;
 
         if (backend->primary) {
@@ -1625,8 +1629,8 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
             OPTIONS.multigpu = false;
             OPTIONS.scanout  = true;
             OPTIONS.cursor   = true;
-            OPTIONS.format   = buffer->dmabuf().format;
-            OPTIONS.size     = buffer->dmabuf().size;
+            OPTIONS.format   = isDumb ? buffer->shm().format : buffer->dmabuf().format;
+            OPTIONS.size     = isDumb ? buffer->shm().size : buffer->dmabuf().size;
             OPTIONS.length   = 2;
 
             if (!mgpu.cursorSwapchain->reconfigure(OPTIONS)) {
@@ -1755,7 +1759,11 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
 }
 
 void Aquamarine::CDRMFB::import() {
-    auto attrs = buffer->dmabuf();
+    // FIXME easier to pretend that we are a dmabuf then to change everything. shm and dmabuf should have the same offset and stride types?
+    auto attrs = buffer->type() == BUFFER_TYPE_DUMB ?
+        SDMABUFAttrs{buffer->shm().success,         buffer->shm().size, buffer->shm().format, 0, 1, {(uint32_t)buffer->shm().offset}, {(uint32_t)buffer->shm().stride},
+                     {buffer->shm().fd, -1, -1, -1}} :
+        buffer->dmabuf();
     if (!attrs.success) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf");
         return;
@@ -1864,7 +1872,11 @@ void Aquamarine::CDRMFB::drop() {
 }
 
 uint32_t Aquamarine::CDRMFB::submitBuffer() {
-    auto                    attrs = buffer->dmabuf();
+    // FIXME easier to pretend that we are a dmabuf then to change everything. shm and dmabuf should have the same offset and stride types?
+    auto                    attrs = buffer->type() == BUFFER_TYPE_DUMB ?
+                           SDMABUFAttrs{buffer->shm().success,         buffer->shm().size, buffer->shm().format, 0, 1, {(uint32_t)buffer->shm().offset}, {(uint32_t)buffer->shm().stride},
+                                        {buffer->shm().fd, -1, -1, -1}} :
+                           buffer->dmabuf();
     uint32_t                newID = 0;
     std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
     for (size_t i = 0; i < attrs.planes; ++i) {
