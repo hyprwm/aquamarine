@@ -1940,6 +1940,11 @@ void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CShar
         .flags       = DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_PVSYNC,
     };
     snprintf(modeInfo.name, sizeof(modeInfo.name), "%dx%d", (int)MODE->pixelSize.x, (int)MODE->pixelSize.y);
+
+    TRACE(connector->backend->log(AQ_LOG_TRACE,
+                                  std::format("drm: calculateMode: modeline dump: {} {} {} {} {} {} {} {} {} {} {}", modeInfo.clock, modeInfo.hdisplay, modeInfo.hsync_start,
+                                              modeInfo.hsync_end, modeInfo.htotal, modeInfo.vdisplay, modeInfo.vsync_start, modeInfo.vsync_end, modeInfo.vtotal, modeInfo.vrefresh,
+                                              modeInfo.flags)));
 }
 
 Aquamarine::CDRMBufferAttachment::CDRMBufferAttachment(SP<CDRMFB> fb_) : fb(fb_) {
