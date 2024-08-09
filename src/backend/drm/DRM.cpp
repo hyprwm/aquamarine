@@ -1921,14 +1921,14 @@ void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CShar
 
     di_cvt_compute(&timing, &options);
 
-    uint16_t hsync_start = (int)MODE->pixelSize.y + timing.h_front_porch;
+    uint16_t hsync_start = (int)MODE->pixelSize.x + timing.h_front_porch;
     uint16_t vsync_start = timing.v_lines_rnd + timing.v_front_porch;
     uint16_t hsync_end   = hsync_start + timing.h_sync;
     uint16_t vsync_end   = vsync_start + timing.v_sync;
 
     modeInfo = (drmModeModeInfo){
         .clock       = (uint32_t)std::round(timing.act_pixel_freq * 1000),
-        .hdisplay    = (uint16_t)MODE->pixelSize.y,
+        .hdisplay    = (uint16_t)MODE->pixelSize.x,
         .hsync_start = hsync_start,
         .hsync_end   = hsync_end,
         .htotal      = (uint16_t)(hsync_end + timing.h_back_porch),
