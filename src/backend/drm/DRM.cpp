@@ -1379,7 +1379,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     const uint32_t COMMITTED = STATE.committed;
 
     if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_ENABLED) && STATE.enabled) {
-        if (!STATE.mode && STATE.customMode) {
+        if (!STATE.mode && !STATE.customMode) {
             backend->backend->log(AQ_LOG_ERROR, "drm: No mode on enable commit");
             return false;
         }
