@@ -152,7 +152,7 @@ namespace Aquamarine {
     struct SDRMCRTC {
         uint32_t               id = 0;
         std::vector<SDRMLayer> layers;
-        int32_t                refresh = 0;
+        int32_t                refresh = 0; // unused
 
         struct {
             int gammaSize = 0;

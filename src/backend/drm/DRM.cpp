@@ -713,10 +713,10 @@ void Aquamarine::CDRMBackend::scanConnectors() {
 
         conn->status = drmConn->connection;
 
-        if (!conn->crtc) {
-            backend->log(AQ_LOG_DEBUG, std::format("drm: Ignoring connector {} because it has no CRTC", connectorID));
-            continue;
-        }
+        // if (!conn->crtc) {
+        //     backend->log(AQ_LOG_DEBUG, std::format("drm: Ignoring connector {} because it has no CRTC", connectorID));
+        //     continue;
+        // }
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connection state: {}", connectorID, (int)drmConn->connection));
 
@@ -1163,7 +1163,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
     }
 
-    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Connecting connector {}, CRTC ID {}", szName, crtc ? crtc->id : -1));
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Connecting connector {}, {}", szName, crtc ? std::format("CRTC ID {}", crtc->id) : "no CRTC"));
 
     output            = SP<CDRMOutput>(new CDRMOutput(szName, backend, self.lock()));
     output->self      = output;
@@ -1197,8 +1197,6 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
             //uint64_t modeID = 0;
             // getDRMProp(backend->gpu->fd, crtc->id, crtc->props.mode_id, &modeID);
-
-            crtc->refresh = calculateRefresh(drmMode);
         }
 
         backend->backend->log(AQ_LOG_DEBUG,
@@ -1206,10 +1204,8 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
                                           aqMode->preferred ? " (preferred)" : ""));
     }
 
-    if (!currentModeInfo && fallbackMode) {
+    if (!currentModeInfo && fallbackMode)
         output->state->setMode(fallbackMode);
-        crtc->refresh = calculateRefresh(fallbackMode->modeInfo.value());
-    }
 
     output->physicalSize = {(double)connector->mmWidth, (double)connector->mmHeight};
 
