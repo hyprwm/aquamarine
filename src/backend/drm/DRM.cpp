@@ -1197,9 +1197,6 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
             //uint64_t modeID = 0;
             // getDRMProp(backend->gpu->fd, crtc->id, crtc->props.mode_id, &modeID);
-
-            //if (crtc)
-            //    crtc->refresh = calculateRefresh(drmMode);
         }
 
         backend->backend->log(AQ_LOG_DEBUG,
@@ -1207,11 +1204,8 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
                                           aqMode->preferred ? " (preferred)" : ""));
     }
 
-    if (!currentModeInfo && fallbackMode) {
+    if (!currentModeInfo && fallbackMode)
         output->state->setMode(fallbackMode);
-        //if (crtc)
-        //    crtc->refresh = calculateRefresh(fallbackMode->modeInfo.value());
-    }
 
     output->physicalSize = {(double)connector->mmWidth, (double)connector->mmHeight};
 
