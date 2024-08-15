@@ -1163,7 +1163,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
     }
 
-    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Connecting connector {}, CRTC ID {}", szName, crtc ? crtc->id : -1));
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Connecting connector {}, {}", szName, crtc ? std::format("CRTC ID {}", crtc->id) : "no CRTC"));
 
     output            = SP<CDRMOutput>(new CDRMOutput(szName, backend, self.lock()));
     output->self      = output;
