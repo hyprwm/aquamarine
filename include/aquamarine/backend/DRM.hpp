@@ -265,6 +265,7 @@ namespace Aquamarine {
         void                                           applyCommit(const SDRMConnectorCommitData& data);
         void                                           rollbackCommit(const SDRMConnectorCommitData& data);
         void                                           onPresent();
+        void                                           recheckCRTCProps();
 
         Hyprutils::Memory::CSharedPointer<CDRMOutput>  output;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>   backend;

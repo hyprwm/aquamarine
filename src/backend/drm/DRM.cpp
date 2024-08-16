@@ -713,10 +713,8 @@ void Aquamarine::CDRMBackend::scanConnectors() {
 
         conn->status = drmConn->connection;
 
-        // if (!conn->crtc) {
-        //     backend->log(AQ_LOG_DEBUG, std::format("drm: Ignoring connector {} because it has no CRTC", connectorID));
-        //     continue;
-        // }
+        if (conn->crtc)
+            conn->recheckCRTCProps();
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connection state: {}", connectorID, (int)drmConn->connection));
 
@@ -1157,6 +1155,23 @@ void Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
     di_info_destroy(info);
 }
 
+void Aquamarine::SDRMConnector::recheckCRTCProps() {
+    if (!crtc || !output)
+        return;
+
+    uint64_t prop      = 0;
+    canDoVrr           = props.vrr_capable && crtc->props.vrr_enabled && getDRMProp(backend->gpu->fd, id, props.vrr_capable, &prop) && prop;
+    output->vrrCapable = canDoVrr;
+
+    backend->backend->log(AQ_LOG_DEBUG,
+                          std::format("drm: connector {} crtc is {} of vrr: props.vrr_capable -> {}, crtc->props.vrr_enabled -> {}", szName, (canDoVrr ? "capable" : "incapable"),
+                                      props.vrr_capable, crtc->props.vrr_enabled));
+
+    output->supportsExplicit = backend->drmProps.supportsTimelines && crtc->props.out_fence_ptr && crtc->primary->props.in_fence_fd;
+
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit sync {}", output->supportsExplicit ? "supported" : "unsupported"));
+}
+
 void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (output) {
         backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Not connecting connector {} because it's already connected", szName));
@@ -1228,13 +1243,6 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         output->nonDesktop = prop;
     }
 
-    canDoVrr           = props.vrr_capable && crtc->props.vrr_enabled && getDRMProp(backend->gpu->fd, id, props.vrr_capable, &prop) && prop;
-    output->vrrCapable = canDoVrr;
-
-    backend->backend->log(AQ_LOG_DEBUG,
-                          std::format("drm: crtc is {} of vrr: props.vrr_capable -> {}, crtc->props.vrr_enabled -> {}", (canDoVrr ? "capable" : "incapable"), props.vrr_capable,
-                                      crtc->props.vrr_enabled));
-
     maxBpcBounds.fill(0);
 
     if (props.max_bpc && !introspectDRMPropRange(backend->gpu->fd, props.max_bpc, maxBpcBounds.data(), &maxBpcBounds[1]))
@@ -1251,18 +1259,17 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
     // TODO: subconnectors
 
-    output->make             = make;
-    output->model            = model;
-    output->serial           = serial;
-    output->description      = std::format("{} {} {} ({})", make, model, serial, szName);
-    output->needsFrame       = true;
-    output->supportsExplicit = backend->drmProps.supportsTimelines && crtc->props.out_fence_ptr && crtc->primary->props.in_fence_fd;
-
-    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit sync {}", output->supportsExplicit ? "supported" : "unsupported"));
+    output->make        = make;
+    output->model       = model;
+    output->serial      = serial;
+    output->description = std::format("{} {} {} ({})", make, model, serial, szName);
+    output->needsFrame  = true;
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Description {}", output->description));
 
     status = DRM_MODE_CONNECTED;
+
+    recheckCRTCProps();
 
     if (!backend->backend->ready)
         return;
