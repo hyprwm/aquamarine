@@ -493,27 +493,30 @@ bool Aquamarine::CDRMBackend::shouldBlit() {
 }
 
 bool Aquamarine::CDRMBackend::initMgpu() {
-    if (!primary)
-        return true;
+    SP<CGBMAllocator> newAllocator;
+    if (primary || backend->primaryAllocator->type() != AQ_ALLOCATOR_TYPE_GBM) {
+        newAllocator            = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
+        rendererState.allocator = newAllocator;
+    } else {
+        newAllocator            = ((CGBMAllocator*)backend->primaryAllocator.get())->self.lock();
+        rendererState.allocator = newAllocator;
+    }
 
-    auto newAllocator = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
-    mgpu.allocator    = newAllocator;
-
-    if (!mgpu.allocator) {
+    if (!rendererState.allocator) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no allocator");
         return false;
     }
 
-    mgpu.renderer = CDRMRenderer::attempt(newAllocator, backend.lock());
+    rendererState.renderer = CDRMRenderer::attempt(newAllocator, backend.lock());
 
-    if (!mgpu.renderer) {
+    if (!rendererState.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
         return false;
     }
 
-    mgpu.renderer->self = mgpu.renderer;
+    rendererState.renderer->self = rendererState.renderer;
 
-    buildGlFormats(mgpu.renderer->formats);
+    buildGlFormats(rendererState.renderer->formats);
 
     return true;
 }
@@ -1463,7 +1466,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
             if (!mgpu.swapchain) {
                 TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: No swapchain for blit, creating"));
-                mgpu.swapchain = CSwapchain::create(backend->mgpu.allocator, backend.lock());
+                mgpu.swapchain = CSwapchain::create(backend->rendererState.allocator, backend.lock());
             }
 
             auto OPTIONS = swapchain->currentOptions();
@@ -1480,8 +1483,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             }
 
             auto NEWAQBUF   = mgpu.swapchain->next(nullptr);
-            auto blitResult = backend->mgpu.renderer->blit(STATE.buffer, NEWAQBUF,
-                                                           (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+            auto blitResult = backend->rendererState.renderer->blit(
+                STATE.buffer, NEWAQBUF, (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
             if (!blitResult.success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but blit failed");
                 return false;
@@ -1623,7 +1626,7 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
 
             if (!mgpu.cursorSwapchain) {
                 TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: No cursorSwapchain for blit, creating"));
-                mgpu.cursorSwapchain = CSwapchain::create(backend->mgpu.allocator, backend.lock());
+                mgpu.cursorSwapchain = CSwapchain::create(backend->rendererState.allocator, backend.lock());
             }
 
             auto OPTIONS     = mgpu.cursorSwapchain->currentOptions();
@@ -1640,7 +1643,7 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
             }
 
             auto NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
-            if (!backend->mgpu.renderer->blit(buffer, NEWAQBUF).success) {
+            if (!backend->rendererState.renderer->blit(buffer, NEWAQBUF).success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but cursor blit failed");
                 return false;
             }

@@ -561,6 +561,52 @@ int CDRMRenderer::recreateBlitSync() {
     return fd;
 }
 
+void CDRMRenderer::clearBuffer(IBuffer* buf) {
+    setEGL();
+
+    auto   dmabuf = buf->dmabuf();
+    GLuint rboID = 0, fboID = 0;
+
+    if (!dmabuf.success) {
+        backend->log(AQ_LOG_ERROR, "EGL (clear): cannot clear a non-dmabuf");
+        return;
+    }
+
+    auto rboImage = createEGLImage(dmabuf);
+    if (rboImage == EGL_NO_IMAGE_KHR) {
+        backend->log(AQ_LOG_ERROR, std::format("EGL (clear): createEGLImage failed: {}", eglGetError()));
+        return;
+    }
+
+    GLCALL(glGenRenderbuffers(1, &rboID));
+    GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
+    GLCALL(egl.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage));
+    GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+
+    GLCALL(glGenFramebuffers(1, &fboID));
+    GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fboID));
+    GLCALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rboID));
+
+    GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
+    GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fboID));
+
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (clear): fbo {} rbo {}", fboID, rboID)));
+
+    glClearColor(0.F, 0.F, 0.F, 1.F);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glFlush();
+
+    GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+
+    glDeleteFramebuffers(1, &fboID);
+    glDeleteRenderbuffers(1, &rboID);
+    egl.eglDestroyImageKHR(egl.display, rboImage);
+
+    restoreEGL();
+}
+
 CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, int waitFD) {
     setEGL();
 

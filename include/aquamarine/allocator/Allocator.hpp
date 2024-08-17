@@ -14,11 +14,16 @@ namespace Aquamarine {
         bool                      scanout = false, cursor = false, multigpu = false;
     };
 
+    enum eAllocatorType {
+        AQ_ALLOCATOR_TYPE_GBM = 0,
+    };
+
     class IAllocator {
       public:
         virtual ~IAllocator()                                                                                                                                      = default;
         virtual Hyprutils::Memory::CSharedPointer<IBuffer>  acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) = 0;
         virtual Hyprutils::Memory::CSharedPointer<CBackend> getBackend()                                                                                           = 0;
         virtual int                                         drmFD()                                                                                                = 0;
+        virtual eAllocatorType                              type()                                                                                                 = 0;
     };
 };

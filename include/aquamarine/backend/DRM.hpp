@@ -374,11 +374,10 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<IDRMImplementation> impl;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>          primary;
 
-        // multigpu state, only present if this backend is not primary, aka if this->primary != nullptr
         struct {
             Hyprutils::Memory::CSharedPointer<IAllocator>   allocator;
             Hyprutils::Memory::CSharedPointer<CDRMRenderer> renderer;
-        } mgpu;
+        } rendererState;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
 
@@ -415,5 +414,6 @@ namespace Aquamarine {
         friend class CDRMAtomicImpl;
         friend class CDRMAtomicRequest;
         friend class CDRMLease;
+        friend class CGBMBuffer;
     };
 };
