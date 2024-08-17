@@ -835,6 +835,8 @@ bool Aquamarine::CDRMBackend::dispatchEvents() {
 }
 
 uint32_t Aquamarine::CDRMBackend::capabilities() {
+    if (getCursorFormats().empty())
+        return 0;
     return eBackendCapabilities::AQ_BACKEND_CAPABILITY_POINTER;
 }
 
