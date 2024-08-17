@@ -1,11 +1,13 @@
 #include <aquamarine/allocator/GBM.hpp>
 #include <aquamarine/backend/Backend.hpp>
+#include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/allocator/Swapchain.hpp>
 #include "FormatUtils.hpp"
 #include "Shared.hpp"
 #include <xf86drm.h>
 #include <gbm.h>
 #include <unistd.h>
+#include "../backend/drm/Renderer.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -186,6 +188,12 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
                                         modName ? modName : "Unknown"));
 
     free(modName);
+
+    if (params.scanout && swapchain->backendImpl->type() == AQ_BACKEND_DRM) {
+        // clear the buffer using the DRM renderer to avoid uninitialized mem
+        auto impl = (CDRMBackend*)swapchain->backendImpl.get();
+        impl->rendererState.renderer->clearBuffer(this);
+    }
 }
 
 Aquamarine::CGBMBuffer::~CGBMBuffer() {
@@ -304,4 +312,8 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CGBMAllocator::getBacken
 
 int Aquamarine::CGBMAllocator::drmFD() {
     return fd;
+}
+
+eAllocatorType Aquamarine::CGBMAllocator::type() {
+    return AQ_ALLOCATOR_TYPE_GBM;
 }
