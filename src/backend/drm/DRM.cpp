@@ -1679,7 +1679,7 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
                                             connector->isPageFlipPending, connector->frameEventScheduled)));
     needsFrame = true;
 
-    if (connector->isPageFlipPending || connector->frameEventScheduled)
+    if (connector->isPageFlipPending || connector->frameEventScheduled || !state->state().enabled)
         return;
 
     connector->frameEventScheduled = true;
