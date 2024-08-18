@@ -209,6 +209,8 @@ namespace Aquamarine {
         Hyprutils::Math::Vector2D                                         cursorPos; // without hotspot
         Hyprutils::Math::Vector2D                                         cursorHotspot;
 
+        bool enabledState = true; // actual enabled state. Should be synced with state->state().enabled after a new frame
+
       private:
         CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, Hyprutils::Memory::CSharedPointer<SDRMConnector> connector_);
 

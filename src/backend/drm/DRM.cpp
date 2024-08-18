@@ -818,7 +818,7 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         .flags     = flags,
     });
 
-    if (BACKEND->sessionActive() && !pageFlip->connector->frameEventScheduled && pageFlip->connector->output->state->state().enabled)
+    if (BACKEND->sessionActive() && !pageFlip->connector->frameEventScheduled && pageFlip->connector->output->enabledState)
         pageFlip->connector->output->events.frame.emit();
 }
 
@@ -1318,6 +1318,8 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
 
     if (output->state->state().committed & COutputState::AQ_OUTPUT_STATE_MODE)
         refresh = calculateRefresh(data.modeInfo);
+
+    output->enabledState = output->state->state().enabled;
 }
 
 void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
@@ -1679,7 +1681,7 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
                                             connector->isPageFlipPending, connector->frameEventScheduled)));
     needsFrame = true;
 
-    if (connector->isPageFlipPending || connector->frameEventScheduled || !state->state().enabled)
+    if (connector->isPageFlipPending || connector->frameEventScheduled || !enabledState)
         return;
 
     connector->frameEventScheduled = true;
