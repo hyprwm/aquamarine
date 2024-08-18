@@ -818,7 +818,7 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         .flags     = flags,
     });
 
-    if (BACKEND->sessionActive() && !pageFlip->connector->frameEventScheduled)
+    if (BACKEND->sessionActive() && !pageFlip->connector->frameEventScheduled && pageFlip->connector->output->state->state().enabled)
         pageFlip->connector->output->events.frame.emit();
 }
 
