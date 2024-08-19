@@ -302,7 +302,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         };
 
         auto& STATE = c->output->state->state();
-        auto& MODE = STATE.customMode ? STATE.customMode : STATE.mode;
+        auto& MODE  = STATE.customMode ? STATE.customMode : STATE.mode;
 
         if (!MODE) {
             backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no mode, will send a reset state event later.");

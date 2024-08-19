@@ -378,7 +378,7 @@ namespace Aquamarine {
 
         struct {
             Hyprutils::Memory::CSharedPointer<IAllocator>   allocator;
-            Hyprutils::Memory::CSharedPointer<CDRMRenderer> renderer;
+            Hyprutils::Memory::CSharedPointer<CDRMRenderer> renderer; // may be null if creation fails
         } rendererState;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;

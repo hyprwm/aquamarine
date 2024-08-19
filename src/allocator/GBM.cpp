@@ -192,7 +192,8 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     if (params.scanout && swapchain->backendImpl->type() == AQ_BACKEND_DRM) {
         // clear the buffer using the DRM renderer to avoid uninitialized mem
         auto impl = (CDRMBackend*)swapchain->backendImpl.get();
-        impl->rendererState.renderer->clearBuffer(this);
+        if (impl->rendererState.renderer)
+            impl->rendererState.renderer->clearBuffer(this);
     }
 }
 
