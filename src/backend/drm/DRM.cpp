@@ -1281,6 +1281,8 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
 
     output->swapchain = CSwapchain::create(backend->backend->primaryAllocator, backend->self.lock());
+    output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary}); // mark the swapchain for scanout
+    output->needsFrame = true;
     backend->backend->events.newOutput.emit(SP<IOutput>(output));
     output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
 }
