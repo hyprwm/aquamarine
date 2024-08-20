@@ -1619,6 +1619,9 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         return false;
     }
 
+    if (!connector->crtc)
+        return false;
+
     if (!buffer)
         setCursorVisible(false);
     else {
