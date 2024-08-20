@@ -1713,6 +1713,10 @@ size_t Aquamarine::CDRMOutput::getGammaSize() {
 }
 
 std::vector<SDRMFormat> Aquamarine::CDRMOutput::getRenderFormats() {
+    if (!connector->crtc || !connector->crtc->primary || connector->crtc->primary->formats.empty()) {
+        backend->log(AQ_LOG_ERROR, "Can't get formats: no crtc");
+        return {};
+    }
     return connector->crtc->primary->formats;
 }
 
