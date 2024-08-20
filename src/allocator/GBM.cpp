@@ -70,8 +70,10 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
                                   std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}, scanout: {}", attrs.size, fourccToName(attrs.format), CURSOR,
                                               MULTIGPU, params.scanout)));
 
-    const auto            FORMATS    = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
-    const auto            RENDERABLE = swapchain->backendImpl->getRenderableFormats();
+    const auto FORMATS    = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
+    const auto RENDERABLE = swapchain->backendImpl->getRenderableFormats();
+
+    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Available formats: {}", FORMATS.size())));
 
     std::vector<uint64_t> explicitModifiers;
 
@@ -88,30 +90,34 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
     // check if we can use modifiers. If the requested support has any explicit modifier
     // supported by the primary backend, we can.
-    for (auto& f : FORMATS) {
-        if (f.drmFormat != attrs.format)
-            continue;
+    if (!RENDERABLE.empty()) {
+        TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Renderable has {} formats, clipping", RENDERABLE.size())));
 
-        for (auto& m : f.modifiers) {
-            if (m == DRM_FORMAT_MOD_INVALID)
+        for (auto& f : FORMATS) {
+            if (f.drmFormat != attrs.format)
                 continue;
 
-            if (!RENDERABLE.empty() && params.scanout && !CURSOR && !MULTIGPU) {
-                // regular scanout plane, check if the format is renderable
-                auto rformat = std::find_if(RENDERABLE.begin(), RENDERABLE.end(), [f](const auto& e) { return e.drmFormat == f.drmFormat; });
-
-                if (rformat == RENDERABLE.end()) {
-                    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping format {} as it's not renderable", fourccToName(f.drmFormat))));
-                    break;
-                }
-
-                if (std::find(rformat->modifiers.begin(), rformat->modifiers.end(), m) == rformat->modifiers.end()) {
-                    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping modifier 0x{:x} as it's not renderable", m)));
+            for (auto& m : f.modifiers) {
+                if (m == DRM_FORMAT_MOD_INVALID)
                     continue;
-                }
-            }
 
-            explicitModifiers.push_back(m);
+                if (params.scanout && !CURSOR && !MULTIGPU) {
+                    // regular scanout plane, check if the format is renderable
+                    auto rformat = std::find_if(RENDERABLE.begin(), RENDERABLE.end(), [f](const auto& e) { return e.drmFormat == f.drmFormat; });
+
+                    if (rformat == RENDERABLE.end()) {
+                        TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping format {} as it's not renderable", fourccToName(f.drmFormat))));
+                        break;
+                    }
+
+                    if (std::find(rformat->modifiers.begin(), rformat->modifiers.end(), m) == rformat->modifiers.end()) {
+                        TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping modifier 0x{:x} as it's not renderable", m)));
+                        continue;
+                    }
+                }
+
+                explicitModifiers.push_back(m);
+            }
         }
     }
 
