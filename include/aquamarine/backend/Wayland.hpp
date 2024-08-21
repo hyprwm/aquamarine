@@ -45,7 +45,7 @@ namespace Aquamarine {
         virtual bool                                                      test();
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend();
         virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
-        virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord, bool skipShedule = false);
+        virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord, bool skipSchedule = false);
         virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
         virtual bool                                                      destroy();
