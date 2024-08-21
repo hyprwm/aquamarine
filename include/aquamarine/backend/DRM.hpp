@@ -194,7 +194,7 @@ namespace Aquamarine {
         virtual bool                                                      test();
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend();
         virtual bool                                                      setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
-        virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord, bool skipShedule = false);
+        virtual void                                                      moveCursor(const Hyprutils::Math::Vector2D& coord, bool skipSchedule = false);
         virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual void                                                      setCursorVisible(bool visible);
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
@@ -328,7 +328,7 @@ namespace Aquamarine {
         virtual bool reset()                                                                                           = 0;
 
         // moving a cursor IIRC is almost instant on most hardware so we don't have to wait for a commit.
-        virtual bool moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, bool skipShedule = false) = 0;
+        virtual bool moveCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, bool skipSchedule = false) = 0;
     };
 
     class CDRMBackend : public IBackendImplementation {

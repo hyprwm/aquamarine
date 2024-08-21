@@ -1697,10 +1697,10 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
     return true;
 }
 
-void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord, bool skipShedule) {
+void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord, bool skipSchedule) {
     cursorPos = coord;
     // cursorVisible = true;
-    backend->impl->moveCursor(connector, skipShedule);
+    backend->impl->moveCursor(connector, skipSchedule);
 }
 
 void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {

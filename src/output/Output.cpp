@@ -11,7 +11,7 @@ Hyprutils::Memory::CSharedPointer<SOutputMode> Aquamarine::IOutput::preferredMod
     return nullptr;
 }
 
-void Aquamarine::IOutput::moveCursor(const Hyprutils::Math::Vector2D& coord, bool skipShedule) {
+void Aquamarine::IOutput::moveCursor(const Hyprutils::Math::Vector2D& coord, bool skipSchedule) {
     ;
 }
 
