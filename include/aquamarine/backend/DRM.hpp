@@ -236,12 +236,12 @@ namespace Aquamarine {
     };
 
     struct SDRMConnectorCommitData {
-        Hyprutils::Memory::CSharedPointer<CDRMFB> mainFB, cursorFB;
+        Hyprutils::Memory::CSharedPointer<CDRMFB> mainFB = nullptr, cursorFB = nullptr;
         bool                                      modeset  = false;
         bool                                      blocking = false;
         uint32_t                                  flags    = 0;
         bool                                      test     = false;
-        drmModeModeInfo                           modeInfo;
+        drmModeModeInfo                           modeInfo{0};
 
         struct {
             uint32_t gammaLut = 0;
@@ -323,6 +323,7 @@ namespace Aquamarine {
 
     class IDRMImplementation {
       public:
+        virtual ~IDRMImplementation()                                                                                  = default;
         virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) = 0;
         virtual bool reset()                                                                                           = 0;
 

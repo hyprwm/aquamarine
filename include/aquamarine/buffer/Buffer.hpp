@@ -21,8 +21,8 @@ namespace Aquamarine {
     class CWLBufferResource;
 
     struct SDMABUFAttrs {
-        bool                      success = false;
-        Hyprutils::Math::Vector2D size;
+        bool                      success  = false;
+        Hyprutils::Math::Vector2D size     = Hyprutils::Math::Vector2D(0, 0);
         uint32_t                  format   = 0; // fourcc
         uint64_t                  modifier = 0;
 

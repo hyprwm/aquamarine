@@ -176,7 +176,7 @@ void Aquamarine::CHeadlessBackend::updateTimerFD() {
     clock_gettime(CLOCK_MONOTONIC, &now);
     timespecAddNs(&now, lowestNs);
 
-    itimerspec ts = {.it_value = now};
+    itimerspec ts = {.it_interval{0, 0}, .it_value = now};
 
     if (timerfd_settime(timers.timerfd, TFD_TIMER_ABSTIME, &ts, nullptr))
         backend->log(AQ_LOG_ERROR, std::format("headless: failed to arm timerfd: {}", strerror(errno)));

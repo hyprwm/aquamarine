@@ -722,8 +722,9 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             auto                tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
 
             ITablet::SAxisEvent event = {
-                .tool   = tool,
-                .timeMs = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
+                .tool     = tool,
+                .timeMs   = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
+                .absolute = Hyprutils::Math::Vector2D(0, 0),
             };
 
             if (libinput_event_tablet_tool_x_has_changed(tte)) {

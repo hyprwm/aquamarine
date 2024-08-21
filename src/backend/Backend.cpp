@@ -246,7 +246,7 @@ void Aquamarine::CBackend::updateIdleTimer() {
     clock_gettime(CLOCK_MONOTONIC, &now);
     timespecAddNs(&now, ADD_NS);
 
-    itimerspec ts = {.it_value = now};
+    itimerspec ts = {.it_interval{0, 0}, .it_value = now};
 
     if (timerfd_settime(idle.fd, TFD_TIMER_ABSTIME, &ts, nullptr))
         log(AQ_LOG_ERROR, std::format("backend: failed to arm timerfd: {}", strerror(errno)));

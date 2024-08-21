@@ -19,7 +19,7 @@ namespace Aquamarine {
         Hyprutils::Math::Vector2D      pixelSize;
         unsigned int                   refreshRate = 0 /* in mHz */;
         bool                           preferred   = false;
-        std::optional<drmModeModeInfo> modeInfo; // if this is a drm mode, this will be populated.
+        std::optional<drmModeModeInfo> modeInfo    = std::nullopt; // if this is a drm mode, this will be populated.
     };
 
     enum eOutputPresentationMode : uint32_t {
