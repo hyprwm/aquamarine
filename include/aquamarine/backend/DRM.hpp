@@ -323,6 +323,7 @@ namespace Aquamarine {
 
     class IDRMImplementation {
       public:
+        virtual ~IDRMImplementation()                                                                                  = default;
         virtual bool commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) = 0;
         virtual bool reset()                                                                                           = 0;
 
