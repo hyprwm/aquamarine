@@ -1398,6 +1398,27 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
     }
 
+    if (STATE.drmFormat == DRM_FORMAT_INVALID) {
+        backend->backend->log(AQ_LOG_ERROR, "drm: No format for output");
+        return false;
+    }
+
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_FORMAT) {
+        // verify the format is valid for the primary plane
+        bool ok = false;
+        for (auto& f : getRenderFormats()) {
+            if (f.drmFormat == STATE.drmFormat) {
+                ok = true;
+                break;
+            }
+        }
+
+        if (!ok) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Selected format is not supported by the primary KMS plane");
+            return false;
+        }
+    }
+
     if (STATE.adaptiveSync && !connector->canDoVrr) {
         backend->backend->log(AQ_LOG_ERROR, "drm: No Adaptive sync support for output");
         return false;
