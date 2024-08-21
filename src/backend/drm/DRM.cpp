@@ -1449,10 +1449,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
         if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
             flags |= DRM_MODE_PAGE_FLIP_EVENT;
-        if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) {
+        if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
             flags |= DRM_MODE_PAGE_FLIP_ASYNC;
-            flags &= ~DRM_MODE_PAGE_FLIP_EVENT; // Do not request an event for immediate page flips, as it makes no sense.
-        }
     }
 
     // we can't go further without a blit
