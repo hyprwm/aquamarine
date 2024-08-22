@@ -17,6 +17,7 @@
   udev,
   wayland,
   wayland-protocols,
+  # wayland-scanner,
   version ? "git",
   doCheck ? false,
 }:
@@ -31,6 +32,8 @@ stdenv.mkDerivation {
     cmake
     hyprwayland-scanner
     pkg-config
+    # re-add after https://github.com/NixOS/nixpkgs/pull/214906 hits nixos-unstable
+    # wayland-scanner
   ];
 
   buildInputs = [
