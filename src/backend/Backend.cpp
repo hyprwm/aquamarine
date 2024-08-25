@@ -17,7 +17,7 @@ using namespace Hyprutils::Memory;
 using namespace Aquamarine;
 #define SP CSharedPointer
 
-#define TIMESPEC_NSEC_PER_SEC 1000000000L
+#define TIMESPEC_NSEC_PER_SEC 1000000000LL
 
 static void timespecAddNs(timespec* pTimespec, int64_t delta) {
     int delta_ns_low = delta % TIMESPEC_NSEC_PER_SEC;
