@@ -658,7 +658,7 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
         auto E = std::any_cast<CSessionDevice::SChangeEvent>(d);
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
-            scanConnectors();
+            scanConnectors(false);
             recheckCRTCs();
         } else if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a lease event for {}", gpuName));
@@ -676,7 +676,7 @@ eBackendType Aquamarine::CDRMBackend::type() {
     return eBackendType::AQ_BACKEND_DRM;
 }
 
-void Aquamarine::CDRMBackend::scanConnectors() {
+void Aquamarine::CDRMBackend::scanConnectors(bool allowConnect) {
     backend->log(AQ_LOG_DEBUG, std::format("drm: Scanning connectors for {}", gpu->path));
 
     auto resources = drmModeGetResources(gpu->fd);
@@ -722,12 +722,14 @@ void Aquamarine::CDRMBackend::scanConnectors() {
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connection state: {}", connectorID, (int)drmConn->connection));
 
-        if (conn->status == DRM_MODE_CONNECTED && !conn->output) {
-            backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
-            conn->connect(drmConn);
-        } else if (conn->status != DRM_MODE_CONNECTED && conn->output) {
-            backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} disconnected", conn->szName));
-            conn->disconnect();
+        if (allowConnect) {
+            if (conn->status == DRM_MODE_CONNECTED && !conn->output) {
+                backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
+                conn->connect(drmConn);
+            } else if (conn->status != DRM_MODE_CONNECTED && conn->output) {
+                backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} disconnected", conn->szName));
+                conn->disconnect();
+            }
         }
 
         drmModeFreeConnector(drmConn);

@@ -367,7 +367,7 @@ namespace Aquamarine {
         bool initMgpu();
         bool grabFormats();
         bool shouldBlit();
-        void scanConnectors();
+        void scanConnectors(bool allowConnect = true);
         void scanLeases();
         void restoreAfterVT();
         void recheckCRTCs();
