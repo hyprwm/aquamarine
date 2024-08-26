@@ -655,7 +655,8 @@ bool Aquamarine::CWaylandOutput::setCursor(Hyprutils::Memory::CSharedPointer<IBu
     if (!buffer) {
         cursorState.cursorBuffer.reset();
         cursorState.cursorWlBuffer.reset();
-        backend->pointers.at(0)->pointer->sendSetCursor(cursorState.serial, nullptr, cursorState.hotspot.x, cursorState.hotspot.y);
+        if (!backend->pointers.empty())
+            backend->pointers.at(0)->pointer->sendSetCursor(cursorState.serial, nullptr, cursorState.hotspot.x, cursorState.hotspot.y);
         return true;
     }
 
