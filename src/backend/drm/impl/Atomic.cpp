@@ -310,16 +310,16 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 bool Aquamarine::CDRMAtomicImpl::reset() {
     CDRMAtomicRequest request(backend);
 
-    for (auto& crtc : backend->crtcs) {
+    for (auto const& crtc : backend->crtcs) {
         request.add(crtc->id, crtc->props.mode_id, 0);
         request.add(crtc->id, crtc->props.active, 0);
     }
 
-    for (auto& conn : backend->connectors) {
+    for (auto const& conn : backend->connectors) {
         request.add(conn->id, conn->props.crtc_id, 0);
     }
 
-    for (auto& plane : backend->planes) {
+    for (auto const& plane : backend->planes) {
         request.planeProps(plane, nullptr, 0, {});
     }
 

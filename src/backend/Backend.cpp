@@ -67,7 +67,7 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
 
     backend->log(AQ_LOG_DEBUG, "Creating an Aquamarine backend!");
 
-    for (auto& b : backends) {
+    for (auto const& b : backends) {
         if (b.backendType == AQ_BACKEND_WAYLAND) {
             auto ref = SP<CWaylandBackend>(new CWaylandBackend(backend));
             backend->implementations.emplace_back(ref);
@@ -79,7 +79,7 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
                 continue;
             }
 
-            for (auto& r : ref) {
+            for (auto const& r : ref) {
                 backend->implementations.emplace_back(r);
             }
         } else if (b.backendType == AQ_BACKEND_HEADLESS) {
@@ -109,7 +109,7 @@ bool Aquamarine::CBackend::start() {
     int  started  = 0;
 
     auto optionsForType = [this](eBackendType type) -> SBackendImplementationOptions {
-        for (auto& o : implementationOptions) {
+        for (auto const& o : implementationOptions) {
             if (o.backendType == type)
                 return o;
         }
@@ -145,7 +145,7 @@ bool Aquamarine::CBackend::start() {
     });
 
     // TODO: obviously change this when (if) we add different allocators.
-    for (auto& b : implementations) {
+    for (auto const& b : implementations) {
         if (b->drmFD() >= 0) {
             auto fd = reopenDRMNode(b->drmFD());
             if (fd < 0) {
@@ -162,7 +162,7 @@ bool Aquamarine::CBackend::start() {
         return false;
 
     ready = true;
-    for (auto& b : implementations) {
+    for (auto const& b : implementations) {
         b->onReady();
     }
 
@@ -180,15 +180,15 @@ void Aquamarine::CBackend::log(eBackendLogLevel level, const std::string& msg) {
 
 std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CBackend::getPollFDs() {
     std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> result;
-    for (auto& i : implementations) {
+    for (auto const& i : implementations) {
         auto pollfds = i->pollFDs();
-        for (auto& p : pollfds) {
+        for (auto const& p : pollfds) {
             log(AQ_LOG_DEBUG, std::format("backend: poll fd {} for implementation {}", p->fd, backendTypeToName(i->type())));
             result.emplace_back(p);
         }
     }
 
-    for (auto& sfd : sessionFDs) {
+    for (auto const& sfd : sessionFDs) {
         log(AQ_LOG_DEBUG, std::format("backend: poll fd {} for session", sfd->fd));
         result.emplace_back(sfd);
     }
@@ -200,7 +200,7 @@ std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CBackend::ge
 }
 
 int Aquamarine::CBackend::drmFD() {
-    for (auto& i : implementations) {
+    for (auto const& i : implementations) {
         int fd = i->drmFD();
         if (fd < 0)
             continue;
@@ -215,14 +215,14 @@ bool Aquamarine::CBackend::hasSession() {
 }
 
 std::vector<SDRMFormat> Aquamarine::CBackend::getPrimaryRenderFormats() {
-    for (auto& b : implementations) {
+    for (auto const& b : implementations) {
         if (b->type() != AQ_BACKEND_DRM && b->type() != AQ_BACKEND_WAYLAND)
             continue;
 
         return b->getRenderFormats();
     }
 
-    for (auto& b : implementations) {
+    for (auto const& b : implementations) {
         return b->getRenderFormats();
     }
 
@@ -260,7 +260,7 @@ void Aquamarine::CBackend::dispatchIdle() {
     auto cpy = idle.pending;
     idle.pending.clear();
 
-    for (auto& i : cpy) {
+    for (auto const& i : cpy) {
         if (i && *i)
             (*i)();
     }

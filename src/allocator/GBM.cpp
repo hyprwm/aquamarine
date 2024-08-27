@@ -35,7 +35,7 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) 
     if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB8888; }); it != formats.end())
         return *it;
 
-    for (auto& f : formats) {
+    for (auto const& f : formats) {
         auto name = fourccToName(f.drmFormat);
 
         /* 10 bpp RGB */
@@ -43,7 +43,7 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) 
             return f;
     }
 
-    for (auto& f : formats) {
+    for (auto const& f : formats) {
         auto name = fourccToName(f.drmFormat);
 
         /* 8 bpp RGB */
@@ -93,11 +93,11 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     if (!RENDERABLE.empty()) {
         TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Renderable has {} formats, clipping", RENDERABLE.size())));
 
-        for (auto& f : FORMATS) {
+        for (auto const& f : FORMATS) {
             if (f.drmFormat != attrs.format)
                 continue;
 
-            for (auto& m : f.modifiers) {
+            for (auto const& m : f.modifiers) {
                 if (m == DRM_FORMAT_MOD_INVALID)
                     continue;
 
@@ -141,7 +141,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         bo = gbm_bo_create(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, flags);
     } else {
         TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Using modifier-based allocation, modifiers: {}", explicitModifiers.size())));
-        for (auto& mod : explicitModifiers) {
+        for (auto const& mod : explicitModifiers) {
             TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod 0x{:x}", mod)));
         }
         bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size(), flags);

@@ -264,7 +264,7 @@ static bool isDRMCard(const char* sysname) {
 }
 
 void Aquamarine::CSession::onReady() {
-    for (auto& d : libinputDevices) {
+    for (auto const& d : libinputDevices) {
         if (d->keyboard)
             backend->events.newKeyboard.emit(SP<IKeyboard>(d->keyboard));
         if (d->mouse)
@@ -278,7 +278,7 @@ void Aquamarine::CSession::onReady() {
         if (d->tabletPad)
             backend->events.newTabletPad.emit(SP<ITabletPad>(d->tabletPad));
 
-        for (auto& t : d->tabletTools) {
+        for (auto const& t : d->tabletTools) {
             backend->events.newTabletTool.emit(SP<ITabletTool>(t));
         }
     }
@@ -306,7 +306,7 @@ void Aquamarine::CSession::dispatchUdevEvents() {
 
     dev_t              deviceNum = udev_device_get_devnum(device);
     SP<CSessionDevice> sessionDevice;
-    for (auto& sDev : sessionDevices) {
+    for (auto const& sDev : sessionDevices) {
         if (sDev->dev == deviceNum) {
             sessionDevice = sDev;
             break;
@@ -498,7 +498,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
                 LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL,
             };
 
-            for (auto& axis : LAXES) {
+            for (auto const& axis : LAXES) {
                 if (!libinput_event_pointer_has_axis(pe, axis))
                     continue;
 
@@ -860,7 +860,7 @@ Aquamarine::CLibinputDevice::~CLibinputDevice() {
 }
 
 SP<CLibinputTabletTool> Aquamarine::CLibinputDevice::toolFrom(libinput_tablet_tool* tool) {
-    for (auto& t : tabletTools) {
+    for (auto const& t : tabletTools) {
         if (t->libinputTool == tool)
             return t;
     }
