@@ -168,7 +168,7 @@ bool Aquamarine::CWaylandBackend::dispatchEvents() {
 
     // dispatch frames
     if (backend->ready) {
-        for (auto& f : idleCallbacks) {
+        for (auto const& f : idleCallbacks) {
             f();
         }
         idleCallbacks.clear();
@@ -187,7 +187,7 @@ bool Aquamarine::CWaylandBackend::setCursor(Hyprutils::Memory::CSharedPointer<IB
 }
 
 void Aquamarine::CWaylandBackend::onReady() {
-    for (auto& o : outputs) {
+    for (auto const& o : outputs) {
         o->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
         if (!o->swapchain) {
             backend->log(AQ_LOG_ERROR, std::format("Output {} failed: swapchain creation failed", o->name));
@@ -257,7 +257,7 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
     pointer->setEnter([this](CCWlPointer* r, uint32_t serial, wl_proxy* surface, wl_fixed_t x, wl_fixed_t y) {
         backend->lastEnterSerial = serial;
 
-        for (auto& o : backend->outputs) {
+        for (auto const& o : backend->outputs) {
             if (o->waylandState.surface->resource() != surface)
                 continue;
 
@@ -269,7 +269,7 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
     });
 
     pointer->setLeave([this](CCWlPointer* r, uint32_t serial, wl_proxy* surface) {
-        for (auto& o : backend->outputs) {
+        for (auto const& o : backend->outputs) {
             if (o->waylandState.surface->resource() != surface)
                 continue;
 
@@ -599,7 +599,7 @@ SP<IBackendImplementation> Aquamarine::CWaylandOutput::getBackend() {
 SP<CWaylandBuffer> Aquamarine::CWaylandOutput::wlBufferFromBuffer(SP<IBuffer> buffer) {
     std::erase_if(backendState.buffers, [this](const auto& el) { return el.first.expired() || !swapchain->contains(el.first.lock()); });
 
-    for (auto& [k, v] : backendState.buffers) {
+    for (auto const& [k, v] : backendState.buffers) {
         if (k != buffer)
             continue;
 

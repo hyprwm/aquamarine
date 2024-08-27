@@ -5,7 +5,7 @@ using namespace Hyprutils::Memory;
 #define SP CSharedPointer
 
 bool Aquamarine::CAttachmentManager::has(eAttachmentType type) {
-    for (auto& a : attachments) {
+    for (auto const& a : attachments) {
         if (a->type() == type)
             return true;
     }
@@ -13,7 +13,7 @@ bool Aquamarine::CAttachmentManager::has(eAttachmentType type) {
 }
 
 SP<IAttachment> Aquamarine::CAttachmentManager::get(eAttachmentType type) {
-    for (auto& a : attachments) {
+    for (auto const& a : attachments) {
         if (a->type() == type)
             return a;
     }

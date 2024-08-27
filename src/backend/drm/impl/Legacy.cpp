@@ -153,7 +153,7 @@ bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 
 bool Aquamarine::CDRMLegacyImpl::reset() {
     bool ok = true;
-    for (auto& connector : backend->connectors) {
+    for (auto const& connector : backend->connectors) {
         if (!connector->crtc)
             continue;
 

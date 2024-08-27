@@ -149,7 +149,7 @@ void Aquamarine::CHeadlessBackend::dispatchTimers() {
         }
     }
 
-    for (auto& copy : toFire) {
+    for (auto const& copy : toFire) {
         if (copy.what)
             copy.what();
     }
@@ -162,7 +162,7 @@ void Aquamarine::CHeadlessBackend::updateTimerFD() {
     const auto clocknow = std::chrono::steady_clock::now();
     bool       any      = false;
 
-    for (auto& t : timers.timers) {
+    for (auto const& t : timers.timers) {
         auto delta = std::chrono::duration_cast<std::chrono::microseconds>(t.when - clocknow).count() * 1000 /* µs -> ns */;
 
         if (delta < lowestNs)

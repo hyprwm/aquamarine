@@ -156,7 +156,7 @@ bool CDRMRenderer::initDRMFormats() {
 
     std::vector<SGLFormat> dmaFormats;
 
-    for (auto& fmt : formats) {
+    for (auto const& fmt : formats) {
         std::vector<std::pair<uint64_t, bool>> mods;
 
         auto                                   ret = getModsForFormat(fmt);
@@ -170,7 +170,7 @@ bool CDRMRenderer::initDRMFormats() {
         // EGL can always do implicit modifiers.
         mods.push_back({DRM_FORMAT_MOD_INVALID, true});
 
-        for (auto& [mod, external] : mods) {
+        for (auto const& [mod, external] : mods) {
             dmaFormats.push_back(SGLFormat{
                 .drmFormat = (uint32_t)fmt,
                 .modifier  = mod,
@@ -179,7 +179,7 @@ bool CDRMRenderer::initDRMFormats() {
         }
 
         TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL: GPU Supports Format {} (0x{:x})", fourccToName((uint32_t)fmt), fmt)));
-        for (auto& [mod, external] : mods) {
+        for (auto const& [mod, external] : mods) {
             auto modName = drmGetFormatModifierName(mod);
             TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL:  | {}with modifier 0x{:x}: {}", (external ? "external only " : ""), mod, modName ? modName : "?unknown?")));
             free(modName);
@@ -455,7 +455,7 @@ SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
     }
 
     bool external = false;
-    for (auto& fmt : formats) {
+    for (auto const& fmt : formats) {
         if (fmt.drmFormat != dma.format || fmt.modifier != dma.modifier)
             continue;
 
@@ -802,7 +802,7 @@ void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachme
 }
 
 bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
-    for (auto& fmt : formats) {
+    for (auto const& fmt : formats) {
         if (fmt.drmFormat != attrs.format)
             continue;
 

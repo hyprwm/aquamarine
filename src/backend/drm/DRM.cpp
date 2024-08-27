@@ -153,9 +153,9 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
             d = canonicalFilePath.string();
         }
 
-        for (auto& d : explicitDevices) {
+        for (auto const& d : explicitDevices) {
             bool found = false;
-            for (auto& vd : devices) {
+            for (auto const& vd : devices) {
                 if (vd->path == d) {
                     vecDevices.emplace_back(vd);
                     found = true;
@@ -169,7 +169,7 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
                 backend->log(AQ_LOG_ERROR, std::format("drm: Explicit device {} not found", d));
         }
     } else {
-        for (auto& d : devices) {
+        for (auto const& d : devices) {
             vecDevices.push_back(d);
         }
     }
@@ -219,7 +219,7 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
     std::vector<SP<CDRMBackend>> backends;
     SP<CDRMBackend>              newPrimary;
 
-    for (auto& gpu : gpus) {
+    for (auto const& gpu : gpus) {
         auto drmBackend  = SP<CDRMBackend>(new CDRMBackend(backend));
         drmBackend->self = drmBackend;
 
@@ -289,7 +289,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
     std::vector<SP<SDRMConnector>> noMode;
 
-    for (auto& c : connectors) {
+    for (auto const& c : connectors) {
         if (!c->crtc || !c->output)
             continue;
 
@@ -342,7 +342,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
     }
 
-    for (auto& c : noMode) {
+    for (auto const& c : noMode) {
         if (!c->output)
             continue;
 
@@ -525,7 +525,7 @@ bool Aquamarine::CDRMBackend::initMgpu() {
 void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts) {
     std::vector<SDRMFormat> result;
 
-    for (auto& fmt : fmts) {
+    for (auto const& fmt : fmts) {
         if (fmt.external)
             continue;
 
@@ -550,7 +550,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
     backend->log(AQ_LOG_DEBUG, "drm: Rechecking CRTCs");
 
     std::vector<SP<SDRMConnector>> recheck, changed;
-    for (auto& c : connectors) {
+    for (auto const& c : connectors) {
         if (c->crtc && c->status == DRM_MODE_CONNECTED) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Skipping connector {}, has crtc {} and is connected", c->szName, c->crtc->id));
             continue;
@@ -562,7 +562,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
     for (size_t i = 0; i < crtcs.size(); ++i) {
         bool taken = false;
-        for (auto& c : connectors) {
+        for (auto const& c : connectors) {
             if (c->crtc != crtcs.at(i))
                 continue;
 
@@ -580,7 +580,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
         bool assigned = false;
 
         // try to use a connected connector
-        for (auto& c : recheck) {
+        for (auto const& c : recheck) {
             if (!(c->possibleCrtcs & (1 << i)))
                 continue;
 
@@ -606,7 +606,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} unassigned", i, crtcs.at(i)->id));
     }
 
-    for (auto& c : connectors) {
+    for (auto const& c : connectors) {
         if (c->status == DRM_MODE_CONNECTED)
             continue;
 
@@ -615,7 +615,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
     // if any connectors get a crtc and are connected, we need to rescan to assign them outputs.
     bool rescan = false;
-    for (auto& c : changed) {
+    for (auto const& c : changed) {
         if (!c->output && c->status == DRM_MODE_CONNECTED) {
             rescan = true;
             continue;
@@ -745,7 +745,7 @@ void Aquamarine::CDRMBackend::scanLeases() {
         return;
     }
 
-    for (auto& c : connectors) {
+    for (auto const& c : connectors) {
         if (!c->output || !c->output->lease)
             continue;
 
@@ -767,7 +767,7 @@ void Aquamarine::CDRMBackend::scanLeases() {
 
         auto l = c->output->lease;
 
-        for (auto& c2 : connectors) {
+        for (auto const& c2 : connectors) {
             if (!c2->output || c2->output->lease != c->output->lease)
                 continue;
 
@@ -872,7 +872,7 @@ void Aquamarine::CDRMBackend::onReady() {
         }
     }
 
-    for (auto& c : connectors) {
+    for (auto const& c : connectors) {
         backend->log(AQ_LOG_DEBUG, std::format("drm: onReady: connector {}", c->id));
         if (!c->output)
             continue;
@@ -894,7 +894,7 @@ void Aquamarine::CDRMBackend::onReady() {
 }
 
 std::vector<SDRMFormat> Aquamarine::CDRMBackend::getRenderFormats() {
-    for (auto& p : planes) {
+    for (auto const& p : planes) {
         if (p->type != DRM_PLANE_TYPE_PRIMARY)
             continue;
 
@@ -909,7 +909,7 @@ std::vector<SDRMFormat> Aquamarine::CDRMBackend::getRenderableFormats() {
 }
 
 std::vector<SDRMFormat> Aquamarine::CDRMBackend::getCursorFormats() {
-    for (auto& p : planes) {
+    for (auto const& p : planes) {
         if (p->type != DRM_PLANE_TYPE_CURSOR)
             continue;
 
@@ -1408,7 +1408,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_FORMAT) {
         // verify the format is valid for the primary plane
         bool ok = false;
-        for (auto& f : getRenderFormats()) {
+        for (auto const& f : getRenderFormats()) {
             if (f.drmFormat == STATE.drmFormat) {
                 ok = true;
                 break;
@@ -2001,7 +2001,7 @@ SP<CDRMLease> Aquamarine::CDRMLease::create(std::vector<SP<IOutput>> outputs) {
 
     auto backend = ((CDRMBackend*)outputs.at(0)->getBackend().get())->self.lock();
 
-    for (auto& o : outputs) {
+    for (auto const& o : outputs) {
         if (o->getBackend() != backend) {
             backend->log(AQ_LOG_ERROR, "drm lease: Mismatched backends");
             return nullptr;
@@ -2012,7 +2012,7 @@ SP<CDRMLease> Aquamarine::CDRMLease::create(std::vector<SP<IOutput>> outputs) {
 
     auto                  lease = SP<CDRMLease>(new CDRMLease);
 
-    for (auto& o : outputs) {
+    for (auto const& o : outputs) {
         auto drmo = ((CDRMOutput*)o.get())->self.lock();
         backend->log(AQ_LOG_DEBUG, std::format("drm lease: output {}, connector {}", drmo->name, drmo->connector->id));
 
@@ -2041,7 +2041,7 @@ SP<CDRMLease> Aquamarine::CDRMLease::create(std::vector<SP<IOutput>> outputs) {
         return nullptr;
     }
 
-    for (auto& o : lease->outputs) {
+    for (auto const& o : lease->outputs) {
         o->lease = lease;
     }
 

@@ -3,7 +3,7 @@
 using namespace Aquamarine;
 
 Hyprutils::Memory::CSharedPointer<SOutputMode> Aquamarine::IOutput::preferredMode() {
-    for (auto& m : modes) {
+    for (auto const& m : modes) {
         if (m->preferred)
             return m;
     }
