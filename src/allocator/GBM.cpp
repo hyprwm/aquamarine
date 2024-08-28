@@ -13,7 +13,7 @@ using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 #define SP CSharedPointer
 
-static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) {
+static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor, bool scanout) {
     if (formats.empty())
         return SDRMFormat{};
 
@@ -22,17 +22,26 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor) 
             Try to find 10bpp formats first, as they offer better color precision.
             For cursors, don't, as these almost never support that.
         */
-        if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB2101010; }); it != formats.end())
-            return *it;
+        if (!scanout) {
+            if (auto it =
+                    std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB2101010 || f.drmFormat == DRM_FORMAT_ABGR2101010; });
+                it != formats.end())
+                return *it;
+        }
 
-        if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB2101010; }); it != formats.end())
+        if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB2101010 || f.drmFormat == DRM_FORMAT_XBGR2101010; });
+            it != formats.end())
             return *it;
     }
 
-    if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB8888; }); it != formats.end())
-        return *it;
+    if (!scanout) {
+        if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB8888 || f.drmFormat == DRM_FORMAT_ABGR8888; });
+            it != formats.end())
+            return *it;
+    }
 
-    if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB8888; }); it != formats.end())
+    if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB8888 || f.drmFormat == DRM_FORMAT_XBGR8888; });
+        it != formats.end())
         return *it;
 
     for (auto const& f : formats) {
@@ -78,7 +87,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     std::vector<uint64_t> explicitModifiers;
 
     if (attrs.format == DRM_FORMAT_INVALID) {
-        attrs.format = guessFormatFrom(FORMATS, CURSOR).drmFormat;
+        attrs.format = guessFormatFrom(FORMATS, CURSOR, params.scanout).drmFormat;
         if (attrs.format != DRM_FORMAT_INVALID)
             allocator->backend->log(AQ_LOG_DEBUG, std::format("GBM: Automatically selected format {} for new GBM buffer", fourccToName(attrs.format)));
     }
