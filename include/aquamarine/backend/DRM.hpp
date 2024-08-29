@@ -367,10 +367,11 @@ namespace Aquamarine {
         bool initMgpu();
         bool grabFormats();
         bool shouldBlit();
-        void scanConnectors(bool allowConnect = true);
+        void scanConnectors();
         void scanLeases();
         void restoreAfterVT();
         void recheckCRTCs();
+        void recheckConnections();
         void buildGlFormats(const std::vector<SGLFormat>& fmts);
 
         Hyprutils::Memory::CSharedPointer<CSessionDevice>     gpu;

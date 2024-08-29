@@ -250,6 +250,8 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 
         drmBackend->recheckCRTCs();
 
+        drmBackend->recheckConnections();
+
         if (!newPrimary) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: gpu {} becomes primary drm", gpu->path));
             newPrimary = drmBackend;
@@ -281,6 +283,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
     scanConnectors();
     recheckCRTCs();
+    recheckConnections();
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
 
@@ -658,8 +661,9 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
         auto E = std::any_cast<CSessionDevice::SChangeEvent>(d);
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
-            scanConnectors(false);
+            scanConnectors();
             recheckCRTCs();
+            recheckConnections();
         } else if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a lease event for {}", gpuName));
             scanLeases();
@@ -676,7 +680,7 @@ eBackendType Aquamarine::CDRMBackend::type() {
     return eBackendType::AQ_BACKEND_DRM;
 }
 
-void Aquamarine::CDRMBackend::scanConnectors(bool allowConnect) {
+void Aquamarine::CDRMBackend::scanConnectors() {
     backend->log(AQ_LOG_DEBUG, std::format("drm: Scanning connectors for {}", gpu->path));
 
     auto resources = drmModeGetResources(gpu->fd);
@@ -722,20 +726,22 @@ void Aquamarine::CDRMBackend::scanConnectors(bool allowConnect) {
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connection state: {}", connectorID, (int)drmConn->connection));
 
-        if (allowConnect) {
-            if (conn->status == DRM_MODE_CONNECTED && !conn->output) {
-                backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
-                conn->connect(drmConn);
-            } else if (conn->status != DRM_MODE_CONNECTED && conn->output) {
-                backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} disconnected", conn->szName));
-                conn->disconnect();
-            }
-        }
-
         drmModeFreeConnector(drmConn);
     }
 
     drmModeFreeResources(resources);
+}
+
+void Aquamarine::CDRMBackend::recheckConnections() {
+    for (const auto& conn : connectors) {
+        if (conn->status == DRM_MODE_CONNECTED && !conn->output) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
+            conn->connect(drmConn);
+        } else if (conn->status != DRM_MODE_CONNECTED && conn->output) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} disconnected", conn->szName));
+            conn->disconnect();
+        }
+    }
 }
 
 void Aquamarine::CDRMBackend::scanLeases() {
