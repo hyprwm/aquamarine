@@ -246,7 +246,7 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 
         drmBackend->grabFormats();
 
-        drmBackend->scanConnectors();
+        drmBackend->scanConnectors(false);
 
         drmBackend->recheckCRTCs();
 
@@ -279,7 +279,7 @@ bool Aquamarine::CDRMBackend::sessionActive() {
 void Aquamarine::CDRMBackend::restoreAfterVT() {
     backend->log(AQ_LOG_DEBUG, "drm: Restoring after VT switch");
 
-    scanConnectors();
+    scanConnectors(false);
     recheckCRTCs();
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
