@@ -48,7 +48,6 @@
       default = self.overlays.aquamarine;
 
       aquamarine = lib.composeManyExtensions [
-        self.overlays.libinput
         inputs.hyprutils.overlays.default
         inputs.hyprwayland-scanner.overlays.default
         (final: prev: {
@@ -59,20 +58,6 @@
           aquamarine-with-tests = final.aquamarine.override {doCheck = true;};
         })
       ];
-
-      libinput = final: prev: {
-        libinput = prev.libinput.overrideAttrs (self: super: {
-          version = "1.26.0";
-
-          src = final.fetchFromGitLab {
-            domain = "gitlab.freedesktop.org";
-            owner = "libinput";
-            repo = "libinput";
-            rev = self.version;
-            hash = "sha256-mlxw4OUjaAdgRLFfPKMZDMOWosW9yKAkzDccwuLGCwQ=";
-          };
-        });
-      };
     };
 
     packages = eachSystem (system: {
