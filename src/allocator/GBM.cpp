@@ -72,14 +72,20 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     attrs.format = params.format;
     size         = attrs.size;
 
-    const bool CURSOR   = params.cursor && params.scanout;
-    const bool MULTIGPU = params.multigpu && params.scanout;
+    const bool CURSOR           = params.cursor && params.scanout;
+    const bool MULTIGPU         = params.multigpu && params.scanout;
+    const bool EXPLICIT_SCANOUT = params.scanout && swapchain->currentOptions().scanoutOutput;
 
     TRACE(allocator->backend->log(AQ_LOG_TRACE,
                                   std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}, scanout: {}", attrs.size, fourccToName(attrs.format), CURSOR,
                                               MULTIGPU, params.scanout)));
 
-    const auto FORMATS    = CURSOR ? swapchain->backendImpl->getCursorFormats() : swapchain->backendImpl->getRenderFormats();
+    if (EXPLICIT_SCANOUT)
+        TRACE(allocator->backend->log(
+            AQ_LOG_TRACE, std::format("GBM: Explicit scanout output, output has {} explicit formats", swapchain->currentOptions().scanoutOutput->getRenderFormats().size())));
+
+    const auto FORMATS    = CURSOR ? swapchain->backendImpl->getCursorFormats() :
+                                     (EXPLICIT_SCANOUT ? swapchain->currentOptions().scanoutOutput->getRenderFormats() : swapchain->backendImpl->getRenderFormats());
     const auto RENDERABLE = swapchain->backendImpl->getRenderableFormats();
 
     TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Available formats: {}", FORMATS.size())));

@@ -5,12 +5,14 @@
 namespace Aquamarine {
 
     class IBackendImplementation;
+    class IOutput;
 
     struct SSwapchainOptions {
         size_t                    length = 0;
         Hyprutils::Math::Vector2D size;
         uint32_t                  format  = DRM_FORMAT_INVALID; // if you leave this on invalid, the swapchain will choose an appropriate format (and modifier) for you.
         bool                      scanout = false, cursor = false /* requires scanout = true */, multigpu = false /* if true, will force linear */;
+        Hyprutils::Memory::CWeakPointer<IOutput> scanoutOutput;
     };
 
     class CSwapchain {

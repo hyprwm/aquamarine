@@ -881,7 +881,7 @@ void Aquamarine::CDRMBackend::onReady() {
 
         // swapchain has to be created here because allocator is absent in connect if not ready
         c->output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
-        c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!primary}); // mark the swapchain for scanout
+        c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!primary, .scanoutOutput = c->output}); // mark the swapchain for scanout
         c->output->needsFrame = true;
 
         backend->events.newOutput.emit(SP<IOutput>(c->output));
@@ -1283,7 +1283,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
 
     output->swapchain = CSwapchain::create(backend->backend->primaryAllocator, backend->self.lock());
-    output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary}); // mark the swapchain for scanout
+    output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary, .scanoutOutput = output}); // mark the swapchain for scanout
     output->needsFrame = true;
     backend->backend->events.newOutput.emit(SP<IOutput>(output));
     output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
