@@ -98,9 +98,7 @@ namespace Aquamarine {
 
     class IOutput {
       public:
-        virtual ~IOutput() {
-            ;
-        }
+        virtual ~IOutput();
 
         enum scheduleFrameReason : uint32_t {
             AQ_SCHEDULE_UNKNOWN = 0,

@@ -2,6 +2,10 @@
 
 using namespace Aquamarine;
 
+Aquamarine::IOutput::~IOutput() {
+    events.destroy.emit();
+}
+
 Hyprutils::Memory::CSharedPointer<SOutputMode> Aquamarine::IOutput::preferredMode() {
     for (auto const& m : modes) {
         if (m->preferred)
