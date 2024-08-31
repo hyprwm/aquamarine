@@ -473,6 +473,11 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
 
     waylandState.xdgToplevel->setConfigure([this](CCXdgToplevel* r, int32_t w, int32_t h, wl_array* arr) {
         backend->backend->log(AQ_LOG_DEBUG, std::format("Output {}: configure toplevel with {}x{}", name, w, h));
+        if (w == 0 || h == 0) {
+            backend->backend->log(AQ_LOG_DEBUG, std::format("Output {}: w/h is 0, sending default hardcoded 1280x720", name));
+            w = 1280;
+            h = 720;
+        }
         events.state.emit(SStateEvent{.size = {w, h}});
         sendFrameAndSetCallback();
     });
