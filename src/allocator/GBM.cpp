@@ -151,6 +151,8 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     if (params.scanout)
         flags |= GBM_BO_USE_SCANOUT;
 
+    uint64_t modifier = DRM_FORMAT_MOD_INVALID;
+
     if (explicitModifiers.empty()) {
         allocator->backend->log(AQ_LOG_WARNING, "GBM: Using modifier-less allocation");
         bo = gbm_bo_create(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, flags);
@@ -167,9 +169,15 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
             bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size());
         }
 
-        if (!bo) {
-            if (explicitModifiers.size() == 1 && explicitModifiers[0] == DRM_FORMAT_MOD_LINEAR) {
+        bool useLinear = explicitModifiers.size() == 1 && explicitModifiers[0] == DRM_FORMAT_MOD_LINEAR;
+        if (bo) {
+            modifier = gbm_bo_get_modifier(bo);
+            if (useLinear && modifier == DRM_FORMAT_MOD_INVALID)
+                modifier = DRM_FORMAT_MOD_LINEAR;
+        } else {
+            if (useLinear) {
                 flags |= GBM_BO_USE_LINEAR;
+                modifier = DRM_FORMAT_MOD_LINEAR;
                 allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to modifier-less allocation");
             } else
                 allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
@@ -183,7 +191,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     }
 
     attrs.planes   = gbm_bo_get_plane_count(bo);
-    attrs.modifier = (flags & GBM_BO_USE_LINEAR) ? DRM_FORMAT_MOD_LINEAR : gbm_bo_get_modifier(bo);
+    attrs.modifier = modifier;
 
     for (size_t i = 0; i < (size_t)attrs.planes; ++i) {
         attrs.strides.at(i) = gbm_bo_get_stride_for_plane(bo, i);
