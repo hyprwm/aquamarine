@@ -381,9 +381,14 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
         return false;
     }
 
-    drmProps.supportsAsyncCommit     = drmGetCap(gpu->fd, DRM_CAP_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
-    drmProps.supportsAddFb2Modifiers = drmGetCap(gpu->fd, DRM_CAP_ADDFB2_MODIFIERS, &cap) == 0 && cap == 1;
-    drmProps.supportsTimelines       = drmGetCap(gpu->fd, DRM_CAP_SYNCOBJ_TIMELINE, &cap) == 0 && cap == 1;
+    drmProps.supportsAsyncCommit = drmGetCap(gpu->fd, DRM_CAP_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
+    drmProps.supportsTimelines   = drmGetCap(gpu->fd, DRM_CAP_SYNCOBJ_TIMELINE, &cap) == 0 && cap == 1;
+
+    if (envEnabled("AQ_NO_MODIFIERS")) {
+        backend->log(AQ_LOG_WARNING, "drm: AQ_NO_MODIFIERS enabled, disabling modifiers for DRM buffers.");
+        drmProps.supportsAddFb2Modifiers = false;
+    } else
+        drmProps.supportsAddFb2Modifiers = drmGetCap(gpu->fd, DRM_CAP_ADDFB2_MODIFIERS, &cap) == 0 && cap == 1;
 
     if (envEnabled("AQ_NO_ATOMIC")) {
         backend->log(AQ_LOG_WARNING, "drm: AQ_NO_ATOMIC enabled, using the legacy drm iface");
