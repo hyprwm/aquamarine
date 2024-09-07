@@ -34,7 +34,7 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor, 
             return *it;
     }
 
-    if (!scanout) {
+    if (!scanout || cursor /* don't set opaque for cursor plane */) {
         if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB8888 || f.drmFormat == DRM_FORMAT_ABGR8888; });
             it != formats.end())
             return *it;
