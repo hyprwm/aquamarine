@@ -105,17 +105,16 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
     // check if we can use modifiers. If the requested support has any explicit modifier
     // supported by the primary backend, we can.
-    if (!RENDERABLE.empty()) {
-        TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Renderable has {} formats, clipping", RENDERABLE.size())));
+    for (auto const& f : FORMATS) {
+        if (f.drmFormat != attrs.format)
+            continue;
 
-        for (auto const& f : FORMATS) {
-            if (f.drmFormat != attrs.format)
+        for (auto const& m : f.modifiers) {
+            if (m == DRM_FORMAT_MOD_INVALID)
                 continue;
 
-            for (auto const& m : f.modifiers) {
-                if (m == DRM_FORMAT_MOD_INVALID)
-                    continue;
-
+            if (!RENDERABLE.empty()) {
+                TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Renderable has {} formats, clipping", RENDERABLE.size())));
                 if (params.scanout && !CURSOR && !MULTIGPU) {
                     // regular scanout plane, check if the format is renderable
                     auto rformat = std::find_if(RENDERABLE.begin(), RENDERABLE.end(), [f](const auto& e) { return e.drmFormat == f.drmFormat; });
@@ -130,9 +129,8 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
                         continue;
                     }
                 }
-
-                explicitModifiers.push_back(m);
             }
+            explicitModifiers.push_back(m);
         }
     }
 
