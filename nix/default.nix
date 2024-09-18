@@ -36,7 +36,6 @@ stdenv.mkDerivation {
     cmake
     hyprwayland-scanner
     pkg-config
-    wayland-scanner
   ];
 
   buildInputs = [
@@ -53,6 +52,7 @@ stdenv.mkDerivation {
     udev
     wayland
     wayland-protocols
+    wayland-scanner
   ];
 
   outputs = ["out" "dev"];
