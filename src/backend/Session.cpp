@@ -264,6 +264,9 @@ static bool isDRMCard(const char* sysname) {
 }
 
 void Aquamarine::CSession::onReady() {
+    dispatchLibseatEvents();
+    dispatchLibinputEvents();
+
     for (auto const& d : libinputDevices) {
         if (d->keyboard)
             backend->events.newKeyboard.emit(SP<IKeyboard>(d->keyboard));
