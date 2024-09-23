@@ -264,8 +264,7 @@ static bool isDRMCard(const char* sysname) {
 }
 
 void Aquamarine::CSession::onReady() {
-    dispatchLibseatEvents();
-    dispatchLibinputEvents();
+    ;
 }
 
 void Aquamarine::CSession::dispatchUdevEvents() {
@@ -361,7 +360,12 @@ void Aquamarine::CSession::dispatchLibseatEvents() {
 
 void Aquamarine::CSession::dispatchPendingEventsAsync() {
     dispatchLibseatEvents();
+
+    // only linux libudev allows us to asynchronously dispatch outstanding without blocking
+#if defined(__linux__)
     dispatchUdevEvents();
+#endif
+
     dispatchLibinputEvents();
 }
 
