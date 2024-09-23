@@ -264,24 +264,7 @@ static bool isDRMCard(const char* sysname) {
 }
 
 void Aquamarine::CSession::onReady() {
-    for (auto const& d : libinputDevices) {
-        if (d->keyboard)
-            backend->events.newKeyboard.emit(SP<IKeyboard>(d->keyboard));
-        if (d->mouse)
-            backend->events.newPointer.emit(SP<IPointer>(d->mouse));
-        if (d->touch)
-            backend->events.newTouch.emit(SP<ITouch>(d->touch));
-        if (d->switchy)
-            backend->events.newSwitch.emit(SP<ITouch>(d->touch));
-        if (d->tablet)
-            backend->events.newTablet.emit(SP<ITablet>(d->tablet));
-        if (d->tabletPad)
-            backend->events.newTabletPad.emit(SP<ITabletPad>(d->tabletPad));
-
-        for (auto const& t : d->tabletTools) {
-            backend->events.newTabletTool.emit(SP<ITabletTool>(t));
-        }
-    }
+    ;
 }
 
 void Aquamarine::CSession::dispatchUdevEvents() {
@@ -377,7 +360,12 @@ void Aquamarine::CSession::dispatchLibseatEvents() {
 
 void Aquamarine::CSession::dispatchPendingEventsAsync() {
     dispatchLibseatEvents();
+
+    // only linux libudev allows us to asynchronously dispatch outstanding without blocking
+#if defined(__linux__)
     dispatchUdevEvents();
+#endif
+
     dispatchLibinputEvents();
 }
 
