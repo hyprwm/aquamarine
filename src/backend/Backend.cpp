@@ -166,6 +166,9 @@ bool Aquamarine::CBackend::start() {
         b->onReady();
     }
 
+    if (session)
+        session->onReady();
+
     sessionFDs = session ? session->pollFDs() : std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>{};
 
     return true;
