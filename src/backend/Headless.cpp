@@ -131,6 +131,7 @@ std::vector<SDRMFormat> Aquamarine::CHeadlessBackend::getCursorFormats() {
 bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
     auto output = SP<CHeadlessOutput>(new CHeadlessOutput(name.empty() ? std::format("HEADLESS-{}", ++outputIDCounter) : name, self.lock()));
     outputs.emplace_back(output);
+    output->modes.emplace_back(SP<SOutputMode>(new SOutputMode(Vector2D{1920, 1080}, 60, true)));
     output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
     output->self      = output;
     backend->events.newOutput.emit(SP<IOutput>(output));
