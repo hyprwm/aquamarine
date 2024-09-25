@@ -82,6 +82,9 @@ bool Aquamarine::CWaylandBackend::start() {
         return false;
     }
 
+    auto XDGCURRENTDESKTOP = getenv("XDG_CURRENT_DESKTOP");
+    backend->log(AQ_LOG_DEBUG, std::format("Connected to a wayland compositor: {}", (XDGCURRENTDESKTOP ? XDGCURRENTDESKTOP : "unknown (XDG_CURRENT_DEKSTOP unset?)")));
+
     waylandState.registry = makeShared<CCWlRegistry>((wl_proxy*)wl_display_get_registry(waylandState.display));
 
     backend->log(AQ_LOG_DEBUG, std::format("Got registry at 0x{:x}", (uintptr_t)waylandState.registry->resource()));
