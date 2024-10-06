@@ -123,7 +123,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         if (connector->crtc->primary->props.fb_damage_clips)
             add(connector->crtc->primary->id, connector->crtc->primary->props.fb_damage_clips, data.atomic.fbDamage);
 
-        if (connector->crtc->cursor) {
+        if (connector->crtc->cursor && STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR) {
             if (!connector->output->cursorVisible)
                 planeProps(connector->crtc->cursor, nullptr, 0, {});
             else
