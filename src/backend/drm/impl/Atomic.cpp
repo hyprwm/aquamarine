@@ -100,9 +100,6 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     if (data.modeset && enable && connector->props.max_bpc && connector->maxBpcBounds.at(1))
         add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
 
-    if (data.ctm.has_value() && connector->crtc->props.ctm && data.atomic.ctmBlob && data.atomic.ctmd)
-        add(connector->crtc->id, connector->crtc->props.ctm, data.atomic.ctmBlob);
-
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
@@ -111,6 +108,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         if (connector->crtc->props.gamma_lut && data.atomic.gammad)
             add(connector->crtc->id, connector->crtc->props.gamma_lut, data.atomic.gammaLut);
+
+        if (connector->crtc->props.ctm && data.atomic.ctmd)
+            add(connector->crtc->id, connector->crtc->props.ctm, data.atomic.ctmBlob);
 
         if (connector->crtc->props.vrr_enabled)
             add(connector->crtc->id, connector->crtc->props.vrr_enabled, (uint64_t)STATE.adaptiveSync);
