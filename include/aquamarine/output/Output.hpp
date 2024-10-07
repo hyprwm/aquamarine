@@ -5,6 +5,7 @@
 #include <hyprutils/signal/Signal.hpp>
 #include <hyprutils/memory/SharedPtr.hpp>
 #include <hyprutils/math/Region.hpp>
+#include <hyprutils/math/Mat3x3.hpp>
 #include <drm_fourcc.h>
 #include <xf86drmMode.h>
 #include "../allocator/Swapchain.hpp"
@@ -51,6 +52,7 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_BUFFER             = (1 << 7),
             AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE  = (1 << 8),
             AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE = (1 << 9),
+            AQ_OUTPUT_STATE_CTM                = (1 << 10),
         };
 
         struct SInternalState {
@@ -67,6 +69,7 @@ namespace Aquamarine {
             uint32_t                                       drmFormat = DRM_FORMAT_INVALID;
             Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
             int64_t                                        explicitInFence = -1, explicitOutFence = -1;
+            Hyprutils::Math::Mat3x3                        ctm;
         };
 
         const SInternalState& state();
@@ -84,6 +87,7 @@ namespace Aquamarine {
         void                  setExplicitInFence(int64_t fenceFD);  // -1 removes
         void                  setExplicitOutFence(int64_t fenceFD); // -1 removes
         void                  resetExplicitFences();
+        void                  setCTM(const Hyprutils::Math::Mat3x3& ctm);
 
       private:
         SInternalState internalState;

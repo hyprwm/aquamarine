@@ -109,6 +109,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         if (connector->crtc->props.gamma_lut && data.atomic.gammad)
             add(connector->crtc->id, connector->crtc->props.gamma_lut, data.atomic.gammaLut);
 
+        if (connector->crtc->props.ctm && data.atomic.ctmd)
+            add(connector->crtc->id, connector->crtc->props.ctm, data.atomic.ctmBlob);
+
         if (connector->crtc->props.vrr_enabled)
             add(connector->crtc->id, connector->crtc->props.vrr_enabled, (uint64_t)STATE.adaptiveSync);
 
@@ -197,6 +200,7 @@ void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
     if (data.atomic.blobbed)
         rollbackBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     rollbackBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
+    rollbackBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     destroyBlob(data.atomic.fbDamage);
 }
 
@@ -211,6 +215,7 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
     if (data.atomic.blobbed)
         commitBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     commitBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
+    commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     destroyBlob(data.atomic.fbDamage);
 }
 
@@ -260,6 +265,30 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                 data.atomic.gammaLut = 0;
             } else
                 data.atomic.gammad = true;
+        }
+    }
+
+    if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM) && data.ctm.has_value()) {
+        if (!connector->crtc->props.ctm)
+            connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit ctm: no ctm prop support");
+        else {
+            static auto doubleToS3132Fixed = [](const double val) -> uint64_t {
+                const uint64_t result = std::abs(val) * (1ULL << 32);
+                if (val < 0)
+                    return result | 1ULL << 63;
+                return result;
+            };
+
+            drm_color_ctm ctm = {0};
+            for (size_t i = 0; i < 9; ++i) {
+                ctm.matrix[i] = doubleToS3132Fixed(data.ctm->getMatrix()[i]);
+            }
+
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &ctm, sizeof(drm_color_ctm), &data.atomic.ctmBlob)) {
+                connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a ctm blob");
+                data.atomic.ctmBlob = 0;
+            } else
+                data.atomic.ctmd = true;
         }
     }
 

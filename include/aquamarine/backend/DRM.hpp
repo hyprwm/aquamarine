@@ -7,6 +7,7 @@
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
+#include <optional>
 
 namespace Aquamarine {
     class CDRMBackend;
@@ -162,6 +163,7 @@ namespace Aquamarine {
             bool     ownModeID = false;
             uint32_t modeID    = 0;
             uint32_t gammaLut  = 0;
+            uint32_t ctm       = 0;
         } atomic;
 
         Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
@@ -175,6 +177,7 @@ namespace Aquamarine {
                 uint32_t vrr_enabled;
                 uint32_t gamma_lut;
                 uint32_t gamma_lut_size;
+                uint32_t ctm;
 
                 // atomic-modesetting only
 
@@ -242,13 +245,16 @@ namespace Aquamarine {
         uint32_t                                  flags    = 0;
         bool                                      test     = false;
         drmModeModeInfo                           modeInfo;
+        std::optional<Hyprutils::Math::Mat3x3>    ctm;
 
         struct {
             uint32_t gammaLut = 0;
             uint32_t fbDamage = 0;
             uint32_t modeBlob = 0;
+            uint32_t ctmBlob  = 0;
             bool     blobbed  = false;
             bool     gammad   = false;
+            bool     ctmd     = false;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
