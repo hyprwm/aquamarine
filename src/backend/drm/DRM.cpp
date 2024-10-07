@@ -1183,6 +1183,8 @@ void Aquamarine::SDRMConnector::recheckCRTCProps() {
     output->supportsExplicit = backend->drmProps.supportsTimelines && crtc->props.out_fence_ptr && crtc->primary->props.in_fence_fd;
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit sync {}", output->supportsExplicit ? "supported" : "unsupported"));
+
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} CTM", szName, (crtc->props.ctm ? "supports" : "doesn't support")));
 }
 
 void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
@@ -1576,6 +1578,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             data.cursorFB = nullptr;
         }
     }
+
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM)
+        data.ctm = STATE.ctm;
 
     data.blocking = BLOCKING || formatMismatch;
     data.modeset  = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;

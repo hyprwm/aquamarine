@@ -115,6 +115,11 @@ void Aquamarine::COutputState::resetExplicitFences() {
     internalState.explicitOutFence = -1;
 }
 
+void Aquamarine::COutputState::setCTM(const Hyprutils::Math::Mat3x3& ctm) {
+    internalState.ctm = ctm;
+    internalState.committed |= AQ_OUTPUT_STATE_CTM;
+}
+
 void Aquamarine::COutputState::onCommit() {
     internalState.committed = 0;
     internalState.damage.clear();

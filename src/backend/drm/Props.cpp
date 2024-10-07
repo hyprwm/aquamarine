@@ -38,6 +38,7 @@ static const struct prop_info crtc_info[] = {
 #define INDEX(name) (offsetof(SDRMCRTC::UDRMCRTCProps, name) / sizeof(uint32_t))
     {"ACTIVE", INDEX(active)},   {"GAMMA_LUT", INDEX(gamma_lut)},         {"GAMMA_LUT_SIZE", INDEX(gamma_lut_size)},
     {"MODE_ID", INDEX(mode_id)}, {"OUT_FENCE_PTR", INDEX(out_fence_ptr)}, {"VRR_ENABLED", INDEX(vrr_enabled)},
+    {"CTM", INDEX(ctm)},
 #undef INDEX
 };
 

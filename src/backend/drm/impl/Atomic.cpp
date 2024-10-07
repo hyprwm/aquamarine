@@ -100,6 +100,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     if (data.modeset && enable && connector->props.max_bpc && connector->maxBpcBounds.at(1))
         add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
 
+    if (data.ctm.has_value() && connector->crtc->props.ctm && data.atomic.ctmBlob && data.atomic.ctmd)
+        add(connector->crtc->id, connector->crtc->props.ctm, data.atomic.ctmBlob);
+
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
@@ -197,6 +200,7 @@ void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
     if (data.atomic.blobbed)
         rollbackBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     rollbackBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
+    rollbackBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     destroyBlob(data.atomic.fbDamage);
 }
 
@@ -211,6 +215,7 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
     if (data.atomic.blobbed)
         commitBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     commitBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
+    commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     destroyBlob(data.atomic.fbDamage);
 }
 
@@ -260,6 +265,24 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                 data.atomic.gammaLut = 0;
             } else
                 data.atomic.gammad = true;
+        }
+    }
+
+    if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM) && data.ctm.has_value()) {
+        if (!connector->crtc->props.ctm)
+            connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit ctm: no ctm prop support");
+        else {
+            drm_color_ctm ctm = {0};
+            for (size_t i = 0; i < 9; ++i) {
+                const double val = data.ctm->getMatrix()[i];
+                ctm.matrix[i]    = static_cast<uint64_t>(val * std::pow(2, 32));
+            }
+
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &ctm, sizeof(drm_color_ctm), &data.atomic.ctmBlob)) {
+                connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a ctm blob");
+                data.atomic.ctmBlob = 0;
+            } else
+                data.atomic.ctmd = true;
         }
     }
 
