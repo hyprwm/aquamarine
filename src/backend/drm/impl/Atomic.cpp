@@ -272,10 +272,16 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         if (!connector->crtc->props.ctm)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit ctm: no ctm prop support");
         else {
+            static auto doubleToS3132Fixed = [](const double val) -> uint64_t {
+                const uint64_t result = std::abs(val) * (1ULL << 32);
+                if (val < 0)
+                    return result | 1ULL << 63;
+                return result;
+            };
+
             drm_color_ctm ctm = {0};
             for (size_t i = 0; i < 9; ++i) {
-                const double val = data.ctm->getMatrix()[i];
-                ctm.matrix[i]    = static_cast<uint64_t>(val * std::pow(2, 32));
+                ctm.matrix[i] = doubleToS3132Fixed(data.ctm->getMatrix()[i]);
             }
 
             if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &ctm, sizeof(drm_color_ctm), &data.atomic.ctmBlob)) {
