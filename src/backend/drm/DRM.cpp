@@ -1023,11 +1023,19 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
         auto CRTC = backend->crtcs.at(i);
         if (type == DRM_PLANE_TYPE_PRIMARY && !CRTC->primary) {
             CRTC->primary = self.lock();
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CRTC {} gets assigned plane {} as primary", CRTC->id, id)));
             break;
         }
 
         if (type == DRM_PLANE_TYPE_CURSOR && !CRTC->cursor) {
             CRTC->cursor = self.lock();
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CRTC {} gets assigned plane {} as cursor", CRTC->id, id)));
+            break;
+        }
+
+        if (std::find(CRTC->planes.begin(), CRTC->planes.end(), self) == CRTC->planes.end()) {
+            CRTC->planes.emplace_back(self.lock());
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CRTC {} gets added plane {} as general-purpose misc", CRTC->id, id)));
             break;
         }
     }

@@ -166,10 +166,11 @@ namespace Aquamarine {
             uint32_t ctm       = 0;
         } atomic;
 
-        Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
-        Hyprutils::Memory::CSharedPointer<SDRMPlane> cursor;
-        Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
-        Hyprutils::Memory::CSharedPointer<CDRMFB>    pendingCursor;
+        Hyprutils::Memory::CSharedPointer<SDRMPlane>              primary;
+        Hyprutils::Memory::CSharedPointer<SDRMPlane>              cursor;
+        std::vector<Hyprutils::Memory::CSharedPointer<SDRMPlane>> planes; // other planes go here
+        Hyprutils::Memory::CWeakPointer<CDRMBackend>              backend;
+        Hyprutils::Memory::CSharedPointer<CDRMFB>                 pendingCursor;
 
         union UDRMCRTCProps {
             struct {
