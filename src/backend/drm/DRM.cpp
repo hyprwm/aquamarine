@@ -2056,6 +2056,7 @@ SP<CDRMLease> Aquamarine::CDRMLease::create(std::vector<SP<IOutput>> outputs) {
     }
 
     lease->leaseFD = leaseFD;
+    lease->backend = backend;
 
     backend->log(AQ_LOG_DEBUG, std::format("drm lease: lease granted with lessee id {}", lease->lesseeID));
 
