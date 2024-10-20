@@ -10,10 +10,10 @@
   libffi,
   libGL,
   libinput,
-  libseat,
   mesa,
   pixman,
   pkg-config,
+  seatd,
   udev,
   wayland,
   wayland-protocols,
@@ -46,9 +46,9 @@ stdenv.mkDerivation {
     libffi
     libGL
     libinput
-    libseat
     mesa
     pixman
+    seatd
     udev
     wayland
     wayland-protocols
