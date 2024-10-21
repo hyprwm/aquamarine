@@ -53,6 +53,16 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE  = (1 << 8),
             AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE = (1 << 9),
             AQ_OUTPUT_STATE_CTM                = (1 << 10),
+            AQ_OUTPUT_STATE_PLANE_STATE        = (1 << 11),
+        };
+
+        struct SPlaneState {
+            bool                                       updated = false;
+
+            bool                                       enabled = false;
+            Hyprutils::Math::CRegion                   damage;
+            Hyprutils::Math::CBox                      geometry;
+            Hyprutils::Memory::CSharedPointer<IBuffer> buffer;
         };
 
         struct SInternalState {
@@ -70,6 +80,7 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
             int64_t                                        explicitInFence = -1, explicitOutFence = -1;
             Hyprutils::Math::Mat3x3                        ctm;
+            std::vector<SPlaneState>                       planeStates;
         };
 
         const SInternalState& state();
@@ -88,6 +99,11 @@ namespace Aquamarine {
         void                  setExplicitOutFence(int64_t fenceFD); // -1 removes
         void                  resetExplicitFences();
         void                  setCTM(const Hyprutils::Math::Mat3x3& ctm);
+        
+        void                  setPlaneEnabled(uint32_t planeIdx, bool enabled);
+        void                  setPlaneBuffer(uint32_t planeIdx, Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
+        void                  setPlaneGeometry(uint32_t planeIdx, const Hyprutils::Math::CBox& box);
+        void                  addPlaneDamage(uint32_t planeIdx, const Hyprutils::Math::CRegion& region);
 
       private:
         SInternalState internalState;
@@ -119,6 +135,18 @@ namespace Aquamarine {
             AQ_SCHEDULE_ANIMATION_DAMAGE,
         };
 
+        enum planeType : uint32_t {
+            AQ_PLANE_UNKNOWN = 0,
+            AQ_PLANE_PRIMARY,
+            AQ_PLANE_GENERIC,
+            AQ_PLANE_CURSOR,
+        };
+
+        struct SPlaneData {
+            std::vector<SDRMFormat> renderFormats; // empty if unknown / not specified -> use getRenderFormats()
+            planeType               type = AQ_PLANE_UNKNOWN;
+        };
+
         virtual bool                                                      commit()           = 0;
         virtual bool                                                      test()             = 0;
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend()       = 0;
@@ -131,6 +159,7 @@ namespace Aquamarine {
         virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual size_t                                                    getGammaSize();
         virtual bool                                                      destroy(); // not all backends allow this!!!
+        virtual std::vector<SPlaneData>                                   getPlanes();
 
         std::string                                                       name, description, make, model, serial;
         Hyprutils::Math::Vector2D                                         physicalSize;
