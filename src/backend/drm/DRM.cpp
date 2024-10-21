@@ -331,7 +331,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         if (c->crtc->pendingCursor)
             data.cursorFB = c->crtc->pendingCursor;
 
-        if (data.cursorFB && data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID)
+        if (data.cursorFB && (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID))
             data.cursorFB = nullptr;
 
         backend->log(AQ_LOG_DEBUG,
