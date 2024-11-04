@@ -50,7 +50,7 @@ static udev_enumerate* enumDRMCards(udev* udev) {
         return nullptr;
 
     udev_enumerate_add_match_subsystem(enumerate, "drm");
-    udev_enumerate_add_match_sysname(enumerate, DRM_PRIMARY_MINOR_NAME "[0-9]*");
+    udev_enumerate_add_match_sysname(enumerate, DRM_PRIMARY_MINOR_NAME "[0-9]");
 
     if (udev_enumerate_scan_devices(enumerate)) {
         udev_enumerate_unref(enumerate);
@@ -75,8 +75,6 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
     }
 
     udev_list_entry*               entry = nullptr;
-    size_t                         i     = 0;
-
     std::deque<SP<CSessionDevice>> devices;
 
     udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(enumerate)) {
@@ -125,8 +123,6 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
             devices.push_front(sessionDevice);
         else
             devices.push_back(sessionDevice);
-
-        ++i;
     }
 
     udev_enumerate_unref(enumerate);
