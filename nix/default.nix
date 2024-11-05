@@ -1,6 +1,7 @@
 {
   lib,
   stdenv,
+  stdenvAdapters,
   cmake,
   hwdata,
   hyprutils,
@@ -20,51 +21,63 @@
   wayland-scanner,
   version ? "git",
   doCheck ? false,
-}:
-stdenv.mkDerivation {
-  pname = "aquamarine";
-  inherit version doCheck;
-  src = ../.;
+  debug ? false,
+}: let
+  inherit (builtins) foldl';
+  inherit (lib.lists) flatten;
 
-  strictDeps = true;
-
-  depsBuildBuild = [
-    pkg-config
+  adapters = flatten [
+    stdenvAdapters.useMoldLinker
+    (lib.optional debug stdenvAdapters.keepDebugInfo)
   ];
 
-  nativeBuildInputs = [
-    cmake
-    hyprwayland-scanner
-    pkg-config
-  ];
+  customStdenv = foldl' (acc: adapter: adapter acc) stdenv adapters;
+in
+  customStdenv.mkDerivation {
+    pname = "aquamarine";
+    inherit version doCheck;
+    src = ../.;
 
-  buildInputs = [
-    hwdata
-    hyprutils
-    libdisplay-info
-    libdrm
-    libffi
-    libGL
-    libinput
-    mesa
-    pixman
-    seatd
-    udev
-    wayland
-    wayland-protocols
-    wayland-scanner
-  ];
+    strictDeps = true;
 
-  outputs = ["out" "dev"];
+    depsBuildBuild = [
+      pkg-config
+    ];
 
-  cmakeBuildType = "RelWithDebInfo";
+    nativeBuildInputs = [
+      cmake
+      hyprwayland-scanner
+      pkg-config
+    ];
 
-  dontStrip = true;
+    buildInputs = [
+      hwdata
+      hyprutils
+      libdisplay-info
+      libdrm
+      libffi
+      libGL
+      libinput
+      mesa
+      pixman
+      seatd
+      udev
+      wayland
+      wayland-protocols
+      wayland-scanner
+    ];
 
-  meta = {
-    homepage = "https://github.com/hyprwm/aquamarine";
-    description = "A very light linux rendering backend library";
-    license = lib.licenses.bsd3;
-    platforms = lib.platforms.linux;
-  };
-}
+    outputs = ["out" "dev"];
+
+    cmakeBuildType =
+      if debug
+      then "Debug"
+      else "RelWithDebInfo";
+
+    meta = {
+      homepage = "https://github.com/hyprwm/aquamarine";
+      description = "A very light linux rendering backend library";
+      license = lib.licenses.bsd3;
+      platforms = lib.platforms.linux;
+    };
+  }
