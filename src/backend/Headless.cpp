@@ -187,6 +187,10 @@ SP<IAllocator> Aquamarine::CHeadlessBackend::preferredAllocator() {
     return backend->primaryAllocator;
 }
 
+std::vector<SP<IAllocator>> Aquamarine::CHeadlessBackend::getAllocators() {
+    return {backend->primaryAllocator};
+}
+
 bool Aquamarine::CHeadlessBackend::CTimer::expired() {
     return std::chrono::steady_clock::now() > when;
 }

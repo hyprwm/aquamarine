@@ -3,6 +3,7 @@
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <aquamarine/backend/drm/Atomic.hpp>
 #include <aquamarine/allocator/GBM.hpp>
+#include <aquamarine/allocator/DRMDumb.hpp>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
@@ -961,6 +962,10 @@ SP<IAllocator> Aquamarine::CDRMBackend::preferredAllocator() {
     return backend->primaryAllocator;
 }
 
+std::vector<SP<IAllocator>> Aquamarine::CDRMBackend::getAllocators() {
+    return {backend->primaryAllocator, dumbAllocator};
+}
+
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     id = plane->plane_id;
 
@@ -1647,8 +1652,10 @@ SP<IBackendImplementation> Aquamarine::CDRMOutput::getBackend() {
 }
 
 bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotspot) {
-    if (buffer && !buffer->dmabuf().success) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer has to be a dmabuf");
+    auto bufferType = buffer->type();
+
+    if ((bufferType == eBufferType::BUFFER_TYPE_SHM && !buffer->shm().success) || (bufferType == eBufferType::BUFFER_TYPE_DMABUF && !buffer->dmabuf().success)) {
+        backend->backend->log(AQ_LOG_ERROR, "drm: Invalid buffer passed to setCursor");
         return false;
     }
 
@@ -1663,18 +1670,23 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         if (backend->primary) {
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires cursor blit, blitting"));
 
+            // TODO: will this not implode on drm_dumb?!
+
             if (!mgpu.cursorSwapchain) {
                 TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: No cursorSwapchain for blit, creating"));
                 mgpu.cursorSwapchain = CSwapchain::create(backend->rendererState.allocator, backend.lock());
             }
 
-            auto OPTIONS     = mgpu.cursorSwapchain->currentOptions();
-            OPTIONS.multigpu = false;
-            OPTIONS.scanout  = true;
-            OPTIONS.cursor   = true;
-            OPTIONS.format   = buffer->dmabuf().format;
-            OPTIONS.size     = buffer->dmabuf().size;
-            OPTIONS.length   = 2;
+            const auto FORMAT = bufferType == eBufferType::BUFFER_TYPE_SHM ? buffer->shm().format : buffer->dmabuf().format;
+            const auto SIZE   = bufferType == eBufferType::BUFFER_TYPE_SHM ? buffer->shm().size : buffer->dmabuf().size;
+
+            auto       OPTIONS = mgpu.cursorSwapchain->currentOptions();
+            OPTIONS.multigpu   = false;
+            OPTIONS.scanout    = true;
+            OPTIONS.cursor     = true;
+            OPTIONS.format     = FORMAT;
+            OPTIONS.size       = SIZE;
+            OPTIONS.length     = 2;
 
             if (!mgpu.cursorSwapchain->reconfigure(OPTIONS)) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu cursorSwapchain failed reconfiguring");
@@ -1807,8 +1819,8 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
 
 void Aquamarine::CDRMFB::import() {
     auto attrs = buffer->dmabuf();
-    if (!attrs.success) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf");
+    if (!attrs.success && !buffer->drmHandle()) {
+        backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf or a drm handle");
         return;
     }
 
@@ -1819,16 +1831,19 @@ void Aquamarine::CDRMFB::import() {
 
     // TODO: check format
 
-    for (int i = 0; i < attrs.planes; ++i) {
-        int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles[i]);
-        if (ret) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: drmPrimeFDToHandle failed");
-            drop();
-            return;
-        }
+    if (!buffer->drmHandle()) {
+        for (int i = 0; i < attrs.planes; ++i) {
+            int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles[i]);
+            if (ret) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: drmPrimeFDToHandle failed");
+                drop();
+                return;
+            }
 
-        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i), boHandles.at(i))));
-    }
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i), boHandles.at(i))));
+        }
+    } else
+        boHandles = {buffer->drmHandle(), 0, 0, 0};
 
     id = submitBuffer();
     if (!id) {
@@ -1915,34 +1930,48 @@ void Aquamarine::CDRMFB::drop() {
 }
 
 uint32_t Aquamarine::CDRMFB::submitBuffer() {
-    auto                    attrs = buffer->dmabuf();
-    uint32_t                newID = 0;
-    std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
-    for (size_t i = 0; i < attrs.planes; ++i) {
-        mods[i] = attrs.modifier;
-    }
+    uint32_t newID = 0;
 
-    if (backend->drmProps.supportsAddFb2Modifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
-        TRACE(backend->backend->log(AQ_LOG_TRACE,
-                                    std::format("drm: Using drmModeAddFB2WithModifiers to import buffer into KMS: Size {} with format {} and mod {}", attrs.size,
-                                                fourccToName(attrs.format), attrs.modifier)));
-        if (drmModeAddFB2WithModifiers(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), mods.data(),
-                                       &newID, DRM_MODE_FB_MODIFIERS)) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2WithModifiers");
-            return 0;
+    if (buffer->type() == eBufferType::BUFFER_TYPE_DMABUF) {
+
+        auto                    attrs = buffer->dmabuf();
+
+        std::array<uint64_t, 4> mods = {0, 0, 0, 0};
+        for (size_t i = 0; i < attrs.planes; ++i) {
+            mods[i] = attrs.modifier;
+        }
+
+        if (backend->drmProps.supportsAddFb2Modifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
+            TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                        std::format("drm: Using drmModeAddFB2WithModifiers to import buffer into KMS: Size {} with format {} and mod {}", attrs.size,
+                                                    fourccToName(attrs.format), attrs.modifier)));
+            if (drmModeAddFB2WithModifiers(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), mods.data(),
+                                           &newID, DRM_MODE_FB_MODIFIERS)) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2WithModifiers");
+                return 0;
+            }
+        } else {
+            if (attrs.modifier != DRM_FORMAT_MOD_INVALID && attrs.modifier != DRM_FORMAT_MOD_LINEAR) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: drmModeAddFB2WithModifiers unsupported and buffer has explicit modifiers");
+                return 0;
+            }
+
+            TRACE(backend->backend->log(
+                AQ_LOG_TRACE,
+                std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod {}", attrs.size, fourccToName(attrs.format), attrs.modifier)));
+
+            if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), &newID, 0)) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2");
+                return 0;
+            }
         }
     } else {
-        if (attrs.modifier != DRM_FORMAT_MOD_INVALID && attrs.modifier != DRM_FORMAT_MOD_LINEAR) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: drmModeAddFB2WithModifiers unsupported and buffer has explicit modifiers");
-            return 0;
-        }
+        auto           attrs      = buffer->shm();
+        const uint32_t strides[4] = {(uint32_t)attrs.stride, 0, 0, 0};
+        const uint32_t offsets[4] = {0, 0, 0, 0};
 
-        TRACE(backend->backend->log(
-            AQ_LOG_TRACE,
-            std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod {}", attrs.size, fourccToName(attrs.format), attrs.modifier)));
-
-        if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), &newID, 0)) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2");
+        if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), strides, offsets, &newID, 0)) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a shm buffer with drmModeAddFB2");
             return 0;
         }
     }

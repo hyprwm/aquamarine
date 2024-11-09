@@ -60,6 +60,7 @@ namespace Aquamarine {
         virtual void                                   lock();
         virtual void                                   unlock();
         virtual bool                                   locked();
+        virtual uint32_t                               drmHandle();
 
         Hyprutils::Math::Vector2D                      size;
         bool                                           opaque          = false;

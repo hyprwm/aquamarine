@@ -39,3 +39,7 @@ void Aquamarine::IBuffer::unlock() {
 bool Aquamarine::IBuffer::locked() {
     return locks;
 }
+
+uint32_t Aquamarine::IBuffer::drmHandle() {
+    return 0;
+}
