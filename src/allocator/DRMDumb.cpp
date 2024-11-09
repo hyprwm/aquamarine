@@ -35,8 +35,9 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
     size      = request.size;
     pixelSize = {(double)request.width, (double)request.height};
 
-    attrs.size = pixelSize;
-    attrs.fd   = request.handle;
+    attrs.size   = pixelSize;
+    attrs.fd     = request.handle;
+    attrs.stride = stride;
 
     drm_mode_map_dumb request2 = {
         .handle = handle,
@@ -115,7 +116,9 @@ Aquamarine::CDRMDumbAllocator::~CDRMDumbAllocator() {
 }
 
 SP<CDRMDumbAllocator> Aquamarine::CDRMDumbAllocator::create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) {
-    return SP<CDRMDumbAllocator>(new CDRMDumbAllocator(drmfd_, backend_));
+    auto a  = SP<CDRMDumbAllocator>(new CDRMDumbAllocator(drmfd_, backend_));
+    a->self = a;
+    return a;
 }
 
 SP<IBuffer> Aquamarine::CDRMDumbAllocator::acquire(const SAllocatorBufferParams& params, SP<CSwapchain> swapchain_) {

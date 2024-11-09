@@ -256,6 +256,8 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
             newPrimary = drmBackend;
         }
 
+        drmBackend->dumbAllocator = CDRMDumbAllocator::create(gpu->fd, backend);
+
         backends.emplace_back(drmBackend);
 
         // so that session can handle udev change/remove events for this gpu
@@ -1652,19 +1654,24 @@ SP<IBackendImplementation> Aquamarine::CDRMOutput::getBackend() {
 }
 
 bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotspot) {
-    auto bufferType = buffer->type();
-
-    if ((bufferType == eBufferType::BUFFER_TYPE_SHM && !buffer->shm().success) || (bufferType == eBufferType::BUFFER_TYPE_DMABUF && !buffer->dmabuf().success)) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: Invalid buffer passed to setCursor");
-        return false;
-    }
-
     if (!connector->crtc)
         return false;
 
     if (!buffer)
         setCursorVisible(false);
     else {
+        auto bufferType = buffer->type();
+
+        if (!buffer->good()) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: bad buffer passed to setCursor");
+            return false;
+        }
+
+        if ((bufferType == eBufferType::BUFFER_TYPE_SHM && !buffer->shm().success) || (bufferType == eBufferType::BUFFER_TYPE_DMABUF && !buffer->dmabuf().success)) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Invalid buffer passed to setCursor");
+            return false;
+        }
+
         SP<CDRMFB> fb;
 
         if (backend->primary) {
@@ -1933,10 +1940,8 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
     uint32_t newID = 0;
 
     if (buffer->type() == eBufferType::BUFFER_TYPE_DMABUF) {
-
         auto                    attrs = buffer->dmabuf();
-
-        std::array<uint64_t, 4> mods = {0, 0, 0, 0};
+        std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
         for (size_t i = 0; i < attrs.planes; ++i) {
             mods[i] = attrs.modifier;
         }
