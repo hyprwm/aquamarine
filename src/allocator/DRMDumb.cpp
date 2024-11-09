@@ -64,14 +64,18 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
         return;
     }
 
-    // null the entire buffer so we dont get garbage
-    memset(data, 0x00, size);
+    // set the entire buffer so we dont get garbage
+    memset(data, 0xFF, size);
 
     attrs.success = true;
+
+    allocator->backend->log(AQ_LOG_DEBUG, std::format("DRM Dumb: Allocated a new buffer with drm id {}, size {} and format {}", idrmID, attrs.size, fourccToName(attrs.format)));
 }
 
 Aquamarine::CDRMDumbBuffer::~CDRMDumbBuffer() {
     events.destroy.emit();
+
+    TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("DRM Dumb: dropping buffer {}", idrmID)));
 
     if (handle == 0)
         return;
@@ -121,7 +125,7 @@ void Aquamarine::CDRMDumbBuffer::endDataPtr() {
 }
 
 uint32_t Aquamarine::CDRMDumbBuffer::drmID() {
-    return handle;
+    return idrmID;
 }
 
 Aquamarine::CDRMDumbAllocator::~CDRMDumbAllocator() {
