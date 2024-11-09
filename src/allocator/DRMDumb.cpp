@@ -50,7 +50,7 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
 
     data = (uint8_t*)mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, allocator->drmFD(), request2.offset);
     if (!data) {
-        allocator->backend->log(AQ_LOG_ERROR, "failed to mmmap a drm_dumb buffer");
+        allocator->backend->log(AQ_LOG_ERROR, "failed to mmap a drm_dumb buffer");
         return;
     }
 
