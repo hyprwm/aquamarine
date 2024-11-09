@@ -30,6 +30,7 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
 
     attrs.size          = pixelSize;
     attrs.strides.at(0) = stride;
+    attrs.planes        = 1;
 
     uint64_t offset = 0;
     if (int ret = drmModeMapDumbBuffer(allocator->drmFD(), handle, &offset); ret < 0) {
@@ -69,10 +70,7 @@ Aquamarine::CDRMDumbBuffer::~CDRMDumbBuffer() {
     if (data)
         munmap(data, size);
 
-    drm_mode_destroy_dumb request = {
-        .handle = handle,
-    };
-    drmIoctl(allocator->drmFD(), DRM_IOCTL_MODE_DESTROY_DUMB, &request);
+    drmModeDestroyDumbBuffer(allocator->drmFD(), handle);
 }
 
 eBufferCapability Aquamarine::CDRMDumbBuffer::caps() {
@@ -112,8 +110,27 @@ Aquamarine::CDRMDumbAllocator::~CDRMDumbAllocator() {
 }
 
 SP<CDRMDumbAllocator> Aquamarine::CDRMDumbAllocator::create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) {
+    if (drmGetNodeTypeFromFd(drmfd_) != DRM_NODE_PRIMARY) {
+        backend_->log(AQ_LOG_ERROR, "DRM Dumb: Cannot create allocator when drmfd is not the primary node");
+        return nullptr;
+    }
+
+    uint64_t hasDumb = 0;
+    if (drmGetCap(drmfd_, DRM_CAP_DUMB_BUFFER, &hasDumb) < 0) {
+        backend_->log(AQ_LOG_ERROR, "DRM Dumb: Failed to query hasDumb");
+        return nullptr;
+    }
+
+    if (!hasDumb) {
+        backend_->log(AQ_LOG_ERROR, "DRM Dumb: hasDumb is false, gpu driver doesn't support dumb buffers!");
+        return nullptr;
+    }
+
     auto a  = SP<CDRMDumbAllocator>(new CDRMDumbAllocator(drmfd_, backend_));
     a->self = a;
+
+    backend_->log(AQ_LOG_DEBUG, "DRM Dumb: created a dumb allocator");
+
     return a;
 }
 

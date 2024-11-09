@@ -1935,44 +1935,36 @@ void Aquamarine::CDRMFB::drop() {
 uint32_t Aquamarine::CDRMFB::submitBuffer() {
     uint32_t newID = 0;
 
-    if (buffer->type() == eBufferType::BUFFER_TYPE_DMABUF) {
-        auto                    attrs = buffer->dmabuf();
-        std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
-        for (size_t i = 0; i < attrs.planes; ++i) {
-            mods[i] = attrs.modifier;
-        }
+    if (!buffer->dmabuf().success)
+        return 0;
 
-        if (backend->drmProps.supportsAddFb2Modifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
-            TRACE(backend->backend->log(AQ_LOG_TRACE,
-                                        std::format("drm: Using drmModeAddFB2WithModifiers to import buffer into KMS: Size {} with format {} and mod {}", attrs.size,
-                                                    fourccToName(attrs.format), attrs.modifier)));
-            if (drmModeAddFB2WithModifiers(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), mods.data(),
-                                           &newID, DRM_MODE_FB_MODIFIERS)) {
-                backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2WithModifiers");
-                return 0;
-            }
-        } else {
-            if (attrs.modifier != DRM_FORMAT_MOD_INVALID && attrs.modifier != DRM_FORMAT_MOD_LINEAR) {
-                backend->backend->log(AQ_LOG_ERROR, "drm: drmModeAddFB2WithModifiers unsupported and buffer has explicit modifiers");
-                return 0;
-            }
+    auto                    attrs = buffer->dmabuf();
+    std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
+    for (size_t i = 0; i < attrs.planes; ++i) {
+        mods[i] = attrs.modifier;
+    }
 
-            TRACE(backend->backend->log(
-                AQ_LOG_TRACE,
-                std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod {}", attrs.size, fourccToName(attrs.format), attrs.modifier)));
-
-            if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), &newID, 0)) {
-                backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2");
-                return 0;
-            }
+    if (backend->drmProps.supportsAddFb2Modifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
+        TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                    std::format("drm: Using drmModeAddFB2WithModifiers to import buffer into KMS: Size {} with format {} and mod {}", attrs.size,
+                                                fourccToName(attrs.format), attrs.modifier)));
+        if (drmModeAddFB2WithModifiers(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), mods.data(),
+                                       &newID, DRM_MODE_FB_MODIFIERS)) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2WithModifiers");
+            return 0;
         }
     } else {
-        auto           attrs      = buffer->shm();
-        const uint32_t strides[4] = {(uint32_t)attrs.stride, 0, 0, 0};
-        const uint32_t offsets[4] = {0, 0, 0, 0};
+        if (attrs.modifier != DRM_FORMAT_MOD_INVALID && attrs.modifier != DRM_FORMAT_MOD_LINEAR) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: drmModeAddFB2WithModifiers unsupported and buffer has explicit modifiers");
+            return 0;
+        }
 
-        if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), strides, offsets, &newID, 0)) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a shm buffer with drmModeAddFB2");
+        TRACE(backend->backend->log(
+            AQ_LOG_TRACE,
+            std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod {}", attrs.size, fourccToName(attrs.format), attrs.modifier)));
+
+        if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), &newID, 0)) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2");
             return 0;
         }
     }
