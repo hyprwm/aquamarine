@@ -1826,7 +1826,7 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
 
 void Aquamarine::CDRMFB::import() {
     auto attrs = buffer->dmabuf();
-    if (!attrs.success && !buffer->drmID()) {
+    if (!attrs.success) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf or a drm handle");
         return;
     }
@@ -1837,22 +1837,18 @@ void Aquamarine::CDRMFB::import() {
     }
 
     // TODO: check format
-
-    if (!buffer->drmID()) {
-        for (int i = 0; i < attrs.planes; ++i) {
-            int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles[i]);
-            if (ret) {
-                backend->backend->log(AQ_LOG_ERROR, "drm: drmPrimeFDToHandle failed");
-                drop();
-                return;
-            }
-
-            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i), boHandles.at(i))));
+    for (int i = 0; i < attrs.planes; ++i) {
+        int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles[i]);
+        if (ret) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: drmPrimeFDToHandle failed");
+            drop();
+            return;
         }
 
-        id = submitBuffer();
-    } else
-        id = buffer->drmID();
+        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i), boHandles.at(i))));
+    }
+
+    id = submitBuffer();
 
     if (!id) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer to KMS");
@@ -1921,7 +1917,7 @@ void Aquamarine::CDRMFB::drop() {
 
     dropped = true;
 
-    if (!id || buffer->drmID() /* drmID means the buffer manages itself */)
+    if (!id)
         return;
 
     closeHandles();

@@ -16,10 +16,9 @@ namespace Aquamarine {
         virtual void                                   update(const Hyprutils::Math::CRegion& damage);
         virtual bool                                   isSynchronous();
         virtual bool                                   good();
-        virtual SSHMAttrs                              shm();
+        virtual SDMABUFAttrs                           dmabuf();
         virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);
         virtual void                                   endDataPtr();
-        virtual uint32_t                               drmID();
 
       private:
         CDRMDumbBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CDRMDumbAllocator> allocator_,
@@ -28,14 +27,14 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMDumbAllocator> allocator;
 
         //
-        uint32_t                  idrmID = 0;
         Hyprutils::Math::Vector2D pixelSize;
         uint32_t                  stride = 0, handle = 0;
-        uint64_t                  size = 0;
-        uint8_t*                  data = nullptr;
+        uint64_t                  size    = 0;
+        uint8_t*                  data    = nullptr;
+        int                       primeFD = -1;
 
         //
-        SSHMAttrs attrs{.success = false};
+        SDMABUFAttrs attrs{.success = false};
 
         friend class CDRMDumbAllocator;
     };
