@@ -39,6 +39,16 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
     attrs.fd     = request.handle;
     attrs.stride = stride;
 
+    uint32_t handles[4] = {handle, 0, 0, 0};
+    uint32_t strides[4] = {stride, 0, 0, 0};
+    uint32_t offsets[4] = {0, 0, 0, 0};
+
+    // these buffers are tied to drm... we need to import them here. CDRMFB will not be clean anymore... weeee...
+    if (int ret = drmModeAddFB2(allocator->drmFD(), params.size.x, params.size.y, params.format, handles, strides, offsets, &idrmID, 0); ret < 0) {
+        allocator->backend->log(AQ_LOG_ERROR, std::format("failed to drmModeAddFB2 a drm_dumb buffer: {}", strerror(-ret)));
+        return;
+    }
+
     drm_mode_map_dumb request2 = {
         .handle = handle,
     };
@@ -68,6 +78,9 @@ Aquamarine::CDRMDumbBuffer::~CDRMDumbBuffer() {
 
     if (data)
         munmap(data, size);
+
+    if (idrmID)
+        drmModeRmFB(allocator->drmFD(), idrmID);
 
     drm_mode_destroy_dumb request = {
         .handle = handle,
@@ -107,7 +120,7 @@ void Aquamarine::CDRMDumbBuffer::endDataPtr() {
     ; // nothing to do
 }
 
-uint32_t Aquamarine::CDRMDumbBuffer::drmHandle() {
+uint32_t Aquamarine::CDRMDumbBuffer::drmID() {
     return handle;
 }
 

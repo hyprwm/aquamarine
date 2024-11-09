@@ -40,6 +40,6 @@ bool Aquamarine::IBuffer::locked() {
     return locks;
 }
 
-uint32_t Aquamarine::IBuffer::drmHandle() {
+uint32_t Aquamarine::IBuffer::drmID() {
     return 0;
 }

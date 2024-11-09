@@ -1826,7 +1826,7 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
 
 void Aquamarine::CDRMFB::import() {
     auto attrs = buffer->dmabuf();
-    if (!attrs.success && !buffer->drmHandle()) {
+    if (!attrs.success && !buffer->drmID()) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf or a drm handle");
         return;
     }
@@ -1838,7 +1838,7 @@ void Aquamarine::CDRMFB::import() {
 
     // TODO: check format
 
-    if (!buffer->drmHandle()) {
+    if (!buffer->drmID()) {
         for (int i = 0; i < attrs.planes; ++i) {
             int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles[i]);
             if (ret) {
@@ -1849,10 +1849,11 @@ void Aquamarine::CDRMFB::import() {
 
             TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i), boHandles.at(i))));
         }
-    } else
-        boHandles = {buffer->drmHandle(), 0, 0, 0};
 
-    id = submitBuffer();
+        id = submitBuffer();
+    } else
+        id = buffer->drmID();
+
     if (!id) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer to KMS");
         buffer->attachments.add(makeShared<CDRMBufferUnimportable>());
