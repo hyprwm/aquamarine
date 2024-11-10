@@ -29,9 +29,9 @@ namespace Aquamarine {
         //
         Hyprutils::Math::Vector2D pixelSize;
         uint32_t                  stride = 0, handle = 0;
-        uint64_t                  size    = 0;
-        uint8_t*                  data    = nullptr;
-        int                       primeFD = -1;
+        uint64_t                  bufferLen = 0;
+        uint8_t*                  data      = nullptr;
+        int                       primeFD   = -1;
 
         //
         SDMABUFAttrs attrs{.success = false};

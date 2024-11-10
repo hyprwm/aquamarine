@@ -21,7 +21,7 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
                                            Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) : allocator(allocator_) {
     attrs.format = params.format;
 
-    if (int ret = drmModeCreateDumbBuffer(allocator->drmFD(), params.size.x, params.size.y, 32, 0, &handle, &stride, &size); ret < 0) {
+    if (int ret = drmModeCreateDumbBuffer(allocator->drmFD(), params.size.x, params.size.y, 32, 0, &handle, &stride, &bufferLen); ret < 0) {
         allocator->backend->log(AQ_LOG_ERROR, std::format("failed to create a drm_dumb buffer: {}", strerror(-ret)));
         return;
     }
@@ -31,6 +31,7 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
     attrs.size          = pixelSize;
     attrs.strides.at(0) = stride;
     attrs.planes        = 1;
+    size                = pixelSize;
 
     uint64_t offset = 0;
     if (int ret = drmModeMapDumbBuffer(allocator->drmFD(), handle, &offset); ret < 0) {
@@ -38,14 +39,14 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
         return;
     }
 
-    data = (uint8_t*)mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, allocator->drmFD(), offset);
+    data = (uint8_t*)mmap(nullptr, bufferLen, PROT_READ | PROT_WRITE, MAP_SHARED, allocator->drmFD(), offset);
     if (data == MAP_FAILED) {
         allocator->backend->log(AQ_LOG_ERROR, "failed to mmap a drm_dumb buffer");
         return;
     }
 
     // set the entire buffer so we dont get garbage
-    memset(data, 0xFF, size);
+    memset(data, 0xFF, bufferLen);
 
     if (int ret = drmPrimeHandleToFD(allocator->drmFD(), handle, DRM_CLOEXEC, &primeFD); ret < 0) {
         allocator->backend->log(AQ_LOG_ERROR, std::format("failed to map a drm_dumb buffer: {}", strerror(-ret)));
@@ -68,7 +69,7 @@ Aquamarine::CDRMDumbBuffer::~CDRMDumbBuffer() {
         return;
 
     if (data)
-        munmap(data, size);
+        munmap(data, bufferLen);
 
     drmModeDestroyDumbBuffer(allocator->drmFD(), handle);
 }
@@ -98,7 +99,7 @@ SDMABUFAttrs Aquamarine::CDRMDumbBuffer::dmabuf() {
 }
 
 std::tuple<uint8_t*, uint32_t, size_t> Aquamarine::CDRMDumbBuffer::beginDataPtr(uint32_t flags) {
-    return {data, attrs.format, size};
+    return {data, attrs.format, bufferLen};
 }
 
 void Aquamarine::CDRMDumbBuffer::endDataPtr() {
