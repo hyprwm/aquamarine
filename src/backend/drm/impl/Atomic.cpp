@@ -57,10 +57,10 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
         return;
     }
 
-    TRACE(backend->log(AQ_LOG_TRACE,
-                       std::format("atomic planeProps: prop blobs: src_x {}, src_y {}, src_w {}, src_h {}, crtc_w {}, crtc_h {}, fb_id {}, crtc_id {}, crtc_x {}, crtc_y {}",
-                                   plane->props.src_x, plane->props.src_y, plane->props.src_w, plane->props.src_h, plane->props.crtc_w, plane->props.crtc_h, plane->props.fb_id,
-                                   plane->props.crtc_id, plane->props.crtc_x, plane->props.crtc_y)));
+    TRACE(
+        backend->log(AQ_LOG_TRACE,
+                     std::format("atomic planeProps: prop blobs: src_x {}, src_y {}, src_w {}, src_h {}, crtc_w {}, crtc_h {}, fb_id {}, crtc_id {}", plane->props.src_x,
+                                 plane->props.src_y, plane->props.src_w, plane->props.src_h, plane->props.crtc_w, plane->props.crtc_h, plane->props.fb_id, plane->props.crtc_id)));
 
     // src_ are 16.16 fixed point (lol)
     add(plane->id, plane->props.src_x, 0);
@@ -71,8 +71,22 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
     add(plane->id, plane->props.crtc_h, (uint32_t)fb->buffer->size.y);
     add(plane->id, plane->props.fb_id, fb->id);
     add(plane->id, plane->props.crtc_id, crtc);
+    planePropsPos(plane, pos);
+}
+
+void Aquamarine::CDRMAtomicRequest::planePropsPos(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Math::Vector2D pos) {
+
+    if (failed)
+        return;
+
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: pos blobs: crtc_x {}, crtc_y {}", plane->props.crtc_x, plane->props.crtc_y)));
+
     add(plane->id, plane->props.crtc_x, (uint64_t)pos.x);
     add(plane->id, plane->props.crtc_y, (uint64_t)pos.y);
+}
+
+void Aquamarine::CDRMAtomicRequest::setConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+    conn = connector;
 }
 
 void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
@@ -84,6 +98,8 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
                                    connector->crtc->props.active, connector->props.crtc_id, connector->props.link_status, connector->props.content_type)));
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
+
+    addConnectorCursor(connector, data);
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
 
@@ -133,21 +149,36 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         if (connector->crtc->primary->props.fb_damage_clips)
             add(connector->crtc->primary->id, connector->crtc->primary->props.fb_damage_clips, data.atomic.fbDamage);
-
-        if (connector->crtc->cursor && STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR) {
-            if (!connector->output->cursorVisible)
-                planeProps(connector->crtc->cursor, nullptr, 0, {});
-            else
-                planeProps(connector->crtc->cursor, data.cursorFB, connector->crtc->id, connector->output->cursorPos - connector->output->cursorHotspot);
-        }
-
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
-        if (connector->crtc->cursor)
-            planeProps(connector->crtc->cursor, nullptr, 0, {});
     }
 
     conn = connector;
+}
+
+void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
+    const auto& STATE  = connector->output->state->state();
+    const bool  enable = STATE.enabled && data.mainFB;
+
+    conn = connector;
+
+    if (!connector->crtc->cursor)
+        return;
+
+    if (enable) {
+        if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS) {
+            TRACE(backend->log(AQ_LOG_TRACE, STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE ? "atomic addConnector cursor shape" : "atomic addConnector cursor pos"));
+            connector->output->state->cursorCommited = true;
+            if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE) {
+                if (!connector->output->cursorVisible)
+                    planeProps(connector->crtc->cursor, nullptr, 0, {});
+                else
+                    planeProps(connector->crtc->cursor, data.cursorFB, connector->crtc->id, connector->output->cursorPos - connector->output->cursorHotspot);
+            } else if (connector->output->cursorVisible)
+                planePropsPos(connector->crtc->cursor, connector->output->cursorPos - connector->output->cursorHotspot);
+        }
+    } else
+        planeProps(connector->crtc->cursor, nullptr, 0, {});
 }
 
 bool Aquamarine::CDRMAtomicRequest::commit(uint32_t flagssss) {
@@ -376,8 +407,18 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 
     if (ok) {
         request.apply(data);
-        if (!data.test && data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
+        if (!data.test && data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
             connector->isPageFlipPending = true;
+            // if (connector->output->state->state().committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS) {
+            //     CDRMAtomicRequest request(backend);
+            //     request.setConnector(connector);
+            //     request.planePropsPos(connector->crtc->cursor, connector->output->cursorPos - connector->output->cursorHotspot);
+
+            //     uint32_t flags = DRM_MODE_ATOMIC_NONBLOCK;
+
+            //     request.commit(flags | DRM_MODE_ATOMIC_TEST_ONLY) && request.commit(flags);
+            // }
+        }
     } else
         request.rollback(data);
 

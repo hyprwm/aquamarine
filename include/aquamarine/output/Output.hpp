@@ -55,7 +55,8 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_CTM                = (1 << 10),
             AQ_OUTPUT_STATE_HDR                = (1 << 11),
             AQ_OUTPUT_STATE_DEGAMMA_LUT        = (1 << 12),
-            AQ_OUTPUT_STATE_CURSOR             = (1 << 13),
+            AQ_OUTPUT_STATE_CURSOR_SHAPE       = (1 << 13),
+            AQ_OUTPUT_STATE_CURSOR_POS         = (1 << 14),
         };
 
         struct SInternalState {
@@ -79,6 +80,7 @@ namespace Aquamarine {
         };
 
         const SInternalState& state();
+        bool                  cursorCommited = false;
 
         void                  addDamage(const Hyprutils::Math::CRegion& region);
         void                  clearDamage();

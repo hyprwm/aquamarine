@@ -1752,7 +1752,7 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
     if (!connector->crtc)
         return false;
 
-    state->internalState.committed |= COutputState::AQ_OUTPUT_STATE_CURSOR;
+    state->internalState.committed |= COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE;
     if (!buffer)
         setCursorVisible(false);
     else {

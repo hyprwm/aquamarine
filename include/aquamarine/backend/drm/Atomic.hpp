@@ -23,10 +23,13 @@ namespace Aquamarine {
         CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer<CDRMBackend> backend);
         ~CDRMAtomicRequest();
 
+        void setConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
         void addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
+        void addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         bool commit(uint32_t flagssss);
         void add(uint32_t id, uint32_t prop, uint64_t val);
         void planeProps(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Memory::CSharedPointer<CDRMFB> fb, uint32_t crtc, Hyprutils::Math::Vector2D pos);
+        void planePropsPos(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Math::Vector2D pos);
 
         void rollback(SDRMConnectorCommitData& data);
         void apply(SDRMConnectorCommitData& data);
