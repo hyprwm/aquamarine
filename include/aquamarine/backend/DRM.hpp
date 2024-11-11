@@ -15,6 +15,7 @@ namespace Aquamarine {
     class CDRMOutput;
     struct SDRMConnector;
     class CDRMRenderer;
+    class CDRMDumbAllocator;
 
     typedef std::function<void(void)> FIdleCallback;
 
@@ -340,28 +341,29 @@ namespace Aquamarine {
     class CDRMBackend : public IBackendImplementation {
       public:
         virtual ~CDRMBackend();
-        virtual eBackendType                                            type();
-        virtual bool                                                    start();
-        virtual std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> pollFDs();
-        virtual int                                                     drmFD();
-        virtual bool                                                    dispatchEvents();
-        virtual uint32_t                                                capabilities();
-        virtual bool                                                    setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
-        virtual void                                                    onReady();
-        virtual std::vector<SDRMFormat>                                 getRenderFormats();
-        virtual std::vector<SDRMFormat>                                 getCursorFormats();
-        virtual bool                                                    createOutput(const std::string& name = "");
-        virtual Hyprutils::Memory::CSharedPointer<IAllocator>           preferredAllocator();
-        virtual std::vector<SDRMFormat>                                 getRenderableFormats();
+        virtual eBackendType                                               type();
+        virtual bool                                                       start();
+        virtual std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>    pollFDs();
+        virtual int                                                        drmFD();
+        virtual bool                                                       dispatchEvents();
+        virtual uint32_t                                                   capabilities();
+        virtual bool                                                       setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
+        virtual void                                                       onReady();
+        virtual std::vector<SDRMFormat>                                    getRenderFormats();
+        virtual std::vector<SDRMFormat>                                    getCursorFormats();
+        virtual bool                                                       createOutput(const std::string& name = "");
+        virtual Hyprutils::Memory::CSharedPointer<IAllocator>              preferredAllocator();
+        virtual std::vector<SDRMFormat>                                    getRenderableFormats();
+        virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators();
 
-        Hyprutils::Memory::CWeakPointer<CDRMBackend>                    self;
+        Hyprutils::Memory::CWeakPointer<CDRMBackend>                       self;
 
-        void                                                            log(eBackendLogLevel, const std::string&);
-        bool                                                            sessionActive();
-        int                                                             getNonMasterFD();
+        void                                                               log(eBackendLogLevel, const std::string&);
+        bool                                                               sessionActive();
+        int                                                                getNonMasterFD();
 
-        std::vector<FIdleCallback>                                      idleCallbacks;
-        std::string                                                     gpuName;
+        std::vector<FIdleCallback>                                         idleCallbacks;
+        std::string                                                        gpuName;
 
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
@@ -395,6 +397,8 @@ namespace Aquamarine {
         std::vector<Hyprutils::Memory::CSharedPointer<SDRMConnector>> connectors;
         std::vector<SDRMFormat>                                       formats;
         std::vector<SDRMFormat>                                       glFormats;
+
+        Hyprutils::Memory::CSharedPointer<CDRMDumbAllocator>          dumbAllocator;
 
         bool                                                          atomic = false;
 

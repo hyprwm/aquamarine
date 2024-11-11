@@ -16,6 +16,7 @@ namespace Aquamarine {
 
     enum eAllocatorType {
         AQ_ALLOCATOR_TYPE_GBM = 0,
+        AQ_ALLOCATOR_TYPE_DRM_DUMB,
     };
 
     class IAllocator {

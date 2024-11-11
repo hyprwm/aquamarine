@@ -3,6 +3,7 @@
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <aquamarine/backend/drm/Atomic.hpp>
 #include <aquamarine/allocator/GBM.hpp>
+#include <aquamarine/allocator/DRMDumb.hpp>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
@@ -254,6 +255,8 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
             backend->log(AQ_LOG_DEBUG, std::format("drm: gpu {} becomes primary drm", gpu->path));
             newPrimary = drmBackend;
         }
+
+        drmBackend->dumbAllocator = CDRMDumbAllocator::create(gpu->fd, backend);
 
         backends.emplace_back(drmBackend);
 
@@ -961,6 +964,10 @@ SP<IAllocator> Aquamarine::CDRMBackend::preferredAllocator() {
     return backend->primaryAllocator;
 }
 
+std::vector<SP<IAllocator>> Aquamarine::CDRMBackend::getAllocators() {
+    return {backend->primaryAllocator, dumbAllocator};
+}
+
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     id = plane->plane_id;
 
@@ -1647,34 +1654,46 @@ SP<IBackendImplementation> Aquamarine::CDRMOutput::getBackend() {
 }
 
 bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotspot) {
-    if (buffer && !buffer->dmabuf().success) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: Cursor buffer has to be a dmabuf");
-        return false;
-    }
-
     if (!connector->crtc)
         return false;
 
     if (!buffer)
         setCursorVisible(false);
     else {
+        auto bufferType = buffer->type();
+
+        if (!buffer->good()) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: bad buffer passed to setCursor");
+            return false;
+        }
+
+        if ((bufferType == eBufferType::BUFFER_TYPE_SHM && !buffer->shm().success) || (bufferType == eBufferType::BUFFER_TYPE_DMABUF && !buffer->dmabuf().success)) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Invalid buffer passed to setCursor");
+            return false;
+        }
+
         SP<CDRMFB> fb;
 
         if (backend->primary) {
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires cursor blit, blitting"));
+
+            // TODO: will this not implode on drm_dumb?!
 
             if (!mgpu.cursorSwapchain) {
                 TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: No cursorSwapchain for blit, creating"));
                 mgpu.cursorSwapchain = CSwapchain::create(backend->rendererState.allocator, backend.lock());
             }
 
-            auto OPTIONS     = mgpu.cursorSwapchain->currentOptions();
-            OPTIONS.multigpu = false;
-            OPTIONS.scanout  = true;
-            OPTIONS.cursor   = true;
-            OPTIONS.format   = buffer->dmabuf().format;
-            OPTIONS.size     = buffer->dmabuf().size;
-            OPTIONS.length   = 2;
+            const auto FORMAT = bufferType == eBufferType::BUFFER_TYPE_SHM ? buffer->shm().format : buffer->dmabuf().format;
+            const auto SIZE   = bufferType == eBufferType::BUFFER_TYPE_SHM ? buffer->shm().size : buffer->dmabuf().size;
+
+            auto       OPTIONS = mgpu.cursorSwapchain->currentOptions();
+            OPTIONS.multigpu   = false;
+            OPTIONS.scanout    = true;
+            OPTIONS.cursor     = true;
+            OPTIONS.format     = FORMAT;
+            OPTIONS.size       = SIZE;
+            OPTIONS.length     = 2;
 
             if (!mgpu.cursorSwapchain->reconfigure(OPTIONS)) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu cursorSwapchain failed reconfiguring");
@@ -1808,7 +1827,7 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
 void Aquamarine::CDRMFB::import() {
     auto attrs = buffer->dmabuf();
     if (!attrs.success) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf");
+        backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf or a drm handle");
         return;
     }
 
@@ -1818,7 +1837,6 @@ void Aquamarine::CDRMFB::import() {
     }
 
     // TODO: check format
-
     for (int i = 0; i < attrs.planes; ++i) {
         int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles[i]);
         if (ret) {
@@ -1831,6 +1849,7 @@ void Aquamarine::CDRMFB::import() {
     }
 
     id = submitBuffer();
+
     if (!id) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer to KMS");
         buffer->attachments.add(makeShared<CDRMBufferUnimportable>());
@@ -1840,7 +1859,6 @@ void Aquamarine::CDRMFB::import() {
 
     TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: new buffer {}", id)));
 
-    // FIXME: why does this implode when it doesnt on wlroots or kwin?
     closeHandles();
 
     listeners.destroyBuffer = buffer->events.destroy.registerListener([this](std::any d) {
@@ -1915,8 +1933,12 @@ void Aquamarine::CDRMFB::drop() {
 }
 
 uint32_t Aquamarine::CDRMFB::submitBuffer() {
+    uint32_t newID = 0;
+
+    if (!buffer->dmabuf().success)
+        return 0;
+
     auto                    attrs = buffer->dmabuf();
-    uint32_t                newID = 0;
     std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
     for (size_t i = 0; i < attrs.planes; ++i) {
         mods[i] = attrs.modifier;
