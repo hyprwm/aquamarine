@@ -315,17 +315,29 @@ namespace Aquamarine {
                 uint32_t vrr_capable;  // not guaranteed to exist
                 uint32_t subconnector; // not guaranteed to exist
                 uint32_t non_desktop;
-                uint32_t panel_orientation; // not guaranteed to exist
-                uint32_t content_type;      // not guaranteed to exist
-                uint32_t max_bpc;           // not guaranteed to exist
+                uint32_t panel_orientation;   // not guaranteed to exist
+                uint32_t content_type;        // not guaranteed to exist
+                uint32_t max_bpc;             // not guaranteed to exist
+                uint32_t Colorspace;          // not guaranteed to exist
+                uint32_t hdr_output_metadata; // not guaranteed to exist
 
                 // atomic-modesetting only
 
                 uint32_t crtc_id;
             };
-            uint32_t props[4] = {0};
+            uint32_t props[13] = {0};
         };
         UDRMConnectorProps props;
+
+        union UDRMConnectorColorspace {
+            struct {
+                uint32_t Default;
+                uint32_t BT2020_RGB;
+                uint32_t BT2020_YCC;
+            };
+            uint32_t props[3] = {0};
+        };
+        UDRMConnectorColorspace colorspace;
     };
 
     class IDRMImplementation {

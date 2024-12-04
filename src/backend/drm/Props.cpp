@@ -21,8 +21,10 @@ struct prop_info {
 static const struct prop_info connector_info[] = {
 #define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorProps, name) / sizeof(uint32_t))
     {"CRTC_ID", INDEX(crtc_id)},
+    {"Colorspace", INDEX(Colorspace)},
     {"DPMS", INDEX(dpms)},
     {"EDID", INDEX(edid)},
+    {"HDR_OUTPUT_METADATA", INDEX(hdr_output_metadata)},
     {"PATH", INDEX(path)},
     {"content type", INDEX(content_type)},
     {"link-status", INDEX(link_status)},
@@ -31,6 +33,12 @@ static const struct prop_info connector_info[] = {
     {"panel orientation", INDEX(panel_orientation)},
     {"subconnector", INDEX(subconnector)},
     {"vrr_capable", INDEX(vrr_capable)},
+#undef INDEX
+};
+
+static const struct prop_info colorspace_info[] = {
+#define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorColorspace, name) / sizeof(uint32_t))
+    {"BT2020_RGB", INDEX(BT2020_RGB)}, {"BT2020_YCC", INDEX(BT2020_YCC)}, {"Default", INDEX(Default)}
 #undef INDEX
 };
 
@@ -95,8 +103,28 @@ namespace Aquamarine {
         return true;
     }
 
+    static bool scanPropertyEnum(int fd, uint32_t propertyId, uint32_t* result, const prop_info* info, size_t info_len) {
+        drmModePropertyRes* prop = drmModeGetProperty(fd, propertyId);
+        if (!prop)
+            return false;
+
+        for (uint32_t i = 0; i < prop->count_enums; ++i) {
+            const prop_info* p = (prop_info*)bsearch(prop->enums[i].name, info, info_len, sizeof(info[0]), comparePropInfo);
+            if (p)
+                result[p->index] = prop->enums[i].value;
+        }
+
+        drmModeFreeProperty(prop);
+
+        return true;
+    }
+
     bool getDRMConnectorProps(int fd, uint32_t id, SDRMConnector::UDRMConnectorProps* out) {
         return scanProperties(fd, id, DRM_MODE_OBJECT_CONNECTOR, out->props, connector_info, sizeof(connector_info) / sizeof(connector_info[0]));
+    }
+
+    bool getDRMConnectorColorspace(int fd, uint32_t id, SDRMConnector::UDRMConnectorColorspace* out) {
+        return scanPropertyEnum(fd, id, out->props, colorspace_info, sizeof(colorspace_info) / sizeof(colorspace_info[0]));
     }
 
     bool getDRMCRTCProps(int fd, uint32_t id, SDRMCRTC::UDRMCRTCProps* out) {

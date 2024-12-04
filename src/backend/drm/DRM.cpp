@@ -1082,6 +1082,8 @@ bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
 
     if (!getDRMConnectorProps(backend->gpu->fd, id, &props))
         return false;
+    if (props.Colorspace)
+        getDRMConnectorColorspace(backend->gpu->fd, props.Colorspace, &colorspace);
 
     auto name = drmModeGetConnectorTypeName(connector->connector_type);
     if (!name)
@@ -1188,6 +1190,11 @@ void Aquamarine::SDRMConnector::recheckCRTCProps() {
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit sync {}", output->supportsExplicit ? "supported" : "unsupported"));
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} CTM", szName, (crtc->props.ctm ? "supports" : "doesn't support")));
+
+    backend->backend->log(AQ_LOG_DEBUG,
+                          std::format("drm: connector {} crtc {} HDR ({})", szName, (props.hdr_output_metadata ? "supports" : "doesn't support"), props.hdr_output_metadata));
+
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} Colorspace ({})", szName, (props.Colorspace ? "supports" : "doesn't support"), props.Colorspace));
 }
 
 void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
