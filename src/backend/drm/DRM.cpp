@@ -1150,9 +1150,9 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     return modeInfo;
 }
 
-ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
-    auto       info   = di_info_parse_edid(data.data(), data.size());
-    ParsedEDID parsed = {};
+IOutput::ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
+    auto                info   = di_info_parse_edid(data.data(), data.size());
+    IOutput::ParsedEDID parsed = {};
     if (!info) {
         backend->backend->log(AQ_LOG_ERROR, "drm: failed to parse edid");
         return parsed;
@@ -1177,17 +1177,17 @@ ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
     parsed.serial = serial;
 
     // copied from kwin
-    // const auto chromaticity = di_edid_get_chromaticity_coords(edid);
-    // if (chromaticity) {
-    //     m_colorimetry = Colorimetry{
-    //         xy{chromaticity->red_x, chromaticity->red_y},
-    //         xy{chromaticity->green_x, chromaticity->green_y},
-    //         xy{chromaticity->blue_x, chromaticity->blue_y},
-    //         xy{chromaticity->white_x, chromaticity->white_y},
-    //     };
-    // } else {
-    //     m_colorimetry.reset();
-    // }
+    const auto chromaticity = di_edid_get_chromaticity_coords(edid);
+    if (chromaticity) {
+        parsed.chromaticityCoords = IOutput::ChromaticityCoords{
+            IOutput::xy{chromaticity->red_x, chromaticity->red_y},
+            IOutput::xy{chromaticity->green_x, chromaticity->green_y},
+            IOutput::xy{chromaticity->blue_x, chromaticity->blue_y},
+            IOutput::xy{chromaticity->white_x, chromaticity->white_y},
+        };
+    } else {
+        parsed.chromaticityCoords.reset();
+    }
     const di_edid_cta*                      cta                 = nullptr;
     const di_edid_ext* const*               exts                = di_edid_get_extensions(edid);
     const di_cta_hdr_static_metadata_block* hdr_static_metadata = nullptr;
@@ -1208,8 +1208,7 @@ ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
             }
         }
         if (hdr_static_metadata) {
-            hdrMetadata = parsed.hdrMetadata = HDRMetadata{
-                .supported                  = true,
+            parsed.hdrMetadata = IOutput::HDRMetadata{
                 .desiredContentMinLuminance = hdr_static_metadata->desired_content_min_luminance,
                 .desiredContentMaxLuminance =
                     hdr_static_metadata->desired_content_max_luminance > 0 ? std::make_optional(hdr_static_metadata->desired_content_max_luminance) : std::nullopt,
@@ -1219,6 +1218,8 @@ ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
                 .supportsPQ                      = hdr_static_metadata->eotfs->pq,
                 .supportsBT2020                  = colorimetry && colorimetry->bt2020_rgb,
             };
+        } else {
+            parsed.hdrMetadata.reset();
         }
     }
 
@@ -1341,6 +1342,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     output->make        = parsedEDID.make;
     output->model       = parsedEDID.model;
     output->serial      = parsedEDID.serial;
+    output->parsedEDID  = parsedEDID;
     output->description = std::format("{} {} {} ({})", make, model, serial, szName);
     output->needsFrame  = true;
 

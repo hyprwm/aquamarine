@@ -124,6 +124,33 @@ namespace Aquamarine {
             AQ_SCHEDULE_ANIMATION_DAMAGE,
         };
 
+        struct HDRMetadata {
+            bool                  supported = false;
+            double                desiredContentMinLuminance;
+            std::optional<double> desiredContentMaxLuminance;
+            std::optional<double> desiredMaxFrameAverageLuminance;
+            bool                  supportsPQ;
+            bool                  supportsBT2020;
+        };
+
+        struct xy {
+            double x = 0;
+            double y = 0;
+        };
+
+        struct ChromaticityCoords {
+            xy red;
+            xy green;
+            xy blue;
+            xy white;
+        };
+
+        struct ParsedEDID {
+            std::string                       make, serial, model;
+            std::optional<HDRMetadata>        hdrMetadata;
+            std::optional<ChromaticityCoords> chromaticityCoords;
+        };
+
         virtual bool                                                      commit()           = 0;
         virtual bool                                                      test()             = 0;
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend()       = 0;
@@ -138,6 +165,7 @@ namespace Aquamarine {
         virtual bool                                                      destroy(); // not all backends allow this!!!
 
         std::string                                                       name, description, make, model, serial;
+        ParsedEDID                                                        parsedEDID;
         Hyprutils::Math::Vector2D                                         physicalSize;
         bool                                                              enabled    = false;
         bool                                                              nonDesktop = false;
