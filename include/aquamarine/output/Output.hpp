@@ -11,6 +11,7 @@
 #include "../allocator/Swapchain.hpp"
 #include "../buffer/Buffer.hpp"
 #include "../backend/Misc.hpp"
+#include "aquamarine/backend/DRM.hpp"
 
 namespace Aquamarine {
 
@@ -133,6 +134,7 @@ namespace Aquamarine {
         virtual bool                                                      destroy(); // not all backends allow this!!!
 
         std::string                                                       name, description, make, model, serial;
+        HDRMetadata                                                       hdrMetadata;
         Hyprutils::Math::Vector2D                                         physicalSize;
         bool                                                              enabled    = false;
         bool                                                              nonDesktop = false;

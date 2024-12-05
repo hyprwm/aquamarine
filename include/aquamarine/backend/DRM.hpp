@@ -261,6 +261,20 @@ namespace Aquamarine {
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
     };
 
+    struct HDRMetadata {
+        bool                  supported = false;
+        double                desiredContentMinLuminance;
+        std::optional<double> desiredContentMaxLuminance;
+        std::optional<double> desiredMaxFrameAverageLuminance;
+        bool                  supportsPQ;
+        bool                  supportsBT2020;
+    };
+
+    struct ParsedEDID {
+        std::string make, serial, model;
+        HDRMetadata hdrMetadata = {};
+    };
+
     struct SDRMConnector {
         ~SDRMConnector();
 
@@ -269,7 +283,7 @@ namespace Aquamarine {
         void                                           disconnect();
         Hyprutils::Memory::CSharedPointer<SDRMCRTC>    getCurrentCRTC(const drmModeConnector* connector);
         drmModeModeInfo*                               getCurrentMode();
-        void                                           parseEDID(std::vector<uint8_t> data);
+        ParsedEDID                                     parseEDID(std::vector<uint8_t> data);
         bool                                           commitState(SDRMConnectorCommitData& data);
         void                                           applyCommit(const SDRMConnectorCommitData& data);
         void                                           rollbackCommit(const SDRMConnectorCommitData& data);
@@ -287,6 +301,7 @@ namespace Aquamarine {
         int32_t                                        refresh       = 0;
         uint32_t                                       possibleCrtcs = 0;
         std::string                                    make, serial, model;
+        HDRMetadata                                    hdrMetadata;
         bool                                           canDoVrr = false;
 
         bool                                           cursorEnabled = false;

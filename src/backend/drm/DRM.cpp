@@ -19,6 +19,7 @@ extern "C" {
 #include <libudev.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <libdisplay-info/cta.h>
 #include <libdisplay-info/cvt.h>
 #include <libdisplay-info/info.h>
 #include <libdisplay-info/edid.h>
@@ -1149,11 +1150,12 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     return modeInfo;
 }
 
-void Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
-    auto info = di_info_parse_edid(data.data(), data.size());
+ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
+    auto       info   = di_info_parse_edid(data.data(), data.size());
+    ParsedEDID parsed = {};
     if (!info) {
         backend->backend->log(AQ_LOG_ERROR, "drm: failed to parse edid");
-        return;
+        return parsed;
     }
 
     auto edid       = di_info_get_edid(info);
@@ -1170,7 +1172,48 @@ void Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
     model  = mod ? mod : "";
     serial = ser ? ser : "";
 
+    parsed.make   = make;
+    parsed.model  = model;
+    parsed.serial = serial;
+
+    // copied from kwin
+    const di_edid_cta*                      cta                 = nullptr;
+    const di_edid_ext* const*               exts                = di_edid_get_extensions(edid);
+    const di_cta_hdr_static_metadata_block* hdr_static_metadata = nullptr;
+    const di_cta_colorimetry_block*         colorimetry         = nullptr;
+    for (; *exts != nullptr; exts++) {
+        if (!cta && (cta = di_edid_ext_get_cta(*exts))) {
+            continue;
+        }
+    }
+    if (cta) {
+        const di_cta_data_block* const* blocks = di_edid_cta_get_data_blocks(cta);
+        for (; *blocks != nullptr; blocks++) {
+            if (!hdr_static_metadata && (hdr_static_metadata = di_cta_data_block_get_hdr_static_metadata(*blocks))) {
+                continue;
+            }
+            if (!colorimetry && (colorimetry = di_cta_data_block_get_colorimetry(*blocks))) {
+                continue;
+            }
+        }
+        if (hdr_static_metadata) {
+            hdrMetadata = parsed.hdrMetadata = HDRMetadata{
+                .supported                  = true,
+                .desiredContentMinLuminance = hdr_static_metadata->desired_content_min_luminance,
+                .desiredContentMaxLuminance =
+                    hdr_static_metadata->desired_content_max_luminance > 0 ? std::make_optional(hdr_static_metadata->desired_content_max_luminance) : std::nullopt,
+                .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance > 0 ?
+                    std::make_optional(hdr_static_metadata->desired_content_max_frame_avg_luminance) :
+                    std::nullopt,
+                .supportsPQ                      = hdr_static_metadata->eotfs->pq,
+                .supportsBT2020                  = colorimetry && colorimetry->bt2020_rgb,
+            };
+        }
+    }
+
     di_info_destroy(info);
+
+    return parsed;
 }
 
 void Aquamarine::SDRMConnector::recheckCRTCProps() {
@@ -1277,16 +1320,17 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     uint8_t*             edidData = (uint8_t*)getDRMPropBlob(backend->gpu->fd, id, props.edid, &edidLen);
 
     std::vector<uint8_t> edid{edidData, edidData + edidLen};
-    parseEDID(edid);
+    auto                 parsedEDID = parseEDID(edid);
 
     free(edidData);
     edid = {};
 
     // TODO: subconnectors
 
-    output->make        = make;
-    output->model       = model;
-    output->serial      = serial;
+    output->make        = parsedEDID.make;
+    output->model       = parsedEDID.model;
+    output->serial      = parsedEDID.serial;
+    output->hdrMetadata = parsedEDID.hdrMetadata;
     output->description = std::format("{} {} {} ({})", make, model, serial, szName);
     output->needsFrame  = true;
 
