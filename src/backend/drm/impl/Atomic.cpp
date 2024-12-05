@@ -1,5 +1,6 @@
 #include <aquamarine/backend/drm/Atomic.hpp>
 #include <cstring>
+#include <drm_mode.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <sys/mman.h>
@@ -103,6 +104,12 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
+        if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
+            add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
+
+        if (connector->props.hdr_output_metadata && data.atomic.hdrd)
+            add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrBlob);
+
         if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
             add(connector->crtc->id, connector->crtc->props.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
@@ -292,6 +299,18 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                 data.atomic.ctmBlob = 0;
             } else
                 data.atomic.ctmd = true;
+        }
+    }
+
+    if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_HDR) && data.hdrMetadata.has_value()) {
+        if (!connector->props.hdr_output_metadata)
+            connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit hdr metadata: no HDR_OUTPUT_METADATA prop support");
+        else {
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
+                connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a hdr metadata blob");
+                data.atomic.hdrBlob = 0;
+            } else
+                data.atomic.hdrd = true;
         }
     }
 

@@ -11,7 +11,6 @@
 #include "../allocator/Swapchain.hpp"
 #include "../buffer/Buffer.hpp"
 #include "../backend/Misc.hpp"
-#include "aquamarine/backend/DRM.hpp"
 
 namespace Aquamarine {
 
@@ -54,6 +53,7 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE  = (1 << 8),
             AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE = (1 << 9),
             AQ_OUTPUT_STATE_CTM                = (1 << 10),
+            AQ_OUTPUT_STATE_HDR                = (1 << 11),
         };
 
         struct SInternalState {
@@ -71,6 +71,8 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
             int32_t                                        explicitInFence = -1, explicitOutFence = -1;
             Hyprutils::Math::Mat3x3                        ctm;
+            bool                                           wideColorGamut = false;
+            hdr_output_metadata                            hdrMetadata;
         };
 
         const SInternalState& state();
@@ -89,6 +91,8 @@ namespace Aquamarine {
         void                  enableExplicitOutFenceForNextCommit();
         void                  resetExplicitFences();
         void                  setCTM(const Hyprutils::Math::Mat3x3& ctm);
+        void                  setWideColorGamut(bool wcg);
+        void                  setHDRMetadata(hdr_output_metadata& metadata);
 
       private:
         SInternalState internalState;
@@ -134,7 +138,6 @@ namespace Aquamarine {
         virtual bool                                                      destroy(); // not all backends allow this!!!
 
         std::string                                                       name, description, make, model, serial;
-        HDRMetadata                                                       hdrMetadata;
         Hyprutils::Math::Vector2D                                         physicalSize;
         bool                                                              enabled    = false;
         bool                                                              nonDesktop = false;

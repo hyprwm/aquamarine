@@ -1177,6 +1177,17 @@ ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
     parsed.serial = serial;
 
     // copied from kwin
+    // const auto chromaticity = di_edid_get_chromaticity_coords(edid);
+    // if (chromaticity) {
+    //     m_colorimetry = Colorimetry{
+    //         xy{chromaticity->red_x, chromaticity->red_y},
+    //         xy{chromaticity->green_x, chromaticity->green_y},
+    //         xy{chromaticity->blue_x, chromaticity->blue_y},
+    //         xy{chromaticity->white_x, chromaticity->white_y},
+    //     };
+    // } else {
+    //     m_colorimetry.reset();
+    // }
     const di_edid_cta*                      cta                 = nullptr;
     const di_edid_ext* const*               exts                = di_edid_get_extensions(edid);
     const di_cta_hdr_static_metadata_block* hdr_static_metadata = nullptr;
@@ -1330,7 +1341,6 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     output->make        = parsedEDID.make;
     output->model       = parsedEDID.model;
     output->serial      = parsedEDID.serial;
-    output->hdrMetadata = parsedEDID.hdrMetadata;
     output->description = std::format("{} {} {} ({})", make, model, serial, szName);
     output->needsFrame  = true;
 
@@ -1640,6 +1650,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM)
         data.ctm = STATE.ctm;
+
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
+        data.hdrMetadata = STATE.hdrMetadata;
 
     data.blocking = BLOCKING || formatMismatch;
     data.modeset  = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;

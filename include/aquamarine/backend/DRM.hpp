@@ -4,6 +4,7 @@
 #include "../allocator/Swapchain.hpp"
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
+#include <drm_mode.h>
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
@@ -247,15 +248,18 @@ namespace Aquamarine {
         bool                                      test     = false;
         drmModeModeInfo                           modeInfo;
         std::optional<Hyprutils::Math::Mat3x3>    ctm;
+        std::optional<hdr_output_metadata>        hdrMetadata;
 
         struct {
             uint32_t gammaLut = 0;
             uint32_t fbDamage = 0;
             uint32_t modeBlob = 0;
             uint32_t ctmBlob  = 0;
+            uint32_t hdrBlob  = 0;
             bool     blobbed  = false;
             bool     gammad   = false;
             bool     ctmd     = false;
+            bool     hdrd     = false;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
