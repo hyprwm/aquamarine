@@ -18,8 +18,6 @@ namespace Aquamarine {
         BUFFER_TYPE_MISC,
     };
 
-    class CWLBufferResource;
-
     struct SDMABUFAttrs {
         bool                      success = false;
         Hyprutils::Math::Vector2D size;
