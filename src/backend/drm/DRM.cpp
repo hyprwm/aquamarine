@@ -1150,9 +1150,9 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     return modeInfo;
 }
 
-IOutput::ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
-    auto                info   = di_info_parse_edid(data.data(), data.size());
-    IOutput::ParsedEDID parsed = {};
+IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
+    auto                 info   = di_info_parse_edid(data.data(), data.size());
+    IOutput::SParsedEDID parsed = {};
     if (!info) {
         backend->backend->log(AQ_LOG_ERROR, "drm: failed to parse edid");
         return parsed;
@@ -1176,50 +1176,39 @@ IOutput::ParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> da
     parsed.model  = model;
     parsed.serial = serial;
 
-    // copied from kwin
     const auto chromaticity = di_edid_get_chromaticity_coords(edid);
     if (chromaticity) {
-        parsed.chromaticityCoords = IOutput::ChromaticityCoords{
+        parsed.chromaticityCoords = IOutput::SChromaticityCoords{
             IOutput::xy{chromaticity->red_x, chromaticity->red_y},
             IOutput::xy{chromaticity->green_x, chromaticity->green_y},
             IOutput::xy{chromaticity->blue_x, chromaticity->blue_y},
             IOutput::xy{chromaticity->white_x, chromaticity->white_y},
         };
-    } else {
-        parsed.chromaticityCoords.reset();
     }
-    const di_edid_cta*                      cta                 = nullptr;
-    const di_edid_ext* const*               exts                = di_edid_get_extensions(edid);
-    const di_cta_hdr_static_metadata_block* hdr_static_metadata = nullptr;
-    const di_cta_colorimetry_block*         colorimetry         = nullptr;
+
+    auto exts = di_edid_get_extensions(edid);
     for (; *exts != nullptr; exts++) {
-        if (!cta && (cta = di_edid_ext_get_cta(*exts))) {
-            continue;
-        }
-    }
-    if (cta) {
-        const di_cta_data_block* const* blocks = di_edid_cta_get_data_blocks(cta);
-        for (; *blocks != nullptr; blocks++) {
-            if (!hdr_static_metadata && (hdr_static_metadata = di_cta_data_block_get_hdr_static_metadata(*blocks))) {
-                continue;
+        const auto cta = di_edid_ext_get_cta(*exts);
+        if (cta) {
+            const di_cta_hdr_static_metadata_block* hdr_static_metadata = nullptr;
+            const di_cta_colorimetry_block*         colorimetry         = nullptr;
+            auto                                    blocks              = di_edid_cta_get_data_blocks(cta);
+            for (; *blocks != nullptr; blocks++) {
+                if (!hdr_static_metadata && (hdr_static_metadata = di_cta_data_block_get_hdr_static_metadata(*blocks))) {
+                    parsed.hdrMetadata = IOutput::SHDRMetadata{
+                        .desiredContentMaxLuminance      = hdr_static_metadata->desired_content_max_luminance,
+                        .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance,
+                        .desiredContentMinLuminance      = hdr_static_metadata->desired_content_min_luminance,
+                        .supportsPQ                      = hdr_static_metadata->eotfs->pq,
+                    };
+                    continue;
+                }
+                if (!colorimetry && (colorimetry = di_cta_data_block_get_colorimetry(*blocks))) {
+                    parsed.supportsBT2020 = colorimetry->bt2020_rgb;
+                    continue;
+                }
             }
-            if (!colorimetry && (colorimetry = di_cta_data_block_get_colorimetry(*blocks))) {
-                continue;
-            }
-        }
-        if (hdr_static_metadata) {
-            parsed.hdrMetadata = IOutput::HDRMetadata{
-                .desiredContentMinLuminance = hdr_static_metadata->desired_content_min_luminance,
-                .desiredContentMaxLuminance =
-                    hdr_static_metadata->desired_content_max_luminance > 0 ? std::make_optional(hdr_static_metadata->desired_content_max_luminance) : std::nullopt,
-                .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance > 0 ?
-                    std::make_optional(hdr_static_metadata->desired_content_max_frame_avg_luminance) :
-                    std::nullopt,
-                .supportsPQ                      = hdr_static_metadata->eotfs->pq,
-                .supportsBT2020                  = colorimetry && colorimetry->bt2020_rgb,
-            };
-        } else {
-            parsed.hdrMetadata.reset();
+            break;
         }
     }
 

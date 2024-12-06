@@ -4,7 +4,6 @@
 #include "../allocator/Swapchain.hpp"
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
-#include <drm_mode.h>
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
@@ -273,7 +272,7 @@ namespace Aquamarine {
         void                                           disconnect();
         Hyprutils::Memory::CSharedPointer<SDRMCRTC>    getCurrentCRTC(const drmModeConnector* connector);
         drmModeModeInfo*                               getCurrentMode();
-        IOutput::ParsedEDID                            parseEDID(std::vector<uint8_t> data);
+        IOutput::SParsedEDID                           parseEDID(std::vector<uint8_t> data);
         bool                                           commitState(SDRMConnectorCommitData& data);
         void                                           applyCommit(const SDRMConnectorCommitData& data);
         void                                           rollbackCommit(const SDRMConnectorCommitData& data);

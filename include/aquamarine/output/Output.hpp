@@ -124,13 +124,11 @@ namespace Aquamarine {
             AQ_SCHEDULE_ANIMATION_DAMAGE,
         };
 
-        struct HDRMetadata {
-            bool                  supported = false;
-            double                desiredContentMinLuminance;
-            std::optional<double> desiredContentMaxLuminance;
-            std::optional<double> desiredMaxFrameAverageLuminance;
-            bool                  supportsPQ;
-            bool                  supportsBT2020;
+        struct SHDRMetadata {
+            float desiredContentMaxLuminance      = 0;
+            float desiredMaxFrameAverageLuminance = 0;
+            float desiredContentMinLuminance      = 0;
+            bool  supportsPQ                      = false;
         };
 
         struct xy {
@@ -138,17 +136,18 @@ namespace Aquamarine {
             double y = 0;
         };
 
-        struct ChromaticityCoords {
+        struct SChromaticityCoords {
             xy red;
             xy green;
             xy blue;
             xy white;
         };
 
-        struct ParsedEDID {
-            std::string                       make, serial, model;
-            std::optional<HDRMetadata>        hdrMetadata;
-            std::optional<ChromaticityCoords> chromaticityCoords;
+        struct SParsedEDID {
+            std::string                        make, serial, model;
+            std::optional<SHDRMetadata>        hdrMetadata;
+            std::optional<SChromaticityCoords> chromaticityCoords;
+            bool                               supportsBT2020 = false;
         };
 
         virtual bool                                                      commit()           = 0;
@@ -165,7 +164,7 @@ namespace Aquamarine {
         virtual bool                                                      destroy(); // not all backends allow this!!!
 
         std::string                                                       name, description, make, model, serial;
-        ParsedEDID                                                        parsedEDID;
+        SParsedEDID                                                       parsedEDID;
         Hyprutils::Math::Vector2D                                         physicalSize;
         bool                                                              enabled    = false;
         bool                                                              nonDesktop = false;

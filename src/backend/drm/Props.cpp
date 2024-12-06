@@ -38,7 +38,9 @@ static const struct prop_info connector_info[] = {
 
 static const struct prop_info colorspace_info[] = {
 #define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorColorspace, name) / sizeof(uint32_t))
-    {"BT2020_RGB", INDEX(BT2020_RGB)}, {"BT2020_YCC", INDEX(BT2020_YCC)}, {"Default", INDEX(Default)}
+    {"BT2020_RGB", INDEX(BT2020_RGB)},
+    {"BT2020_YCC", INDEX(BT2020_YCC)},
+    {"Default", INDEX(Default)},
 #undef INDEX
 };
 
