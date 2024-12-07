@@ -375,9 +375,10 @@ namespace Aquamarine {
         bool initMgpu();
         bool grabFormats();
         bool shouldBlit();
-        void scanConnectors(bool allowConnect = true);
+        void scanConnectors();
         void scanLeases();
         void restoreAfterVT();
+        void recheckOutputs();
         void recheckCRTCs();
         void buildGlFormats(const std::vector<SGLFormat>& fmts);
 
