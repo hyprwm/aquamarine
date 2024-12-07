@@ -687,8 +687,10 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
             auto drmConn = drmModeGetConnector(gpu->fd, conn->id);
 
             // ??? was valid 5 sec ago...
-            if (!drmConn)
+            if (!drmConn) {
+                backend->log(AQ_LOG_ERROR, std::format("drm: Connector {} couldn't be connected, drm connector id is no longer valid??", conn->szName));
                 continue;
+            }
 
             conn->connect(drmConn);
             drmModeFreeConnector(drmConn);
