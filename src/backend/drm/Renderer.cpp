@@ -809,11 +809,6 @@ bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
         if (fmt.modifier != attrs.modifier)
             continue;
 
-        if (fmt.external) {
-            backend->log(AQ_LOG_ERROR, "EGL (verifyDestinationDMABUF): FAIL, format is external-only");
-            return false;
-        }
-
         return true;
     }
 
