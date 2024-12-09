@@ -103,12 +103,14 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         return;
     }
 
+    bool foundFormat = false;
     // check if we can use modifiers. If the requested support has any explicit modifier
     // supported by the primary backend, we can.
     for (auto const& f : FORMATS) {
         if (f.drmFormat != attrs.format)
             continue;
 
+        foundFormat = true;
         for (auto const& m : f.modifiers) {
             if (m == DRM_FORMAT_MOD_INVALID)
                 continue;
@@ -134,15 +136,15 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         }
     }
 
+    if (!foundFormat) {
+        allocator->backend->log(AQ_LOG_ERROR, std::format("GBM: Failed to allocate a GBM buffer: format {} isn't supported by primary backend", fourccToName(attrs.format)));
+        return;
+    }
+
     // FIXME: Nvidia cannot render to linear buffers. What do?
     if (MULTIGPU) {
         allocator->backend->log(AQ_LOG_DEBUG, "GBM: Buffer is marked as multigpu, forcing linear");
         explicitModifiers = {DRM_FORMAT_MOD_LINEAR};
-    }
-
-    if (explicitModifiers.empty()) {
-        // fall back to using a linear buffer.
-        explicitModifiers.push_back(DRM_FORMAT_MOD_LINEAR);
     }
 
     uint32_t flags = GBM_BO_USE_RENDERING;

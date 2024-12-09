@@ -527,7 +527,7 @@ void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts)
     std::vector<SDRMFormat> result;
 
     for (auto const& fmt : fmts) {
-        if (fmt.external)
+        if (fmt.external && fmt.modifier != DRM_FORMAT_MOD_INVALID)
             continue;
 
         if (auto it = std::find_if(result.begin(), result.end(), [fmt](const auto& e) { return fmt.drmFormat == e.drmFormat; }); it != result.end()) {
