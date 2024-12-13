@@ -123,7 +123,7 @@ void Aquamarine::COutputState::setWideColorGamut(bool wcg) {
     internalState.wideColorGamut = wcg;
 }
 
-void Aquamarine::COutputState::setHDRMetadata(hdr_output_metadata& metadata) {
+void Aquamarine::COutputState::setHDRMetadata(const hdr_output_metadata& metadata) {
     internalState.hdrMetadata = metadata;
     internalState.committed |= AQ_OUTPUT_STATE_HDR;
 }

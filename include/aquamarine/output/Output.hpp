@@ -92,7 +92,7 @@ namespace Aquamarine {
         void                  resetExplicitFences();
         void                  setCTM(const Hyprutils::Math::Mat3x3& ctm);
         void                  setWideColorGamut(bool wcg);
-        void                  setHDRMetadata(hdr_output_metadata& metadata);
+        void                  setHDRMetadata(const hdr_output_metadata& metadata);
 
       private:
         SInternalState internalState;
