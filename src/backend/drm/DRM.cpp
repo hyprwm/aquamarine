@@ -4,6 +4,8 @@
 #include <aquamarine/backend/drm/Atomic.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 #include <aquamarine/allocator/DRMDumb.hpp>
+#include <cstdint>
+#include <format>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
@@ -1168,7 +1170,17 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     return modeInfo;
 }
 
+std::string vectorTostring(const std::vector<uint8_t>& vec) {
+    std::stringstream result;
+    for (const auto& v : vec) {
+        result << std::setfill('0') << std::setw(sizeof(v) * 2) << std::hex << +v;
+        result << " ";
+    }
+    return result.str();
+}
+
 IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
+    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: parsing {} bytes: {}", data.size(), vectorTostring(data))));
     auto                 info   = di_info_parse_edid(data.data(), data.size());
     IOutput::SParsedEDID parsed = {};
     if (!info) {
@@ -1202,17 +1214,29 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
             IOutput::xy{chromaticity->blue_x, chromaticity->blue_y},
             IOutput::xy{chromaticity->white_x, chromaticity->white_y},
         };
+        TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                    std::format("EDID: chromaticity coords {},{} {},{} {},{} {},{}", parsed.chromaticityCoords->red.x, parsed.chromaticityCoords->red.y,
+                                                parsed.chromaticityCoords->green.x, parsed.chromaticityCoords->green.y, parsed.chromaticityCoords->blue.x,
+                                                parsed.chromaticityCoords->blue.y, parsed.chromaticityCoords->white.y, parsed.chromaticityCoords->white.y)));
     }
 
     auto exts = di_edid_get_extensions(edid);
+
     for (; *exts != nullptr; exts++) {
+        auto tag = di_edid_ext_get_tag(*exts);
+        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: checking ext {}", (uint32_t)tag)));
+        if (tag == DI_EDID_EXT_DISPLAYID)
+            backend->backend->log(AQ_LOG_WARNING, "FIXME: support displayid blocks");
+
         const auto cta = di_edid_ext_get_cta(*exts);
         if (cta) {
+            TRACE(backend->backend->log(AQ_LOG_TRACE, "EDID: found CTA"));
             const di_cta_hdr_static_metadata_block* hdr_static_metadata = nullptr;
             const di_cta_colorimetry_block*         colorimetry         = nullptr;
             auto                                    blocks              = di_edid_cta_get_data_blocks(cta);
             for (; *blocks != nullptr; blocks++) {
                 if (!hdr_static_metadata && (hdr_static_metadata = di_cta_data_block_get_hdr_static_metadata(*blocks))) {
+                    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: found HDR {}", hdr_static_metadata->eotfs->pq)));
                     parsed.hdrMetadata = IOutput::SHDRMetadata{
                         .desiredContentMaxLuminance      = hdr_static_metadata->desired_content_max_luminance,
                         .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance,
@@ -1222,6 +1246,7 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
                     continue;
                 }
                 if (!colorimetry && (colorimetry = di_cta_data_block_get_colorimetry(*blocks))) {
+                    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: found colorimetry {}", colorimetry->bt2020_rgb)));
                     parsed.supportsBT2020 = colorimetry->bt2020_rgb;
                     continue;
                 }
@@ -1231,6 +1256,8 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
     }
 
     di_info_destroy(info);
+
+    TRACE(backend->backend->log(AQ_LOG_TRACE, "EDID: parsed"));
 
     return parsed;
 }
