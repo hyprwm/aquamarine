@@ -52,7 +52,7 @@
         inputs.hyprwayland-scanner.overlays.default
         (final: prev: {
           aquamarine = final.callPackage ./nix/default.nix {
-            stdenv = final.gcc13Stdenv;
+            stdenv = final.gcc14Stdenv;
             version = version + "+date=" + (mkDate (self.lastModifiedDate or "19700101")) + "_" + (self.shortRev or "dirty");
           };
           aquamarine-with-tests = final.aquamarine.override {doCheck = true;};
