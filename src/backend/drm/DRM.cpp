@@ -50,7 +50,8 @@ static udev_enumerate* enumDRMCards(udev* udev) {
         return nullptr;
 
     udev_enumerate_add_match_subsystem(enumerate, "drm");
-    udev_enumerate_add_match_sysname(enumerate, DRM_PRIMARY_MINOR_NAME "[0-9]");
+    udev_enumerate_add_match_property(enumerate, "DEVTYPE", "drm_minor");
+    udev_enumerate_add_match_sysname(enumerate, DRM_PRIMARY_MINOR_NAME "[0-9]*");
 
     if (udev_enumerate_scan_devices(enumerate)) {
         udev_enumerate_unref(enumerate);
