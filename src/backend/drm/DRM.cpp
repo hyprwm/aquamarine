@@ -1419,11 +1419,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
-    if (!backend->rendererState.renderer) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: No renderer attached to backend");
-        return false;
-    }
-
     const auto&    STATE     = state->state();
     const uint32_t COMMITTED = STATE.committed;
 
@@ -1522,6 +1517,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         SP<CDRMFB> drmFB;
 
         if (backend->shouldBlit()) {
+            if (!backend->rendererState.renderer) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: No renderer attached to backend when required for blitting");
+                return false;
+            }
+
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires blit, blitting"));
 
             if (!mgpu.swapchain) {
