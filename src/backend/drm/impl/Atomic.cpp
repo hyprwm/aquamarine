@@ -314,8 +314,8 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                 data.atomic.hdrBlob = 0;
             } else {
                 data.atomic.hdrd = true;
-                connector->backend->backend->log(
-                    AQ_LOG_ERROR,
+                TRACE(connector->backend->backend->log(
+                    AQ_LOG_TRACE,
                     std::format("atomic drm: setting hdr min {}, max {}, avg {}, content {}, primaries {},{} {},{} {},{} {},{}",
                                 data.hdrMetadata->hdmi_metadata_type1.min_display_mastering_luminance, data.hdrMetadata->hdmi_metadata_type1.max_display_mastering_luminance,
                                 data.hdrMetadata->hdmi_metadata_type1.max_fall, data.hdrMetadata->hdmi_metadata_type1.max_cll,
@@ -323,7 +323,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                                 data.hdrMetadata->hdmi_metadata_type1.display_primaries[1].x, data.hdrMetadata->hdmi_metadata_type1.display_primaries[1].y,
                                 data.hdrMetadata->hdmi_metadata_type1.display_primaries[2].x, data.hdrMetadata->hdmi_metadata_type1.display_primaries[2].y,
                                 data.hdrMetadata->hdmi_metadata_type1.display_primaries[0].x, data.hdrMetadata->hdmi_metadata_type1.white_point.x,
-                                data.hdrMetadata->hdmi_metadata_type1.white_point.y));
+                                data.hdrMetadata->hdmi_metadata_type1.white_point.y)));
             }
         }
     }
