@@ -53,6 +53,7 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE  = (1 << 8),
             AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE = (1 << 9),
             AQ_OUTPUT_STATE_CTM                = (1 << 10),
+            AQ_OUTPUT_STATE_HDR                = (1 << 11),
         };
 
         struct SInternalState {
@@ -70,6 +71,8 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
             int32_t                                        explicitInFence = -1, explicitOutFence = -1;
             Hyprutils::Math::Mat3x3                        ctm;
+            bool                                           wideColorGamut = false;
+            hdr_output_metadata                            hdrMetadata;
         };
 
         const SInternalState& state();
@@ -88,6 +91,8 @@ namespace Aquamarine {
         void                  enableExplicitOutFenceForNextCommit();
         void                  resetExplicitFences();
         void                  setCTM(const Hyprutils::Math::Mat3x3& ctm);
+        void                  setWideColorGamut(bool wcg);
+        void                  setHDRMetadata(const hdr_output_metadata& metadata);
 
       private:
         SInternalState internalState;
@@ -119,6 +124,32 @@ namespace Aquamarine {
             AQ_SCHEDULE_ANIMATION_DAMAGE,
         };
 
+        struct SHDRMetadata {
+            float desiredContentMaxLuminance      = 0;
+            float desiredMaxFrameAverageLuminance = 0;
+            float desiredContentMinLuminance      = 0;
+            bool  supportsPQ                      = false;
+        };
+
+        struct xy {
+            double x = 0;
+            double y = 0;
+        };
+
+        struct SChromaticityCoords {
+            xy red;
+            xy green;
+            xy blue;
+            xy white;
+        };
+
+        struct SParsedEDID {
+            std::string                        make, serial, model;
+            std::optional<SHDRMetadata>        hdrMetadata;
+            std::optional<SChromaticityCoords> chromaticityCoords;
+            bool                               supportsBT2020 = false;
+        };
+
         virtual bool                                                      commit()           = 0;
         virtual bool                                                      test()             = 0;
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend()       = 0;
@@ -133,6 +164,7 @@ namespace Aquamarine {
         virtual bool                                                      destroy(); // not all backends allow this!!!
 
         std::string                                                       name, description, make, model, serial;
+        SParsedEDID                                                       parsedEDID;
         Hyprutils::Math::Vector2D                                         physicalSize;
         bool                                                              enabled    = false;
         bool                                                              nonDesktop = false;
