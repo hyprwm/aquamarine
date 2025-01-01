@@ -30,7 +30,8 @@ bool Aquamarine::CSwapchain::reconfigure(const SSwapchainOptions& options_) {
         return true;
     }
 
-    if ((options_.format == options.format || options_.format == DRM_FORMAT_INVALID) && options_.size == options.size && options_.length == options.length)
+    if ((options_.format == options.format || options_.format == DRM_FORMAT_INVALID) && options_.size == options.size && options_.length == options.length &&
+        buffers.size() == options.length)
         return true; // no need to reconfigure
 
     if ((options_.format == options.format || options_.format == DRM_FORMAT_INVALID) && options_.size == options.size) {
@@ -70,7 +71,9 @@ SP<IBuffer> Aquamarine::CSwapchain::next(int* age) {
 }
 
 bool Aquamarine::CSwapchain::fullReconfigure(const SSwapchainOptions& options_) {
-    buffers.clear();
+    std::vector<Hyprutils::Memory::CSharedPointer<IBuffer>> bfs;
+    bfs.reserve(options_.length);
+
     for (size_t i = 0; i < options_.length; ++i) {
         auto buf = allocator->acquire(
             SAllocatorBufferParams{.size = options_.size, .format = options_.format, .scanout = options_.scanout, .cursor = options_.cursor, .multigpu = options_.multigpu},
@@ -79,8 +82,10 @@ bool Aquamarine::CSwapchain::fullReconfigure(const SSwapchainOptions& options_) 
             allocator->getBackend()->log(AQ_LOG_ERROR, "Swapchain: Failed acquiring a buffer");
             return false;
         }
-        buffers.emplace_back(buf);
+        bfs.emplace_back(buf);
     }
+
+    buffers = std::move(bfs);
 
     return true;
 }
