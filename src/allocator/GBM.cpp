@@ -138,6 +138,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
     if (!foundFormat) {
         allocator->backend->log(AQ_LOG_ERROR, std::format("GBM: Failed to allocate a GBM buffer: format {} isn't supported by primary backend", fourccToName(attrs.format)));
+        bo = nullptr;
         return;
     }
 
