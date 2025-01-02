@@ -53,7 +53,8 @@ static udev_enumerate* enumDRMCards(udev* udev) {
         return nullptr;
 
     udev_enumerate_add_match_subsystem(enumerate, "drm");
-    udev_enumerate_add_match_sysname(enumerate, DRM_PRIMARY_MINOR_NAME "[0-9]");
+    udev_enumerate_add_match_property(enumerate, "DEVTYPE", "drm_minor");
+    udev_enumerate_add_match_sysname(enumerate, DRM_PRIMARY_MINOR_NAME "[0-9]*");
 
     if (udev_enumerate_scan_devices(enumerate)) {
         udev_enumerate_unref(enumerate);
@@ -1497,11 +1498,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
-    if (!backend->rendererState.renderer) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: No renderer attached to backend");
-        return false;
-    }
-
     const auto&    STATE     = state->state();
     const uint32_t COMMITTED = STATE.committed;
 
@@ -1510,11 +1506,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             backend->backend->log(AQ_LOG_ERROR, "drm: No mode on enable commit");
             return false;
         }
-    }
-
-    if (STATE.drmFormat == DRM_FORMAT_INVALID) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: No format for output");
-        return false;
     }
 
     if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_FORMAT) {
@@ -1531,6 +1522,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Selected format is not supported by the primary KMS plane");
             return false;
         }
+    }
+
+    if (STATE.enabled && STATE.drmFormat == DRM_FORMAT_INVALID) {
+        backend->backend->log(AQ_LOG_ERROR, "drm: No format for output");
+        return false;
     }
 
     if (STATE.adaptiveSync && !connector->canDoVrr) {
@@ -1600,6 +1596,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         SP<CDRMFB> drmFB;
 
         if (backend->shouldBlit()) {
+            if (!backend->rendererState.renderer) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: No renderer attached to backend when required for blitting");
+                return false;
+            }
+
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires blit, blitting"));
 
             if (!mgpu.swapchain) {
