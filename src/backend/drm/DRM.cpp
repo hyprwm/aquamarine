@@ -1677,6 +1677,7 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
     if (!connector->crtc)
         return false;
 
+    state->internalState.committed |= COutputState::AQ_OUTPUT_STATE_CURSOR;
     if (!buffer)
         setCursorVisible(false);
     else {
@@ -1751,6 +1752,8 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
 void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord, bool skipSchedule) {
     cursorPos = coord;
     // cursorVisible = true;
+    state->internalState.committed |= COutputState::AQ_OUTPUT_STATE_CURSOR;
+
     backend->impl->moveCursor(connector, skipSchedule);
 }
 
