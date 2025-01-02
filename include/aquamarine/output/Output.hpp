@@ -54,6 +54,7 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE = (1 << 9),
             AQ_OUTPUT_STATE_CTM                = (1 << 10),
             AQ_OUTPUT_STATE_HDR                = (1 << 11),
+            AQ_OUTPUT_STATE_DEGAMMA_LUT        = (1 << 12),
         };
 
         struct SInternalState {
@@ -63,7 +64,8 @@ namespace Aquamarine {
             bool                                           enabled          = false;
             bool                                           adaptiveSync     = false;
             eOutputPresentationMode                        presentationMode = AQ_OUTPUT_PRESENTATION_VSYNC;
-            std::vector<uint16_t>                          gammaLut; // Gamma lut in the format [r,g,b]+
+            std::vector<uint16_t>                          gammaLut;   // Gamma lut in the format [r,g,b]+
+            std::vector<uint16_t>                          degammaLut; // Gamma lut in the format [r,g,b]+
             Hyprutils::Math::Vector2D                      lastModeSize;
             Hyprutils::Memory::CWeakPointer<SOutputMode>   mode;
             Hyprutils::Memory::CSharedPointer<SOutputMode> customMode;
@@ -83,6 +85,7 @@ namespace Aquamarine {
         void                  setAdaptiveSync(bool enabled);
         void                  setPresentationMode(eOutputPresentationMode mode);
         void                  setGammaLut(const std::vector<uint16_t>& lut);
+        void                  setDeGammaLut(const std::vector<uint16_t>& lut);
         void                  setMode(Hyprutils::Memory::CSharedPointer<SOutputMode> mode);
         void                  setCustomMode(Hyprutils::Memory::CSharedPointer<SOutputMode> mode);
         void                  setFormat(uint32_t drmFormat);
@@ -161,6 +164,7 @@ namespace Aquamarine {
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();              // -1, -1 means no set size, 0, 0 means error
         virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual size_t                                                    getGammaSize();
+        virtual size_t                                                    getDeGammaSize();
         virtual bool                                                      destroy(); // not all backends allow this!!!
 
         std::string                                                       name, description, make, model, serial;

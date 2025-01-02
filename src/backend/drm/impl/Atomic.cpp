@@ -1,4 +1,5 @@
 #include <aquamarine/backend/drm/Atomic.hpp>
+#include <cstdint>
 #include <cstring>
 #include <drm_mode.h>
 #include <xf86drm.h>
@@ -115,6 +116,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         if (connector->crtc->props.gamma_lut && data.atomic.gammad)
             add(connector->crtc->id, connector->crtc->props.gamma_lut, data.atomic.gammaLut);
+
+        if (connector->crtc->props.degamma_lut && data.atomic.degammad)
+            add(connector->crtc->id, connector->crtc->props.degamma_lut, data.atomic.degammaLut);
 
         if (connector->crtc->props.ctm && data.atomic.ctmd)
             add(connector->crtc->id, connector->crtc->props.ctm, data.atomic.ctmBlob);
@@ -253,29 +257,39 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         }
     }
 
-    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT) {
-        if (!connector->crtc->props.gamma_lut) // TODO: allow this with legacy gamma, perhaps.
+    static auto prepareGammaBlob = [connector](uint32_t prop, const std::vector<uint16_t>& gammaLut, uint32_t* blobId) -> bool {
+        if (!prop) // TODO: allow this with legacy gamma, perhaps.
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit gamma: no gamma_lut prop");
-        else if (STATE.gammaLut.empty()) {
-            data.atomic.gammaLut = 0;
-            data.atomic.gammad   = true;
+        else if (gammaLut.empty()) {
+            blobId = 0;
+            return true;
         } else {
             std::vector<drm_color_lut> lut;
-            lut.resize(STATE.gammaLut.size() / 3); // [r,g,b]+
+            lut.resize(gammaLut.size() / 3); // [r,g,b]+
 
             for (size_t i = 0; i < lut.size(); ++i) {
-                lut.at(i).red      = STATE.gammaLut.at(i * 3 + 0);
-                lut.at(i).green    = STATE.gammaLut.at(i * 3 + 1);
-                lut.at(i).blue     = STATE.gammaLut.at(i * 3 + 2);
+                lut.at(i).red      = gammaLut.at(i * 3 + 0);
+                lut.at(i).green    = gammaLut.at(i * 3 + 1);
+                lut.at(i).blue     = gammaLut.at(i * 3 + 2);
                 lut.at(i).reserved = 0;
             }
 
-            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, lut.data(), lut.size() * sizeof(drm_color_lut), &data.atomic.gammaLut)) {
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, lut.data(), lut.size() * sizeof(drm_color_lut), blobId)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a gamma blob");
-                data.atomic.gammaLut = 0;
+                *blobId = 0;
             } else
-                data.atomic.gammad = true;
+                return true;
         }
+
+        return false;
+    };
+
+    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT) {
+        data.atomic.gammad = prepareGammaBlob(connector->crtc->props.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut);
+    }
+
+    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT) {
+        data.atomic.degammad = prepareGammaBlob(connector->crtc->props.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
     }
 
     if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM) && data.ctm.has_value()) {

@@ -179,6 +179,8 @@ namespace Aquamarine {
                 uint32_t gamma_lut;
                 uint32_t gamma_lut_size;
                 uint32_t ctm;
+                uint32_t degamma_lut;
+                uint32_t degamma_lut_size;
 
                 // atomic-modesetting only
 
@@ -186,7 +188,7 @@ namespace Aquamarine {
                 uint32_t mode_id;
                 uint32_t out_fence_ptr;
             };
-            uint32_t props[7] = {0};
+            uint32_t props[9] = {0};
         };
         UDRMCRTCProps props;
     };
@@ -203,6 +205,7 @@ namespace Aquamarine {
         virtual void                                                      setCursorVisible(bool visible);
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
         virtual size_t                                                    getGammaSize();
+        virtual size_t                                                    getDeGammaSize();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
 
         int                                                               getConnectorID();
@@ -250,15 +253,17 @@ namespace Aquamarine {
         std::optional<hdr_output_metadata>        hdrMetadata;
 
         struct {
-            uint32_t gammaLut = 0;
-            uint32_t fbDamage = 0;
-            uint32_t modeBlob = 0;
-            uint32_t ctmBlob  = 0;
-            uint32_t hdrBlob  = 0;
-            bool     blobbed  = false;
-            bool     gammad   = false;
-            bool     ctmd     = false;
-            bool     hdrd     = false;
+            uint32_t gammaLut   = 0;
+            uint32_t degammaLut = 0;
+            uint32_t fbDamage   = 0;
+            uint32_t modeBlob   = 0;
+            uint32_t ctmBlob    = 0;
+            uint32_t hdrBlob    = 0;
+            bool     blobbed    = false;
+            bool     gammad     = false;
+            bool     degammad   = false;
+            bool     ctmd       = false;
+            bool     hdrd       = false;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);

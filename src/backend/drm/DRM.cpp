@@ -1868,6 +1868,21 @@ size_t Aquamarine::CDRMOutput::getGammaSize() {
     return size;
 }
 
+size_t Aquamarine::CDRMOutput::getDeGammaSize() {
+    if (!backend->atomic) {
+        backend->log(AQ_LOG_ERROR, "No support for gamma on the legacy iface");
+        return 0;
+    }
+
+    uint64_t size = 0;
+    if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.degamma_lut_size, &size)) {
+        backend->log(AQ_LOG_ERROR, "Couldn't get the degamma_size prop");
+        return 0;
+    }
+
+    return size;
+}
+
 std::vector<SDRMFormat> Aquamarine::CDRMOutput::getRenderFormats() {
     if (!connector->crtc || !connector->crtc->primary || connector->crtc->primary->formats.empty()) {
         backend->log(AQ_LOG_ERROR, "Can't get formats: no crtc");

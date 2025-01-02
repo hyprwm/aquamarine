@@ -39,6 +39,10 @@ size_t Aquamarine::IOutput::getGammaSize() {
     return 0;
 }
 
+size_t Aquamarine::IOutput::getDeGammaSize() {
+    return 0;
+}
+
 bool Aquamarine::IOutput::destroy() {
     return false;
 }
@@ -75,6 +79,11 @@ void Aquamarine::COutputState::setPresentationMode(eOutputPresentationMode mode)
 void Aquamarine::COutputState::setGammaLut(const std::vector<uint16_t>& lut) {
     internalState.gammaLut = lut;
     internalState.committed |= AQ_OUTPUT_STATE_GAMMA_LUT;
+}
+
+void Aquamarine::COutputState::setDeGammaLut(const std::vector<uint16_t>& lut) {
+    internalState.gammaLut = lut;
+    internalState.committed |= AQ_OUTPUT_STATE_DEGAMMA_LUT;
 }
 
 void Aquamarine::COutputState::setMode(Hyprutils::Memory::CSharedPointer<SOutputMode> mode) {
