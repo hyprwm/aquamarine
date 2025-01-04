@@ -1171,17 +1171,7 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     return modeInfo;
 }
 
-std::string vectorTostring(const std::vector<uint8_t>& vec) {
-    std::stringstream result;
-    for (const auto& v : vec) {
-        result << std::setfill('0') << std::setw(sizeof(v) * 2) << std::hex << +v;
-        result << " ";
-    }
-    return result.str();
-}
-
 IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
-    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: parsing {} bytes: {}", data.size(), vectorTostring(data))));
     auto                 info   = di_info_parse_edid(data.data(), data.size());
     IOutput::SParsedEDID parsed = {};
     if (!info) {

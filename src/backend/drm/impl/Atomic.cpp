@@ -257,7 +257,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         }
     }
 
-    static auto prepareGammaBlob = [connector](uint32_t prop, const std::vector<uint16_t>& gammaLut, uint32_t* blobId) -> bool {
+    auto prepareGammaBlob = [connector](uint32_t prop, const std::vector<uint16_t>& gammaLut, uint32_t* blobId) -> bool {
         if (!prop) // TODO: allow this with legacy gamma, perhaps.
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit gamma: no gamma_lut prop");
         else if (gammaLut.empty()) {
@@ -284,13 +284,11 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         return false;
     };
 
-    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT) {
+    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT)
         data.atomic.gammad = prepareGammaBlob(connector->crtc->props.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut);
-    }
 
-    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT) {
+    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT)
         data.atomic.degammad = prepareGammaBlob(connector->crtc->props.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
-    }
 
     if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM) && data.ctm.has_value()) {
         if (!connector->crtc->props.ctm)
