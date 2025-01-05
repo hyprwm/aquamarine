@@ -4,6 +4,8 @@
 #include <aquamarine/backend/drm/Atomic.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 #include <aquamarine/allocator/DRMDumb.hpp>
+#include <cstdint>
+#include <format>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
@@ -19,6 +21,7 @@ extern "C" {
 #include <libudev.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <libdisplay-info/cta.h>
 #include <libdisplay-info/cvt.h>
 #include <libdisplay-info/info.h>
 #include <libdisplay-info/edid.h>
@@ -1101,6 +1104,8 @@ bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
 
     if (!getDRMConnectorProps(backend->gpu->fd, id, &props))
         return false;
+    if (props.Colorspace)
+        getDRMConnectorColorspace(backend->gpu->fd, props.Colorspace, &colorspace);
 
     auto name = drmModeGetConnectorTypeName(connector->connector_type);
     if (!name)
@@ -1166,11 +1171,12 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     return modeInfo;
 }
 
-void Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
-    auto info = di_info_parse_edid(data.data(), data.size());
+IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
+    auto                 info   = di_info_parse_edid(data.data(), data.size());
+    IOutput::SParsedEDID parsed = {};
     if (!info) {
         backend->backend->log(AQ_LOG_ERROR, "drm: failed to parse edid");
-        return;
+        return parsed;
     }
 
     auto edid       = di_info_get_edid(info);
@@ -1187,7 +1193,64 @@ void Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> data) {
     model  = mod ? mod : "";
     serial = ser ? ser : "";
 
+    parsed.make   = make;
+    parsed.model  = model;
+    parsed.serial = serial;
+
+    const auto chromaticity = di_edid_get_chromaticity_coords(edid);
+    if (chromaticity) {
+        parsed.chromaticityCoords = IOutput::SChromaticityCoords{
+            IOutput::xy{chromaticity->red_x, chromaticity->red_y},
+            IOutput::xy{chromaticity->green_x, chromaticity->green_y},
+            IOutput::xy{chromaticity->blue_x, chromaticity->blue_y},
+            IOutput::xy{chromaticity->white_x, chromaticity->white_y},
+        };
+        TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                    std::format("EDID: chromaticity coords {},{} {},{} {},{} {},{}", parsed.chromaticityCoords->red.x, parsed.chromaticityCoords->red.y,
+                                                parsed.chromaticityCoords->green.x, parsed.chromaticityCoords->green.y, parsed.chromaticityCoords->blue.x,
+                                                parsed.chromaticityCoords->blue.y, parsed.chromaticityCoords->white.y, parsed.chromaticityCoords->white.y)));
+    }
+
+    auto exts = di_edid_get_extensions(edid);
+
+    for (; *exts != nullptr; exts++) {
+        auto tag = di_edid_ext_get_tag(*exts);
+        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: checking ext {}", (uint32_t)tag)));
+        if (tag == DI_EDID_EXT_DISPLAYID)
+            backend->backend->log(AQ_LOG_WARNING, "FIXME: support displayid blocks");
+
+        const auto cta = di_edid_ext_get_cta(*exts);
+        if (cta) {
+            TRACE(backend->backend->log(AQ_LOG_TRACE, "EDID: found CTA"));
+            const di_cta_hdr_static_metadata_block* hdr_static_metadata = nullptr;
+            const di_cta_colorimetry_block*         colorimetry         = nullptr;
+            auto                                    blocks              = di_edid_cta_get_data_blocks(cta);
+            for (; *blocks != nullptr; blocks++) {
+                if (!hdr_static_metadata && (hdr_static_metadata = di_cta_data_block_get_hdr_static_metadata(*blocks))) {
+                    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: found HDR {}", hdr_static_metadata->eotfs->pq)));
+                    parsed.hdrMetadata = IOutput::SHDRMetadata{
+                        .desiredContentMaxLuminance      = hdr_static_metadata->desired_content_max_luminance,
+                        .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance,
+                        .desiredContentMinLuminance      = hdr_static_metadata->desired_content_min_luminance,
+                        .supportsPQ                      = hdr_static_metadata->eotfs->pq,
+                    };
+                    continue;
+                }
+                if (!colorimetry && (colorimetry = di_cta_data_block_get_colorimetry(*blocks))) {
+                    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: found colorimetry {}", colorimetry->bt2020_rgb)));
+                    parsed.supportsBT2020 = colorimetry->bt2020_rgb;
+                    continue;
+                }
+            }
+            break;
+        }
+    }
+
     di_info_destroy(info);
+
+    TRACE(backend->backend->log(AQ_LOG_TRACE, "EDID: parsed"));
+
+    return parsed;
 }
 
 void Aquamarine::SDRMConnector::recheckCRTCProps() {
@@ -1207,6 +1270,11 @@ void Aquamarine::SDRMConnector::recheckCRTCProps() {
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit sync {}", output->supportsExplicit ? "supported" : "unsupported"));
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} CTM", szName, (crtc->props.ctm ? "supports" : "doesn't support")));
+
+    backend->backend->log(AQ_LOG_DEBUG,
+                          std::format("drm: connector {} crtc {} HDR ({})", szName, (props.hdr_output_metadata ? "supports" : "doesn't support"), props.hdr_output_metadata));
+
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} Colorspace ({})", szName, (props.Colorspace ? "supports" : "doesn't support"), props.Colorspace));
 }
 
 void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
@@ -1289,16 +1357,17 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     uint8_t*             edidData = (uint8_t*)getDRMPropBlob(backend->gpu->fd, id, props.edid, &edidLen);
 
     std::vector<uint8_t> edid{edidData, edidData + edidLen};
-    parseEDID(edid);
+    auto                 parsedEDID = parseEDID(edid);
 
     free(edidData);
     edid = {};
 
     // TODO: subconnectors
 
-    output->make        = make;
-    output->model       = model;
-    output->serial      = serial;
+    output->make        = parsedEDID.make;
+    output->model       = parsedEDID.model;
+    output->serial      = parsedEDID.serial;
+    output->parsedEDID  = parsedEDID;
     output->description = std::format("{} {} {} ({})", make, model, serial, szName);
     output->needsFrame  = true;
 
@@ -1609,6 +1678,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM)
         data.ctm = STATE.ctm;
 
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
+        data.hdrMetadata = STATE.hdrMetadata;
+
     data.blocking = BLOCKING || formatMismatch;
     data.modeset  = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;
     data.flags    = flags;
@@ -1784,6 +1856,21 @@ size_t Aquamarine::CDRMOutput::getGammaSize() {
     uint64_t size = 0;
     if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.gamma_lut_size, &size)) {
         backend->log(AQ_LOG_ERROR, "Couldn't get the gamma_size prop");
+        return 0;
+    }
+
+    return size;
+}
+
+size_t Aquamarine::CDRMOutput::getDeGammaSize() {
+    if (!backend->atomic) {
+        backend->log(AQ_LOG_ERROR, "No support for gamma on the legacy iface");
+        return 0;
+    }
+
+    uint64_t size = 0;
+    if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.degamma_lut_size, &size)) {
+        backend->log(AQ_LOG_ERROR, "Couldn't get the degamma_size prop");
         return 0;
     }
 

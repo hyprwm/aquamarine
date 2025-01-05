@@ -179,6 +179,8 @@ namespace Aquamarine {
                 uint32_t gamma_lut;
                 uint32_t gamma_lut_size;
                 uint32_t ctm;
+                uint32_t degamma_lut;
+                uint32_t degamma_lut_size;
 
                 // atomic-modesetting only
 
@@ -186,7 +188,7 @@ namespace Aquamarine {
                 uint32_t mode_id;
                 uint32_t out_fence_ptr;
             };
-            uint32_t props[7] = {0};
+            uint32_t props[9] = {0};
         };
         UDRMCRTCProps props;
     };
@@ -203,6 +205,7 @@ namespace Aquamarine {
         virtual void                                                      setCursorVisible(bool visible);
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
         virtual size_t                                                    getGammaSize();
+        virtual size_t                                                    getDeGammaSize();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
 
         int                                                               getConnectorID();
@@ -247,15 +250,20 @@ namespace Aquamarine {
         bool                                      test     = false;
         drmModeModeInfo                           modeInfo;
         std::optional<Hyprutils::Math::Mat3x3>    ctm;
+        std::optional<hdr_output_metadata>        hdrMetadata;
 
         struct {
-            uint32_t gammaLut = 0;
-            uint32_t fbDamage = 0;
-            uint32_t modeBlob = 0;
-            uint32_t ctmBlob  = 0;
-            bool     blobbed  = false;
-            bool     gammad   = false;
-            bool     ctmd     = false;
+            uint32_t gammaLut   = 0;
+            uint32_t degammaLut = 0;
+            uint32_t fbDamage   = 0;
+            uint32_t modeBlob   = 0;
+            uint32_t ctmBlob    = 0;
+            uint32_t hdrBlob    = 0;
+            bool     blobbed    = false;
+            bool     gammad     = false;
+            bool     degammad   = false;
+            bool     ctmd       = false;
+            bool     hdrd       = false;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
@@ -269,7 +277,7 @@ namespace Aquamarine {
         void                                           disconnect();
         Hyprutils::Memory::CSharedPointer<SDRMCRTC>    getCurrentCRTC(const drmModeConnector* connector);
         drmModeModeInfo*                               getCurrentMode();
-        void                                           parseEDID(std::vector<uint8_t> data);
+        IOutput::SParsedEDID                           parseEDID(std::vector<uint8_t> data);
         bool                                           commitState(SDRMConnectorCommitData& data);
         void                                           applyCommit(const SDRMConnectorCommitData& data);
         void                                           rollbackCommit(const SDRMConnectorCommitData& data);
@@ -315,17 +323,29 @@ namespace Aquamarine {
                 uint32_t vrr_capable;  // not guaranteed to exist
                 uint32_t subconnector; // not guaranteed to exist
                 uint32_t non_desktop;
-                uint32_t panel_orientation; // not guaranteed to exist
-                uint32_t content_type;      // not guaranteed to exist
-                uint32_t max_bpc;           // not guaranteed to exist
+                uint32_t panel_orientation;   // not guaranteed to exist
+                uint32_t content_type;        // not guaranteed to exist
+                uint32_t max_bpc;             // not guaranteed to exist
+                uint32_t Colorspace;          // not guaranteed to exist
+                uint32_t hdr_output_metadata; // not guaranteed to exist
 
                 // atomic-modesetting only
 
                 uint32_t crtc_id;
             };
-            uint32_t props[4] = {0};
+            uint32_t props[13] = {0};
         };
         UDRMConnectorProps props;
+
+        union UDRMConnectorColorspace {
+            struct {
+                uint32_t Default;
+                uint32_t BT2020_RGB;
+                uint32_t BT2020_YCC;
+            };
+            uint32_t props[3] = {0};
+        };
+        UDRMConnectorColorspace colorspace;
     };
 
     class IDRMImplementation {
