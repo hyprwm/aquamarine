@@ -1,5 +1,7 @@
 #include <aquamarine/backend/drm/Atomic.hpp>
+#include <cstdint>
 #include <cstring>
+#include <drm_mode.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <sys/mman.h>
@@ -103,11 +105,20 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
+        if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
+            add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
+
+        if (connector->props.hdr_output_metadata)
+            add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrd ? data.atomic.hdrBlob : 0);
+
         if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
             add(connector->crtc->id, connector->crtc->props.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
         if (connector->crtc->props.gamma_lut && data.atomic.gammad)
             add(connector->crtc->id, connector->crtc->props.gamma_lut, data.atomic.gammaLut);
+
+        if (connector->crtc->props.degamma_lut && data.atomic.degammad)
+            add(connector->crtc->id, connector->crtc->props.degamma_lut, data.atomic.degammaLut);
 
         if (connector->crtc->props.ctm && data.atomic.ctmd)
             add(connector->crtc->id, connector->crtc->props.ctm, data.atomic.ctmBlob);
@@ -246,30 +257,38 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         }
     }
 
-    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT) {
-        if (!connector->crtc->props.gamma_lut) // TODO: allow this with legacy gamma, perhaps.
+    auto prepareGammaBlob = [connector](uint32_t prop, const std::vector<uint16_t>& gammaLut, uint32_t* blobId) -> bool {
+        if (!prop) // TODO: allow this with legacy gamma, perhaps.
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit gamma: no gamma_lut prop");
-        else if (STATE.gammaLut.empty()) {
-            data.atomic.gammaLut = 0;
-            data.atomic.gammad   = true;
+        else if (gammaLut.empty()) {
+            blobId = 0;
+            return true;
         } else {
             std::vector<drm_color_lut> lut;
-            lut.resize(STATE.gammaLut.size() / 3); // [r,g,b]+
+            lut.resize(gammaLut.size() / 3); // [r,g,b]+
 
             for (size_t i = 0; i < lut.size(); ++i) {
-                lut.at(i).red      = STATE.gammaLut.at(i * 3 + 0);
-                lut.at(i).green    = STATE.gammaLut.at(i * 3 + 1);
-                lut.at(i).blue     = STATE.gammaLut.at(i * 3 + 2);
+                lut.at(i).red      = gammaLut.at(i * 3 + 0);
+                lut.at(i).green    = gammaLut.at(i * 3 + 1);
+                lut.at(i).blue     = gammaLut.at(i * 3 + 2);
                 lut.at(i).reserved = 0;
             }
 
-            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, lut.data(), lut.size() * sizeof(drm_color_lut), &data.atomic.gammaLut)) {
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, lut.data(), lut.size() * sizeof(drm_color_lut), blobId)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a gamma blob");
-                data.atomic.gammaLut = 0;
+                *blobId = 0;
             } else
-                data.atomic.gammad = true;
+                return true;
         }
-    }
+
+        return false;
+    };
+
+    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT)
+        data.atomic.gammad = prepareGammaBlob(connector->crtc->props.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut);
+
+    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT)
+        data.atomic.degammad = prepareGammaBlob(connector->crtc->props.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
 
     if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM) && data.ctm.has_value()) {
         if (!connector->crtc->props.ctm)
@@ -292,6 +311,32 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                 data.atomic.ctmBlob = 0;
             } else
                 data.atomic.ctmd = true;
+        }
+    }
+
+    if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_HDR) && data.hdrMetadata.has_value()) {
+        if (!connector->props.hdr_output_metadata)
+            connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit hdr metadata: no HDR_OUTPUT_METADATA prop support");
+        else {
+            if (!data.hdrMetadata->hdmi_metadata_type1.eotf) {
+                data.atomic.hdrBlob = 0;
+                data.atomic.hdrd    = false;
+            } else if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
+                connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a hdr metadata blob");
+                data.atomic.hdrBlob = 0;
+            } else {
+                data.atomic.hdrd = true;
+                TRACE(connector->backend->backend->log(
+                    AQ_LOG_TRACE,
+                    std::format("atomic drm: setting hdr min {}, max {}, avg {}, content {}, primaries {},{} {},{} {},{} {},{}",
+                                data.hdrMetadata->hdmi_metadata_type1.min_display_mastering_luminance, data.hdrMetadata->hdmi_metadata_type1.max_display_mastering_luminance,
+                                data.hdrMetadata->hdmi_metadata_type1.max_fall, data.hdrMetadata->hdmi_metadata_type1.max_cll,
+                                data.hdrMetadata->hdmi_metadata_type1.display_primaries[0].x, data.hdrMetadata->hdmi_metadata_type1.display_primaries[0].y,
+                                data.hdrMetadata->hdmi_metadata_type1.display_primaries[1].x, data.hdrMetadata->hdmi_metadata_type1.display_primaries[1].y,
+                                data.hdrMetadata->hdmi_metadata_type1.display_primaries[2].x, data.hdrMetadata->hdmi_metadata_type1.display_primaries[2].y,
+                                data.hdrMetadata->hdmi_metadata_type1.display_primaries[0].x, data.hdrMetadata->hdmi_metadata_type1.white_point.x,
+                                data.hdrMetadata->hdmi_metadata_type1.white_point.y)));
+            }
         }
     }
 
