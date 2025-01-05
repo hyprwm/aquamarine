@@ -124,8 +124,8 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
             add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
 
-        if (connector->props.hdr_output_metadata)
-            add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrd ? data.atomic.hdrBlob : 0);
+        if (connector->props.hdr_output_metadata && data.atomic.hdrd)
+            add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrBlob);
 
         if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
             add(connector->crtc->id, connector->crtc->props.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
@@ -351,10 +351,11 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         else {
             if (!data.hdrMetadata->hdmi_metadata_type1.eotf) {
                 data.atomic.hdrBlob = 0;
-                data.atomic.hdrd    = false;
+                data.atomic.hdrd    = true;
             } else if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a hdr metadata blob");
                 data.atomic.hdrBlob = 0;
+                data.atomic.hdrd    = false;
             } else {
                 data.atomic.hdrd = true;
                 TRACE(connector->backend->backend->log(
