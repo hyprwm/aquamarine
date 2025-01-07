@@ -53,7 +53,10 @@ static udev_enumerate* enumDRMCards(udev* udev) {
         return nullptr;
 
     udev_enumerate_add_match_subsystem(enumerate, "drm");
+#ifdef __linux__
+    // https://github.com/wulf7/libudev-devd/issues/11
     udev_enumerate_add_match_property(enumerate, "DEVTYPE", "drm_minor");
+#endif
     udev_enumerate_add_match_sysname(enumerate, DRM_PRIMARY_MINOR_NAME "[0-9]*");
 
     if (udev_enumerate_scan_devices(enumerate)) {
