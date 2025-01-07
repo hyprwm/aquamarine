@@ -1828,7 +1828,7 @@ void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord, bool skipSchedule
     cursorPos = coord;
     // cursorVisible = true;
     if (!skipSchedule)
-        state->internalState.committed |= COutputState::AQ_OUTPUT_STATE_CURSOR;
+        state->internalState.committed |= COutputState::AQ_OUTPUT_STATE_CURSOR_POS;
 
     backend->impl->moveCursor(connector, skipSchedule);
 }
