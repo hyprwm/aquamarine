@@ -117,6 +117,9 @@ namespace Aquamarine {
         // utils
         int reopenDRMNode(int drmFD, bool allowRenderNode = true);
 
+        // called when a new DRM card is hotplugged
+        void onNewGpu(std::string path);
+
         struct {
             Hyprutils::Signal::CSignal newOutput;
             Hyprutils::Signal::CSignal newPointer;
@@ -126,6 +129,8 @@ namespace Aquamarine {
             Hyprutils::Signal::CSignal newTablet;
             Hyprutils::Signal::CSignal newTabletTool;
             Hyprutils::Signal::CSignal newTabletPad;
+
+            Hyprutils::Signal::CSignal pollFDsChanged;
         } events;
 
         Hyprutils::Memory::CSharedPointer<IAllocator> primaryAllocator;
@@ -159,5 +164,7 @@ namespace Aquamarine {
             std::mutex              loopRequestMutex;
             std::mutex              eventLock;
         } m_sEventLoopInternals;
+
+        friend class CDRMBackend;
     };
 };

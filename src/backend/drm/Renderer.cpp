@@ -197,6 +197,15 @@ bool CDRMRenderer::initDRMFormats() {
     return true;
 }
 
+Aquamarine::CDRMRenderer::~CDRMRenderer() {
+    eglMakeCurrent(egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    eglDestroyContext(egl.display, egl.context);
+
+    eglTerminate(egl.display);
+
+    eglReleaseThread();
+}
+
 SP<CDRMRenderer> CDRMRenderer::attempt(Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, SP<CBackend> backend_) {
     SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
     renderer->drmFD           = allocator_->drmFD();

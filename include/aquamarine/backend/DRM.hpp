@@ -389,6 +389,9 @@ namespace Aquamarine {
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
 
         static std::vector<Hyprutils::Memory::CSharedPointer<CDRMBackend>> attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend);
+        static Hyprutils::Memory::CSharedPointer<CDRMBackend>              fromGpu(std::string path, Hyprutils::Memory::CSharedPointer<CBackend> backend,
+                                                                                   Hyprutils::Memory::CSharedPointer<CDRMBackend> primary);
+
         bool registerGPU(Hyprutils::Memory::CSharedPointer<CSessionDevice> gpu_, Hyprutils::Memory::CSharedPointer<CDRMBackend> primary_ = {});
         bool checkFeatures();
         bool initResources();

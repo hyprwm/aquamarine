@@ -228,14 +228,15 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 }
 
 Aquamarine::CGBMBuffer::~CGBMBuffer() {
+    for (size_t i = 0; i < (size_t)attrs.planes; i++)
+        close(attrs.fds.at(i));
+
     events.destroy.emit();
     if (bo) {
         if (gboMapping)
             gbm_bo_unmap(bo, gboMapping); // FIXME: is it needed before destroy?
         gbm_bo_destroy(bo);
     }
-    for (size_t i = 0; i < (size_t)attrs.planes; i++)
-        close(attrs.fds.at(i));
 }
 
 eBufferCapability Aquamarine::CGBMBuffer::caps() {
@@ -280,9 +281,23 @@ void Aquamarine::CGBMBuffer::endDataPtr() {
     }
 }
 
+void CGBMAllocator::destroyBuffers() {
+    for (auto &buf : buffers) {
+        buf.impl_->destroy();
+    }
+}
+
 CGBMAllocator::~CGBMAllocator() {
-    if (gbmDevice)
-        gbm_device_destroy(gbmDevice);
+    if (!gbmDevice)
+        return;
+
+    int fd = gbm_device_get_fd(gbmDevice);
+    gbm_device_destroy(gbmDevice);
+
+    if (fd < 0)
+        return;
+
+    close(fd);
 }
 
 SP<CGBMAllocator> Aquamarine::CGBMAllocator::create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) {

@@ -46,6 +46,7 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CSharedPointer<CBackend>     getBackend();
         virtual int                                             drmFD();
         virtual eAllocatorType                                  type();
+        virtual void                                            destroyBuffers();
 
         //
         Hyprutils::Memory::CWeakPointer<CGBMAllocator> self;

@@ -42,6 +42,7 @@ namespace Aquamarine {
 
     class CDRMRenderer {
       public:
+        ~CDRMRenderer();
         static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_,
                                                                        Hyprutils::Memory::CSharedPointer<CBackend>      backend_);
 
