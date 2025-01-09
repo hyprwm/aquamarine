@@ -25,6 +25,7 @@ namespace Aquamarine {
 
         void setConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
         void addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
+        void addConnectorModeset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         void addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         bool commit(uint32_t flagssss);
         void add(uint32_t id, uint32_t prop, uint64_t val);

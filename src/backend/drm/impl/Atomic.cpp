@@ -99,34 +99,20 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
+    conn = connector;
+
+    addConnectorModeset(connector, data);
     addConnectorCursor(connector, data);
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
-
-    if (data.modeset) {
-        add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
-        data.atomic.blobbed = true;
-    }
-
-    if (data.modeset && enable && connector->props.link_status)
-        add(connector->id, connector->props.link_status, DRM_MODE_LINK_STATUS_GOOD);
 
     // TODO: allow to send aq a content type, maybe? Wayland has a protocol for this.
     if (enable && connector->props.content_type)
         add(connector->id, connector->props.content_type, DRM_MODE_CONTENT_TYPE_GRAPHICS);
 
-    if (data.modeset && enable && connector->props.max_bpc && connector->maxBpcBounds.at(1))
-        add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
-
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
-        if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
-            add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
-
-        if (connector->props.hdr_output_metadata && data.atomic.hdrd)
-            add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrBlob);
-
         if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
             add(connector->crtc->id, connector->crtc->props.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
@@ -152,18 +138,40 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
     }
-
-    conn = connector;
 }
 
-void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
+void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
+    if (!data.modeset)
+        return;
+
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled && data.mainFB;
 
-    conn = connector;
+    add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
+    data.atomic.blobbed = true;
 
+    if (!enable)
+        return;
+
+    if (connector->props.link_status)
+        add(connector->id, connector->props.link_status, DRM_MODE_LINK_STATUS_GOOD);
+
+    if (connector->props.max_bpc && connector->maxBpcBounds.at(1))
+        add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
+
+    if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
+        add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
+
+    if (connector->props.hdr_output_metadata && data.atomic.hdrd)
+        add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrBlob);
+}
+
+void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     if (!connector->crtc->cursor)
         return;
+
+    const auto& STATE  = connector->output->state->state();
+    const bool  enable = STATE.enabled && data.mainFB;
 
     if (enable) {
         if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS) {
