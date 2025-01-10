@@ -307,15 +307,14 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 
 Aquamarine::CDRMBackend::~CDRMBackend() {
     for (auto conn : connectors) {
-        if (conn && conn->output)
-            conn->output->events.destroy.emit();
-        conn.impl_->destroy();
+        conn->disconnect();
+        conn.reset();
     }
 
     rendererState.allocator->destroyBuffers();
 
-    rendererState.renderer.impl_->destroy();
-    rendererState.allocator.impl_->destroy();
+    rendererState.renderer.reset();
+    rendererState.allocator.reset();
 }
 
 void Aquamarine::CDRMBackend::log(eBackendLogLevel l, const std::string& s) {
