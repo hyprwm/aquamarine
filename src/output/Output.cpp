@@ -130,6 +130,7 @@ void Aquamarine::COutputState::setCTM(const Hyprutils::Math::Mat3x3& ctm) {
 
 void Aquamarine::COutputState::setWideColorGamut(bool wcg) {
     internalState.wideColorGamut = wcg;
+    internalState.committed |= AQ_OUTPUT_STATE_WCG;
 }
 
 void Aquamarine::COutputState::setHDRMetadata(const hdr_output_metadata& metadata) {

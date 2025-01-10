@@ -422,18 +422,8 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 
     if (ok) {
         request.apply(data);
-        if (!data.test && data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
+        if (!data.test && data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
             connector->isPageFlipPending = true;
-            // if (connector->output->state->state().committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS) {
-            //     CDRMAtomicRequest request(backend);
-            //     request.setConnector(connector);
-            //     request.planePropsPos(connector->crtc->cursor, connector->output->cursorPos - connector->output->cursorHotspot);
-
-            //     uint32_t flags = DRM_MODE_ATOMIC_NONBLOCK;
-
-            //     request.commit(flags | DRM_MODE_ATOMIC_TEST_ONLY) && request.commit(flags);
-            // }
-        }
     } else
         request.rollback(data);
 
