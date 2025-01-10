@@ -85,7 +85,8 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
 
     // TODO: gamma
 
-    if (data.cursorFB && connector->crtc->cursor && connector->output->cursorVisible && enable) {
+    if (data.cursorFB && connector->crtc->cursor && connector->output->cursorVisible && enable &&
+        (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS)) {
         uint32_t boHandle = 0;
         auto     attrs    = data.cursorFB->buffer->dmabuf();
 

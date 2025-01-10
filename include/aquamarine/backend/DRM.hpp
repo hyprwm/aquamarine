@@ -263,7 +263,7 @@ namespace Aquamarine {
             bool     gammad     = false;
             bool     degammad   = false;
             bool     ctmd       = false;
-            bool     hdrd       = false;
+            bool     hdrd       = false; // true if hdr blob needs updating or clearing
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);

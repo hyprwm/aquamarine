@@ -57,10 +57,10 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
         return;
     }
 
-    TRACE(backend->log(AQ_LOG_TRACE,
-                       std::format("atomic planeProps: prop blobs: src_x {}, src_y {}, src_w {}, src_h {}, crtc_w {}, crtc_h {}, fb_id {}, crtc_id {}, crtc_x {}, crtc_y {}",
-                                   plane->props.src_x, plane->props.src_y, plane->props.src_w, plane->props.src_h, plane->props.crtc_w, plane->props.crtc_h, plane->props.fb_id,
-                                   plane->props.crtc_id, plane->props.crtc_x, plane->props.crtc_y)));
+    TRACE(
+        backend->log(AQ_LOG_TRACE,
+                     std::format("atomic planeProps: prop blobs: src_x {}, src_y {}, src_w {}, src_h {}, crtc_w {}, crtc_h {}, fb_id {}, crtc_id {}", plane->props.src_x,
+                                 plane->props.src_y, plane->props.src_w, plane->props.src_h, plane->props.crtc_w, plane->props.crtc_h, plane->props.fb_id, plane->props.crtc_id)));
 
     // src_ are 16.16 fixed point (lol)
     add(plane->id, plane->props.src_x, 0);
@@ -71,8 +71,22 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
     add(plane->id, plane->props.crtc_h, (uint32_t)fb->buffer->size.y);
     add(plane->id, plane->props.fb_id, fb->id);
     add(plane->id, plane->props.crtc_id, crtc);
+    planePropsPos(plane, pos);
+}
+
+void Aquamarine::CDRMAtomicRequest::planePropsPos(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Math::Vector2D pos) {
+
+    if (failed)
+        return;
+
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: pos blobs: crtc_x {}, crtc_y {}", plane->props.crtc_x, plane->props.crtc_y)));
+
     add(plane->id, plane->props.crtc_x, (uint64_t)pos.x);
     add(plane->id, plane->props.crtc_y, (uint64_t)pos.y);
+}
+
+void Aquamarine::CDRMAtomicRequest::setConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+    conn = connector;
 }
 
 void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
@@ -85,22 +99,16 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
+    conn = connector;
+
+    addConnectorModeset(connector, data);
+    addConnectorCursor(connector, data);
+
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
-
-    if (data.modeset) {
-        add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
-        data.atomic.blobbed = true;
-    }
-
-    if (data.modeset && enable && connector->props.link_status)
-        add(connector->id, connector->props.link_status, DRM_MODE_LINK_STATUS_GOOD);
 
     // TODO: allow to send aq a content type, maybe? Wayland has a protocol for this.
     if (enable && connector->props.content_type)
         add(connector->id, connector->props.content_type, DRM_MODE_CONTENT_TYPE_GRAPHICS);
-
-    if (data.modeset && enable && connector->props.max_bpc && connector->maxBpcBounds.at(1))
-        add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
 
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
@@ -133,21 +141,57 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         if (connector->crtc->primary->props.fb_damage_clips)
             add(connector->crtc->primary->id, connector->crtc->primary->props.fb_damage_clips, data.atomic.fbDamage);
-
-        if (connector->crtc->cursor) {
-            if (!connector->output->cursorVisible)
-                planeProps(connector->crtc->cursor, nullptr, 0, {});
-            else
-                planeProps(connector->crtc->cursor, data.cursorFB, connector->crtc->id, connector->output->cursorPos - connector->output->cursorHotspot);
-        }
-
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
-        if (connector->crtc->cursor)
-            planeProps(connector->crtc->cursor, nullptr, 0, {});
     }
+}
 
-    conn = connector;
+void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
+    if (!data.modeset)
+        return;
+
+    const auto& STATE  = connector->output->state->state();
+    const bool  enable = STATE.enabled && data.mainFB;
+
+    add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
+    data.atomic.blobbed = true;
+
+    if (!enable)
+        return;
+
+    if (connector->props.link_status)
+        add(connector->id, connector->props.link_status, DRM_MODE_LINK_STATUS_GOOD);
+
+    if (connector->props.max_bpc && connector->maxBpcBounds.at(1))
+        add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
+
+    if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
+        add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
+
+    if (connector->props.hdr_output_metadata && data.atomic.hdrd)
+        add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrBlob);
+}
+
+void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
+    if (!connector->crtc->cursor)
+        return;
+
+    const auto& STATE  = connector->output->state->state();
+    const bool  enable = STATE.enabled && data.mainFB;
+
+    if (enable) {
+        if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS) {
+            TRACE(backend->log(AQ_LOG_TRACE, STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE ? "atomic addConnector cursor shape" : "atomic addConnector cursor pos"));
+            if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE) {
+                if (!connector->output->cursorVisible)
+                    planeProps(connector->crtc->cursor, nullptr, 0, {});
+                else
+                    planeProps(connector->crtc->cursor, data.cursorFB, connector->crtc->id, connector->output->cursorPos - connector->output->cursorHotspot);
+            } else if (connector->output->cursorVisible)
+                planePropsPos(connector->crtc->cursor, connector->output->cursorPos - connector->output->cursorHotspot);
+        }
+    } else
+        planeProps(connector->crtc->cursor, nullptr, 0, {});
 }
 
 bool Aquamarine::CDRMAtomicRequest::commit(uint32_t flagssss) {
@@ -320,10 +364,11 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         else {
             if (!data.hdrMetadata->hdmi_metadata_type1.eotf) {
                 data.atomic.hdrBlob = 0;
-                data.atomic.hdrd    = false;
+                data.atomic.hdrd    = true;
             } else if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a hdr metadata blob");
                 data.atomic.hdrBlob = 0;
+                data.atomic.hdrd    = false;
             } else {
                 data.atomic.hdrd = true;
                 TRACE(connector->backend->backend->log(

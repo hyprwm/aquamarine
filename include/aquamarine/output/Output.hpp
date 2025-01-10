@@ -55,6 +55,9 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_CTM                = (1 << 10),
             AQ_OUTPUT_STATE_HDR                = (1 << 11),
             AQ_OUTPUT_STATE_DEGAMMA_LUT        = (1 << 12),
+            AQ_OUTPUT_STATE_WCG                = (1 << 13),
+            AQ_OUTPUT_STATE_CURSOR_SHAPE       = (1 << 14),
+            AQ_OUTPUT_STATE_CURSOR_POS         = (1 << 15),
         };
 
         struct SInternalState {
