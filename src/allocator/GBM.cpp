@@ -284,7 +284,7 @@ void Aquamarine::CGBMBuffer::endDataPtr() {
 
 void CGBMAllocator::destroyBuffers() {
     for (auto& buf : buffers) {
-        buf.reset()
+        buf.reset();
     }
 }
 
