@@ -288,7 +288,7 @@ void Aquamarine::CBackend::onNewGpu(std::string path) {
     implementations.emplace_back(ref);
     events.pollFDsChanged.emit();
 
-    ref->onReady(); // Renderer created here
+    ref->onReady();        // Renderer created here
     ref->recheckOutputs(); // Now we can recheck outputs
 }
 
