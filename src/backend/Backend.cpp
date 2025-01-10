@@ -3,6 +3,7 @@
 #include <aquamarine/backend/Headless.hpp>
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/allocator/GBM.hpp>
+#include <ranges>
 #include <sys/timerfd.h>
 #include <time.h>
 #include <string.h>
