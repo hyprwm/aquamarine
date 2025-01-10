@@ -271,6 +271,27 @@ void Aquamarine::CBackend::dispatchIdle() {
     updateIdleTimer();
 }
 
+void Aquamarine::CBackend::onNewGpu(std::string path) {
+    const auto primary    = std::ranges::find_if(implementations, [](SP<IBackendImplementation> value) { return value->type() == Aquamarine::AQ_BACKEND_DRM; });
+    const auto primaryDrm = primary != implementations.end() ? ((Aquamarine::CDRMBackend*)(*primary).get())->self.lock() : nullptr;
+
+    auto       ref = CDRMBackend::fromGpu(path, self.lock(), primaryDrm);
+    if (!ref) {
+        log(AQ_LOG_ERROR, std::format("DRM Backend failed for device {}", path));
+        return;
+    }
+    if (!ref->start()) {
+        log(AQ_LOG_ERROR, std::format("Couldn't start DRM Backend for device {}", path));
+        return;
+    }
+
+    implementations.emplace_back(ref);
+    events.pollFDsChanged.emit();
+
+    ref->onReady();        // Renderer created here
+    ref->recheckOutputs(); // Now we can recheck outputs
+}
+
 // Yoinked from wlroots, render/allocator/allocator.c
 // Ref-counting reasons, see https://gitlab.freedesktop.org/mesa/drm/-/merge_requests/110
 int Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {

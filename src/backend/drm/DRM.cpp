@@ -181,6 +181,43 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
     return vecDevices;
 }
 
+SP<CDRMBackend> Aquamarine::CDRMBackend::fromGpu(std::string path, SP<CBackend> backend, SP<CDRMBackend> primary) {
+    auto gpu = CSessionDevice::openIfKMS(backend->session, path);
+    if (!gpu) {
+        return nullptr;
+    }
+
+    auto drmBackend  = SP<CDRMBackend>(new CDRMBackend(backend));
+    drmBackend->self = drmBackend;
+
+    if (!drmBackend->registerGPU(gpu, primary)) {
+        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to register gpu {}", gpu->path));
+        return nullptr;
+    } else
+        backend->log(AQ_LOG_DEBUG, std::format("drm: Registered gpu {}", gpu->path));
+
+    if (!drmBackend->checkFeatures()) {
+        backend->log(AQ_LOG_ERROR, "drm: Failed checking features");
+        return nullptr;
+    }
+
+    if (!drmBackend->initResources()) {
+        backend->log(AQ_LOG_ERROR, "drm: Failed initializing resources");
+        return nullptr;
+    }
+
+    backend->log(AQ_LOG_DEBUG, std::format("drm: Basic init pass for gpu {}", gpu->path));
+
+    drmBackend->grabFormats();
+
+    drmBackend->dumbAllocator = CDRMDumbAllocator::create(gpu->fd, backend);
+
+    // so that session can handle udev change/remove events for this gpu
+    backend->session->sessionDevices.push_back(gpu);
+
+    return drmBackend;
+}
+
 std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backend) {
     if (!backend->session)
         backend->session = CSession::attempt(backend);
@@ -269,7 +306,15 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 }
 
 Aquamarine::CDRMBackend::~CDRMBackend() {
-    ;
+    for (auto conn : connectors) {
+        conn->disconnect();
+        conn.reset();
+    }
+
+    rendererState.allocator->destroyBuffers();
+
+    rendererState.renderer.reset();
+    rendererState.allocator.reset();
 }
 
 void Aquamarine::CDRMBackend::log(eBackendLogLevel l, const std::string& s) {
@@ -663,8 +708,10 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
         }
     });
 
-    listeners.gpuRemove = gpu->events.remove.registerListener(
-        [this](std::any d) { backend->log(AQ_LOG_ERROR, std::format("drm: !!!!FIXME: Got a remove event for {}, this is not handled properly!!!!!", gpuName)); });
+    listeners.gpuRemove = gpu->events.remove.registerListener([this](std::any d) {
+        std::erase_if(backend->implementations, [this](const auto& impl) { return impl->drmFD() == this->drmFD(); });
+        backend->events.pollFDsChanged.emit();
+    });
 
     return true;
 }

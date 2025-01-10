@@ -26,5 +26,6 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CSharedPointer<CBackend> getBackend()                                                                                           = 0;
         virtual int                                         drmFD()                                                                                                = 0;
         virtual eAllocatorType                              type()                                                                                                 = 0;
+        virtual void                                        destroyBuffers();
     };
 };

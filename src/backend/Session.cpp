@@ -296,6 +296,12 @@ void Aquamarine::CSession::dispatchUdevEvents() {
         }
     }
 
+    if (!sessionDevice && action == std::string{"add"}) {
+        backend->onNewGpu(devnode);
+        udev_device_unref(device);
+        return;
+    }
+
     if (!sessionDevice) {
         udev_device_unref(device);
         return;
@@ -330,6 +336,7 @@ void Aquamarine::CSession::dispatchUdevEvents() {
     } else if (action == std::string{"remove"}) {
         backend->log(AQ_LOG_DEBUG, std::format("udev: DRM device {} removed", sysname ? sysname : "unknown"));
         sessionDevice->events.remove.emit();
+        std::erase_if(sessionDevices, [sessionDevice](const auto& sd) { return sd == sessionDevice; });
     }
 
     udev_device_unref(device);
