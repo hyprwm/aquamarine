@@ -59,7 +59,7 @@ target_include_directories(
   PUBLIC "./include"
   PRIVATE "./src" "./src/include" "./protocols" "${CMAKE_BINARY_DIR}")
 set_target_properties(aquamarine PROPERTIES VERSION ${AQUAMARINE_VERSION}
-                                            SOVERSION 5)
+                                            SOVERSION 6)
 target_link_libraries(aquamarine OpenGL::EGL OpenGL::OpenGL PkgConfig::deps)
 
 check_include_file("sys/timerfd.h" HAS_TIMERFD)
