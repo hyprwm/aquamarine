@@ -228,8 +228,9 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 }
 
 Aquamarine::CGBMBuffer::~CGBMBuffer() {
-    for (size_t i = 0; i < (size_t)attrs.planes; i++)
+    for (size_t i = 0; i < (size_t)attrs.planes; i++) {
         close(attrs.fds.at(i));
+    }
 
     events.destroy.emit();
     if (bo) {

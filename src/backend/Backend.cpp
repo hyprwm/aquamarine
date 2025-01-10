@@ -276,7 +276,7 @@ void Aquamarine::CBackend::onNewGpu(std::string path) {
     const auto primaryDrm = primary != implementations.end() ? ((Aquamarine::CDRMBackend*)(*primary).get())->self.lock() : nullptr;
 
     auto       ref = CDRMBackend::fromGpu(path, self.lock(), primaryDrm);
-    if (ref == nullptr) {
+    if (!ref) {
         log(AQ_LOG_ERROR, std::format("DRM Backend failed for device {}", path));
         return;
     }
