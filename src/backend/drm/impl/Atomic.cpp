@@ -182,7 +182,6 @@ void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CShare
     if (enable) {
         if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS) {
             TRACE(backend->log(AQ_LOG_TRACE, STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE ? "atomic addConnector cursor shape" : "atomic addConnector cursor pos"));
-            connector->output->state->cursorCommited = true;
             if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE) {
                 if (!connector->output->cursorVisible)
                     planeProps(connector->crtc->cursor, nullptr, 0, {});

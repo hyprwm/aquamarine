@@ -81,7 +81,6 @@ namespace Aquamarine {
         };
 
         const SInternalState& state();
-        bool                  cursorCommited = false;
 
         void                  addDamage(const Hyprutils::Math::CRegion& region);
         void                  clearDamage();
