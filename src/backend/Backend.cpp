@@ -3,9 +3,7 @@
 #include <aquamarine/backend/Headless.hpp>
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/allocator/GBM.hpp>
-#include <sys/poll.h>
-#include <thread>
-#include <chrono>
+#include <ranges>
 #include <sys/timerfd.h>
 #include <time.h>
 #include <string.h>
