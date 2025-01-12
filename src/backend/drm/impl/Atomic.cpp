@@ -113,12 +113,6 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
     if (enable) {
-        if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
-            add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
-
-        if (connector->props.hdr_output_metadata)
-            add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrd ? data.atomic.hdrBlob : 0);
-
         if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
             add(connector->crtc->id, connector->crtc->props.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
