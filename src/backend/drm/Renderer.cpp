@@ -213,7 +213,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(Hyprutils::Memory::CSharedPointer<CGBMAll
     renderer->backend         = backend_;
     gBackend                  = backend_;
 
-    const std::string EGLEXTENSIONS = (const char*)eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+    const std::string EGLEXTENSIONS = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
 
     if (!EGLEXTENSIONS.contains("KHR_platform_gbm")) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no gbm support");
@@ -284,7 +284,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(Hyprutils::Memory::CSharedPointer<CGBMAll
 
     attrs.clear();
 
-    const std::string EGLEXTENSIONS2 = (const char*)eglQueryString(renderer->egl.display, EGL_EXTENSIONS);
+    const std::string EGLEXTENSIONS2 = eglQueryString(renderer->egl.display, EGL_EXTENSIONS);
 
     if (EGLEXTENSIONS2.contains("IMG_context_priority")) {
         attrs.push_back(EGL_CONTEXT_PRIORITY_LEVEL_IMG);
