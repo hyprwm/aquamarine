@@ -13,8 +13,7 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
-Aquamarine::CDRMAtomicRequest::CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) : backend(backend_) {
-    req = drmModeAtomicAlloc();
+Aquamarine::CDRMAtomicRequest::CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) : backend(backend_), req(drmModeAtomicAlloc()) {
     if (!req)
         failed = true;
 }
