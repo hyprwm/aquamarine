@@ -7,7 +7,6 @@
 #include "Math.hpp"
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
-#include <xf86drm.h>
 #include <aquamarine/allocator/GBM.hpp>
 
 using namespace Aquamarine;

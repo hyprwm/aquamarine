@@ -3,7 +3,7 @@
 #include <xdg-shell.hpp>
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
-#include <string.h>
+#include <cstring>
 #include <xf86drm.h>
 #include <gbm.h>
 #include <fcntl.h>

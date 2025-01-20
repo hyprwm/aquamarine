@@ -1,8 +1,8 @@
 #include <aquamarine/backend/Headless.hpp>
 #include <fcntl.h>
-#include <time.h>
+#include <ctime>
 #include <sys/timerfd.h>
-#include <string.h>
+#include <cstring>
 #include "Shared.hpp"
 
 using namespace Aquamarine;

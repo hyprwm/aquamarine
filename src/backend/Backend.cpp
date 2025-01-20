@@ -5,8 +5,8 @@
 #include <aquamarine/allocator/GBM.hpp>
 #include <ranges>
 #include <sys/timerfd.h>
-#include <time.h>
-#include <string.h>
+#include <ctime>
+#include <cstring>
 #include <xf86drm.h>
 #include <fcntl.h>
 #include <unistd.h>
