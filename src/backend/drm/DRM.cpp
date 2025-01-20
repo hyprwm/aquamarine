@@ -1,4 +1,5 @@
 #include "aquamarine/output/Output.hpp"
+#include <algorithm>
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <aquamarine/backend/drm/Atomic.hpp>
@@ -582,7 +583,7 @@ void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts)
         if (fmt.external && fmt.modifier != DRM_FORMAT_MOD_INVALID)
             continue;
 
-        if (auto it = std::find_if(result.begin(), result.end(), [fmt](const auto& e) { return fmt.drmFormat == e.drmFormat; }); it != result.end()) {
+        if (auto it = std::ranges::find_if(result, [fmt](const auto& e) { return fmt.drmFormat == e.drmFormat; }); it != result.end()) {
             it->modifiers.emplace_back(fmt.modifier);
             continue;
         }
@@ -774,7 +775,7 @@ void Aquamarine::CDRMBackend::scanConnectors() {
             continue;
         }
 
-        auto it = std::find_if(connectors.begin(), connectors.end(), [connectorID](const auto& e) { return e->id == connectorID; });
+        auto it = std::ranges::find_if(connectors, [connectorID](const auto& e) { return e->id == connectorID; });
         if (it == connectors.end()) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Initializing connector id {}", connectorID));
             conn          = connectors.emplace_back(SP<SDRMConnector>(new SDRMConnector()));
@@ -1077,7 +1078,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 
         drmModeFormatModifierIterator iter = {0};
         while (drmModeFormatModifierBlobIterNext(blob, &iter)) {
-            auto it = std::find_if(formats.begin(), formats.end(), [iter](const auto& e) { return e.drmFormat == iter.fmt; });
+            auto it = std::ranges::find_if(formats, [iter](const auto& e) { return e.drmFormat == iter.fmt; });
 
             TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Modifier {} with format {}", iter.mod, fourccToName(iter.fmt))));
 

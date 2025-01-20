@@ -1,6 +1,7 @@
 #include "Renderer.hpp"
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <algorithm>
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
@@ -132,7 +133,7 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
         result.push_back({mods.at(i), external.at(i)});
     }
 
-    if (std::find(mods.begin(), mods.end(), DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
+    if (std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
         result.push_back({DRM_FORMAT_MOD_LINEAR, true});
 
     return result;
