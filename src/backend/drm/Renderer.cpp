@@ -99,7 +99,7 @@ void main() {
 
 inline void loadGLProc(void* pProc, const char* name) {
     void* proc = (void*)eglGetProcAddress(name);
-    if (proc == NULL) {
+    if (proc == nullptr) {
         gBackend->log(AQ_LOG_ERROR, std::format("eglGetProcAddress({}) failed", name));
         abort();
     }

@@ -298,7 +298,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         if (!prop) // TODO: allow this with legacy gamma, perhaps.
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit gamma: no gamma_lut prop");
         else if (gammaLut.empty()) {
-            blobId = 0;
+            blobId = nullptr;
             return true;
         } else {
             std::vector<drm_color_lut> lut;
