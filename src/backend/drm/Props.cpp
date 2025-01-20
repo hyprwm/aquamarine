@@ -20,59 +20,59 @@ struct prop_info {
 
 static const struct prop_info connector_info[] = {
 #define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorProps, name) / sizeof(uint32_t))
-    {"CRTC_ID", INDEX(crtc_id)},
-    {"Colorspace", INDEX(Colorspace)},
-    {"DPMS", INDEX(dpms)},
-    {"EDID", INDEX(edid)},
-    {"HDR_OUTPUT_METADATA", INDEX(hdr_output_metadata)},
-    {"PATH", INDEX(path)},
-    {"content type", INDEX(content_type)},
-    {"link-status", INDEX(link_status)},
-    {"max bpc", INDEX(max_bpc)},
-    {"non-desktop", INDEX(non_desktop)},
-    {"panel orientation", INDEX(panel_orientation)},
-    {"subconnector", INDEX(subconnector)},
-    {"vrr_capable", INDEX(vrr_capable)},
+    {.name = "CRTC_ID", .index = INDEX(crtc_id)},
+    {.name = "Colorspace", .index = INDEX(Colorspace)},
+    {.name = "DPMS", .index = INDEX(dpms)},
+    {.name = "EDID", .index = INDEX(edid)},
+    {.name = "HDR_OUTPUT_METADATA", .index = INDEX(hdr_output_metadata)},
+    {.name = "PATH", .index = INDEX(path)},
+    {.name = "content type", .index = INDEX(content_type)},
+    {.name = "link-status", .index = INDEX(link_status)},
+    {.name = "max bpc", .index = INDEX(max_bpc)},
+    {.name = "non-desktop", .index = INDEX(non_desktop)},
+    {.name = "panel orientation", .index = INDEX(panel_orientation)},
+    {.name = "subconnector", .index = INDEX(subconnector)},
+    {.name = "vrr_capable", .index = INDEX(vrr_capable)},
 #undef INDEX
 };
 
 static const struct prop_info colorspace_info[] = {
 #define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorColorspace, name) / sizeof(uint32_t))
-    {"BT2020_RGB", INDEX(BT2020_RGB)},
-    {"BT2020_YCC", INDEX(BT2020_YCC)},
-    {"Default", INDEX(Default)},
+    {.name = "BT2020_RGB", .index = INDEX(BT2020_RGB)},
+    {.name = "BT2020_YCC", .index = INDEX(BT2020_YCC)},
+    {.name = "Default", .index = INDEX(Default)},
 #undef INDEX
 };
 
 static const struct prop_info crtc_info[] = {
 #define INDEX(name) (offsetof(SDRMCRTC::UDRMCRTCProps, name) / sizeof(uint32_t))
-    {"ACTIVE", INDEX(active)},           {"CTM", INDEX(ctm)},
-    {"DEGAMMA_LUT", INDEX(degamma_lut)}, {"DEGAMMA_LUT_SIZE", INDEX(degamma_lut_size)},
-    {"GAMMA_LUT", INDEX(gamma_lut)},     {"GAMMA_LUT_SIZE", INDEX(gamma_lut_size)},
-    {"MODE_ID", INDEX(mode_id)},         {"OUT_FENCE_PTR", INDEX(out_fence_ptr)},
-    {"VRR_ENABLED", INDEX(vrr_enabled)},
+    {.name = "ACTIVE", .index = INDEX(active)},           {.name = "CTM", .index = INDEX(ctm)},
+    {.name = "DEGAMMA_LUT", .index = INDEX(degamma_lut)}, {.name = "DEGAMMA_LUT_SIZE", .index = INDEX(degamma_lut_size)},
+    {.name = "GAMMA_LUT", .index = INDEX(gamma_lut)},     {.name = "GAMMA_LUT_SIZE", .index = INDEX(gamma_lut_size)},
+    {.name = "MODE_ID", .index = INDEX(mode_id)},         {.name = "OUT_FENCE_PTR", .index = INDEX(out_fence_ptr)},
+    {.name = "VRR_ENABLED", .index = INDEX(vrr_enabled)},
 #undef INDEX
 };
 
 static const struct prop_info plane_info[] = {
 #define INDEX(name) (offsetof(SDRMPlane::UDRMPlaneProps, name) / sizeof(uint32_t))
-    {"CRTC_H", INDEX(crtc_h)},
-    {"CRTC_ID", INDEX(crtc_id)},
-    {"CRTC_W", INDEX(crtc_w)},
-    {"CRTC_X", INDEX(crtc_x)},
-    {"CRTC_Y", INDEX(crtc_y)},
-    {"FB_DAMAGE_CLIPS", INDEX(fb_damage_clips)},
-    {"FB_ID", INDEX(fb_id)},
-    {"HOTSPOT_X", INDEX(hotspot_x)},
-    {"HOTSPOT_Y", INDEX(hotspot_y)},
-    {"IN_FENCE_FD", INDEX(in_fence_fd)},
-    {"IN_FORMATS", INDEX(in_formats)},
-    {"SRC_H", INDEX(src_h)},
-    {"SRC_W", INDEX(src_w)},
-    {"SRC_X", INDEX(src_x)},
-    {"SRC_Y", INDEX(src_y)},
-    {"rotation", INDEX(rotation)},
-    {"type", INDEX(type)},
+    {.name = "CRTC_H", .index = INDEX(crtc_h)},
+    {.name = "CRTC_ID", .index = INDEX(crtc_id)},
+    {.name = "CRTC_W", .index = INDEX(crtc_w)},
+    {.name = "CRTC_X", .index = INDEX(crtc_x)},
+    {.name = "CRTC_Y", .index = INDEX(crtc_y)},
+    {.name = "FB_DAMAGE_CLIPS", .index = INDEX(fb_damage_clips)},
+    {.name = "FB_ID", .index = INDEX(fb_id)},
+    {.name = "HOTSPOT_X", .index = INDEX(hotspot_x)},
+    {.name = "HOTSPOT_Y", .index = INDEX(hotspot_y)},
+    {.name = "IN_FENCE_FD", .index = INDEX(in_fence_fd)},
+    {.name = "IN_FORMATS", .index = INDEX(in_formats)},
+    {.name = "SRC_H", .index = INDEX(src_h)},
+    {.name = "SRC_W", .index = INDEX(src_w)},
+    {.name = "SRC_X", .index = INDEX(src_x)},
+    {.name = "SRC_Y", .index = INDEX(src_y)},
+    {.name = "rotation", .index = INDEX(rotation)},
+    {.name = "type", .index = INDEX(type)},
 #undef INDEX
 };
 

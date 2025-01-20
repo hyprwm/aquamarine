@@ -588,8 +588,8 @@ void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts)
         }
 
         result.emplace_back(SDRMFormat{
-            fmt.drmFormat,
-            {fmt.modifier},
+            .drmFormat = fmt.drmFormat,
+            .modifiers = {fmt.modifier},
         });
     }
 
@@ -1250,10 +1250,10 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
     const auto chromaticity = di_edid_get_chromaticity_coords(edid);
     if (chromaticity) {
         parsed.chromaticityCoords = IOutput::SChromaticityCoords{
-            IOutput::xy{chromaticity->red_x, chromaticity->red_y},
-            IOutput::xy{chromaticity->green_x, chromaticity->green_y},
-            IOutput::xy{chromaticity->blue_x, chromaticity->blue_y},
-            IOutput::xy{chromaticity->white_x, chromaticity->white_y},
+            .red   = IOutput::xy{.x = chromaticity->red_x, .y = chromaticity->red_y},
+            .green = IOutput::xy{.x = chromaticity->green_x, .y = chromaticity->green_y},
+            .blue  = IOutput::xy{.x = chromaticity->blue_x, .y = chromaticity->blue_y},
+            .white = IOutput::xy{.x = chromaticity->white_x, .y = chromaticity->white_y},
         };
         TRACE(backend->backend->log(AQ_LOG_TRACE,
                                     std::format("EDID: chromaticity coords {},{} {},{} {},{} {},{}", parsed.chromaticityCoords->red.x, parsed.chromaticityCoords->red.y,

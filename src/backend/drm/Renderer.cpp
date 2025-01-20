@@ -406,10 +406,10 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
         EGLint modlo;
         EGLint modhi;
     } attrNames[4] = {
-        {EGL_DMA_BUF_PLANE0_FD_EXT, EGL_DMA_BUF_PLANE0_OFFSET_EXT, EGL_DMA_BUF_PLANE0_PITCH_EXT, EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE1_FD_EXT, EGL_DMA_BUF_PLANE1_OFFSET_EXT, EGL_DMA_BUF_PLANE1_PITCH_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE2_FD_EXT, EGL_DMA_BUF_PLANE2_OFFSET_EXT, EGL_DMA_BUF_PLANE2_PITCH_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE3_FD_EXT, EGL_DMA_BUF_PLANE3_OFFSET_EXT, EGL_DMA_BUF_PLANE3_PITCH_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT}};
+        {.fd = EGL_DMA_BUF_PLANE0_FD_EXT, .offset = EGL_DMA_BUF_PLANE0_OFFSET_EXT, .pitch = EGL_DMA_BUF_PLANE0_PITCH_EXT, .modlo = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, .modhi = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT},
+        {.fd = EGL_DMA_BUF_PLANE1_FD_EXT, .offset = EGL_DMA_BUF_PLANE1_OFFSET_EXT, .pitch = EGL_DMA_BUF_PLANE1_PITCH_EXT, .modlo = EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT, .modhi = EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT},
+        {.fd = EGL_DMA_BUF_PLANE2_FD_EXT, .offset = EGL_DMA_BUF_PLANE2_OFFSET_EXT, .pitch = EGL_DMA_BUF_PLANE2_PITCH_EXT, .modlo = EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, .modhi = EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT},
+        {.fd = EGL_DMA_BUF_PLANE3_FD_EXT, .offset = EGL_DMA_BUF_PLANE3_OFFSET_EXT, .pitch = EGL_DMA_BUF_PLANE3_PITCH_EXT, .modlo = EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT, .modhi = EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT}};
 
     for (int i = 0; i < attrs.planes; i++) {
         attribs.push_back(attrNames[i].fd);
@@ -786,7 +786,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
 
     restoreEGL();
 
-    return {true, explicitFD == -1 ? std::nullopt : std::optional<int>{explicitFD}};
+    return {.success = true, .syncFD = explicitFD == -1 ? std::nullopt : std::optional<int>{explicitFD}};
 }
 
 void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment) {
