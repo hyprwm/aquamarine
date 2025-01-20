@@ -1363,7 +1363,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
         output->modes.emplace_back(aqMode);
 
-        if (currentModeInfo && std::memcmp(&drmMode, currentModeInfo, sizeof(drmModeModeInfo))) {
+        if (currentModeInfo && std::memcmp(&drmMode, currentModeInfo, sizeof(drmModeModeInfo)) != 0) {
             output->state->setMode(aqMode);
 
             //uint64_t modeID = 0;
