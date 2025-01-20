@@ -129,12 +129,13 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     egl.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len);
 
     std::vector<std::pair<uint64_t, bool>> result;
+    result.reserve(mods.size());
     for (size_t i = 0; i < mods.size(); ++i) {
-        result.push_back({mods.at(i), external.at(i)});
+        result.emplace_back(mods.at(i), external.at(i));
     }
 
     if (std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
-        result.push_back({DRM_FORMAT_MOD_LINEAR, true});
+        result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
 
     return result;
 }
@@ -168,7 +169,7 @@ bool CDRMRenderer::initDRMFormats() {
         hasModifiers = hasModifiers || mods.size() > 0;
 
         // EGL can always do implicit modifiers.
-        mods.push_back({DRM_FORMAT_MOD_INVALID, true});
+        mods.emplace_back(DRM_FORMAT_MOD_INVALID, true);
 
         for (auto const& [mod, external] : mods) {
             dmaFormats.push_back(SGLFormat{
