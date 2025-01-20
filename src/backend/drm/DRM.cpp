@@ -307,7 +307,7 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 }
 
 Aquamarine::CDRMBackend::~CDRMBackend() {
-    for (auto conn : connectors) {
+    for (auto& conn : connectors) {
         conn->disconnect();
         conn.reset();
     }
