@@ -44,13 +44,12 @@ Aquamarine::CBackend::CBackend() {
     ;
 }
 
-Aquamarine::SBackendImplementationOptions::SBackendImplementationOptions() {
-    backendType        = AQ_BACKEND_WAYLAND;
-    backendRequestMode = AQ_BACKEND_REQUEST_IF_AVAILABLE;
+Aquamarine::SBackendImplementationOptions::SBackendImplementationOptions() : backendType(AQ_BACKEND_WAYLAND), backendRequestMode(AQ_BACKEND_REQUEST_IF_AVAILABLE) {
+    ;
 }
 
-Aquamarine::SBackendOptions::SBackendOptions() {
-    logFunction = nullptr;
+Aquamarine::SBackendOptions::SBackendOptions() : logFunction(nullptr) {
+    ;
 }
 
 Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const std::vector<SBackendImplementationOptions>& backends, const SBackendOptions& options) {
