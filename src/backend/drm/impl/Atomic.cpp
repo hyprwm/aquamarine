@@ -283,7 +283,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         if (!enable)
             data.atomic.modeBlob = 0;
         else {
-            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, (&data.modeInfo), sizeof(drmModeModeInfo), &data.atomic.modeBlob)) {
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.modeInfo, sizeof(drmModeModeInfo), &data.atomic.modeBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a modeset blob");
                 return false;
             }
