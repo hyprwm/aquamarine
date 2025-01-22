@@ -13,8 +13,7 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
-Aquamarine::CDRMAtomicRequest::CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) : backend(backend_) {
-    req = drmModeAtomicAlloc();
+Aquamarine::CDRMAtomicRequest::CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) : backend(backend_), req(drmModeAtomicAlloc()) {
     if (!req)
         failed = true;
 }
@@ -284,7 +283,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         if (!enable)
             data.atomic.modeBlob = 0;
         else {
-            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, (drmModeModeInfo*)&data.modeInfo, sizeof(drmModeModeInfo), &data.atomic.modeBlob)) {
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.modeInfo, sizeof(drmModeModeInfo), &data.atomic.modeBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a modeset blob");
                 return false;
             }
@@ -299,7 +298,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         if (!prop) // TODO: allow this with legacy gamma, perhaps.
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit gamma: no gamma_lut prop");
         else if (gammaLut.empty()) {
-            blobId = 0;
+            blobId = nullptr;
             return true;
         } else {
             std::vector<drm_color_lut> lut;

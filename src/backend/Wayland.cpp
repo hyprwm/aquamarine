@@ -1,9 +1,10 @@
+#include <algorithm>
 #include <aquamarine/backend/Wayland.hpp>
 #include <wayland.hpp>
 #include <xdg-shell.hpp>
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
-#include <string.h>
+#include <cstring>
 #include <xf86drm.h>
 #include <gbm.h>
 #include <fcntl.h>
@@ -403,7 +404,7 @@ bool Aquamarine::CWaylandBackend::initDmabuf() {
             backend->log(AQ_LOG_DEBUG, std::format("zwp_linux_dmabuf_v1: Got format {} with modifier {}", fourccToName(fmt.drmFormat), modName ? modName : "UNKNOWN"));
             free(modName);
 
-            auto it = std::find_if(dmabufFormats.begin(), dmabufFormats.end(), [&fmt](const auto& e) { return e.drmFormat == fmt.drmFormat; });
+            auto it = std::ranges::find_if(dmabufFormats, [&fmt](const auto& e) { return e.drmFormat == fmt.drmFormat; });
             if (it == dmabufFormats.end()) {
                 dmabufFormats.emplace_back(SDRMFormat{.drmFormat = fmt.drmFormat, .modifiers = {fmt.modifier}});
                 continue;
@@ -739,7 +740,7 @@ bool Aquamarine::CWaylandOutput::setCursor(Hyprutils::Memory::CSharedPointer<IBu
 }
 
 void Aquamarine::CWaylandOutput::moveCursor(const Hyprutils::Math::Vector2D& coord, bool skipSchedule) {
-    return;
+    ;
 }
 
 void Aquamarine::CWaylandOutput::onEnter(SP<CCWlPointer> pointer, uint32_t serial) {

@@ -1,4 +1,5 @@
 #include "aquamarine/output/Output.hpp"
+#include <algorithm>
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <aquamarine/backend/drm/Atomic.hpp>
@@ -306,7 +307,7 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 }
 
 Aquamarine::CDRMBackend::~CDRMBackend() {
-    for (auto conn : connectors) {
+    for (auto& conn : connectors) {
         conn->disconnect();
         conn.reset();
     }
@@ -582,14 +583,14 @@ void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts)
         if (fmt.external && fmt.modifier != DRM_FORMAT_MOD_INVALID)
             continue;
 
-        if (auto it = std::find_if(result.begin(), result.end(), [fmt](const auto& e) { return fmt.drmFormat == e.drmFormat; }); it != result.end()) {
+        if (auto it = std::ranges::find_if(result, [fmt](const auto& e) { return fmt.drmFormat == e.drmFormat; }); it != result.end()) {
             it->modifiers.emplace_back(fmt.modifier);
             continue;
         }
 
         result.emplace_back(SDRMFormat{
-            fmt.drmFormat,
-            {fmt.modifier},
+            .drmFormat = fmt.drmFormat,
+            .modifiers = {fmt.modifier},
         });
     }
 
@@ -774,7 +775,7 @@ void Aquamarine::CDRMBackend::scanConnectors() {
             continue;
         }
 
-        auto it = std::find_if(connectors.begin(), connectors.end(), [connectorID](const auto& e) { return e->id == connectorID; });
+        auto it = std::ranges::find_if(connectors, [connectorID](const auto& e) { return e->id == connectorID; });
         if (it == connectors.end()) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Initializing connector id {}", connectorID));
             conn          = connectors.emplace_back(SP<SDRMConnector>(new SDRMConnector()));
@@ -1077,7 +1078,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 
         drmModeFormatModifierIterator iter = {0};
         while (drmModeFormatModifierBlobIterNext(blob, &iter)) {
-            auto it = std::find_if(formats.begin(), formats.end(), [iter](const auto& e) { return e.drmFormat == iter.fmt; });
+            auto it = std::ranges::find_if(formats, [iter](const auto& e) { return e.drmFormat == iter.fmt; });
 
             TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Modifier {} with format {}", iter.mod, fourccToName(iter.fmt))));
 
@@ -1250,10 +1251,10 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
     const auto chromaticity = di_edid_get_chromaticity_coords(edid);
     if (chromaticity) {
         parsed.chromaticityCoords = IOutput::SChromaticityCoords{
-            IOutput::xy{chromaticity->red_x, chromaticity->red_y},
-            IOutput::xy{chromaticity->green_x, chromaticity->green_y},
-            IOutput::xy{chromaticity->blue_x, chromaticity->blue_y},
-            IOutput::xy{chromaticity->white_x, chromaticity->white_y},
+            .red   = IOutput::xy{.x = chromaticity->red_x, .y = chromaticity->red_y},
+            .green = IOutput::xy{.x = chromaticity->green_x, .y = chromaticity->green_y},
+            .blue  = IOutput::xy{.x = chromaticity->blue_x, .y = chromaticity->blue_y},
+            .white = IOutput::xy{.x = chromaticity->white_x, .y = chromaticity->white_y},
         };
         TRACE(backend->backend->log(AQ_LOG_TRACE,
                                     std::format("EDID: chromaticity coords {},{} {},{} {},{} {},{}", parsed.chromaticityCoords->red.x, parsed.chromaticityCoords->red.y,
@@ -1362,7 +1363,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
         output->modes.emplace_back(aqMode);
 
-        if (currentModeInfo && std::memcmp(&drmMode, currentModeInfo, sizeof(drmModeModeInfo))) {
+        if (currentModeInfo && std::memcmp(&drmMode, currentModeInfo, sizeof(drmModeModeInfo)) != 0) {
             output->state->setMode(aqMode);
 
             //uint64_t modeID = 0;

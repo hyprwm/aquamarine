@@ -340,7 +340,6 @@ void Aquamarine::CSession::dispatchUdevEvents() {
     }
 
     udev_device_unref(device);
-    return;
 }
 
 void Aquamarine::CSession::dispatchLibinputEvents() {

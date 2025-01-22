@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <aquamarine/allocator/GBM.hpp>
 #include <aquamarine/backend/Backend.hpp>
 #include <aquamarine/backend/DRM.hpp>
@@ -24,23 +25,23 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor, 
         */
         if (!scanout) {
             if (auto it =
-                    std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB2101010 || f.drmFormat == DRM_FORMAT_ABGR2101010; });
+                    std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB2101010 || f.drmFormat == DRM_FORMAT_ABGR2101010; });
                 it != formats.end())
                 return *it;
         }
 
-        if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB2101010 || f.drmFormat == DRM_FORMAT_XBGR2101010; });
+        if (auto it = std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB2101010 || f.drmFormat == DRM_FORMAT_XBGR2101010; });
             it != formats.end())
             return *it;
     }
 
     if (!scanout || cursor /* don't set opaque for cursor plane */) {
-        if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB8888 || f.drmFormat == DRM_FORMAT_ABGR8888; });
+        if (auto it = std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB8888 || f.drmFormat == DRM_FORMAT_ABGR8888; });
             it != formats.end())
             return *it;
     }
 
-    if (auto it = std::find_if(formats.begin(), formats.end(), [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB8888 || f.drmFormat == DRM_FORMAT_XBGR8888; });
+    if (auto it = std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB8888 || f.drmFormat == DRM_FORMAT_XBGR8888; });
         it != formats.end())
         return *it;
 
@@ -119,7 +120,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
                 TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Renderable has {} formats, clipping", RENDERABLE.size())));
                 if (params.scanout && !CURSOR && !MULTIGPU) {
                     // regular scanout plane, check if the format is renderable
-                    auto rformat = std::find_if(RENDERABLE.begin(), RENDERABLE.end(), [f](const auto& e) { return e.drmFormat == f.drmFormat; });
+                    auto rformat = std::ranges::find_if(RENDERABLE, [f](const auto& e) { return e.drmFormat == f.drmFormat; });
 
                     if (rformat == RENDERABLE.end()) {
                         TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping format {} as it's not renderable", fourccToName(f.drmFormat))));
@@ -322,8 +323,7 @@ SP<CGBMAllocator> Aquamarine::CGBMAllocator::create(int drmfd_, Hyprutils::Memor
     return allocator;
 }
 
-Aquamarine::CGBMAllocator::CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) : fd(fd_), backend(backend_) {
-    gbmDevice = gbm_create_device(fd_);
+Aquamarine::CGBMAllocator::CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) : fd(fd_), backend(backend_), gbmDevice(gbm_create_device(fd_)) {
     if (!gbmDevice) {
         backend->log(AQ_LOG_ERROR, std::format("Couldn't open a GBM device at fd {}", fd_));
         return;

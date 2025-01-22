@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <aquamarine/allocator/Swapchain.hpp>
 #include <aquamarine/backend/Backend.hpp>
 #include "FormatUtils.hpp"
@@ -114,7 +115,7 @@ bool Aquamarine::CSwapchain::resize(size_t newSize) {
 }
 
 bool Aquamarine::CSwapchain::contains(SP<IBuffer> buffer) {
-    return std::find(buffers.begin(), buffers.end(), buffer) != buffers.end();
+    return std::ranges::find(buffers, buffer) != buffers.end();
 }
 
 const SSwapchainOptions& Aquamarine::CSwapchain::currentOptions() {

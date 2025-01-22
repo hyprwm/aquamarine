@@ -1,13 +1,13 @@
 #include "Renderer.hpp"
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <algorithm>
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 #include "Math.hpp"
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
-#include <xf86drm.h>
 #include <aquamarine/allocator/GBM.hpp>
 
 using namespace Aquamarine;
@@ -99,7 +99,7 @@ void main() {
 
 inline void loadGLProc(void* pProc, const char* name) {
     void* proc = (void*)eglGetProcAddress(name);
-    if (proc == NULL) {
+    if (!proc) {
         gBackend->log(AQ_LOG_ERROR, std::format("eglGetProcAddress({}) failed", name));
         abort();
     }
@@ -129,12 +129,13 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     egl.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len);
 
     std::vector<std::pair<uint64_t, bool>> result;
+    result.reserve(mods.size());
     for (size_t i = 0; i < mods.size(); ++i) {
-        result.push_back({mods.at(i), external.at(i)});
+        result.emplace_back(mods.at(i), external.at(i));
     }
 
-    if (std::find(mods.begin(), mods.end(), DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
-        result.push_back({DRM_FORMAT_MOD_LINEAR, true});
+    if (std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
+        result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
 
     return result;
 }
@@ -168,7 +169,7 @@ bool CDRMRenderer::initDRMFormats() {
         hasModifiers = hasModifiers || mods.size() > 0;
 
         // EGL can always do implicit modifiers.
-        mods.push_back({DRM_FORMAT_MOD_INVALID, true});
+        mods.emplace_back(DRM_FORMAT_MOD_INVALID, true);
 
         for (auto const& [mod, external] : mods) {
             dmaFormats.push_back(SGLFormat{
@@ -212,7 +213,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(Hyprutils::Memory::CSharedPointer<CGBMAll
     renderer->backend         = backend_;
     gBackend                  = backend_;
 
-    const std::string EGLEXTENSIONS = (const char*)eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+    const std::string EGLEXTENSIONS = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
 
     if (!EGLEXTENSIONS.contains("KHR_platform_gbm")) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no gbm support");
@@ -283,7 +284,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(Hyprutils::Memory::CSharedPointer<CGBMAll
 
     attrs.clear();
 
-    const std::string EGLEXTENSIONS2 = (const char*)eglQueryString(renderer->egl.display, EGL_EXTENSIONS);
+    const std::string EGLEXTENSIONS2 = eglQueryString(renderer->egl.display, EGL_EXTENSIONS);
 
     if (EGLEXTENSIONS2.contains("IMG_context_priority")) {
         attrs.push_back(EGL_CONTEXT_PRIORITY_LEVEL_IMG);
@@ -407,10 +408,10 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
         EGLint modlo;
         EGLint modhi;
     } attrNames[4] = {
-        {EGL_DMA_BUF_PLANE0_FD_EXT, EGL_DMA_BUF_PLANE0_OFFSET_EXT, EGL_DMA_BUF_PLANE0_PITCH_EXT, EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE1_FD_EXT, EGL_DMA_BUF_PLANE1_OFFSET_EXT, EGL_DMA_BUF_PLANE1_PITCH_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE2_FD_EXT, EGL_DMA_BUF_PLANE2_OFFSET_EXT, EGL_DMA_BUF_PLANE2_PITCH_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT},
-        {EGL_DMA_BUF_PLANE3_FD_EXT, EGL_DMA_BUF_PLANE3_OFFSET_EXT, EGL_DMA_BUF_PLANE3_PITCH_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT}};
+        {.fd = EGL_DMA_BUF_PLANE0_FD_EXT, .offset = EGL_DMA_BUF_PLANE0_OFFSET_EXT, .pitch = EGL_DMA_BUF_PLANE0_PITCH_EXT, .modlo = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, .modhi = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT},
+        {.fd = EGL_DMA_BUF_PLANE1_FD_EXT, .offset = EGL_DMA_BUF_PLANE1_OFFSET_EXT, .pitch = EGL_DMA_BUF_PLANE1_PITCH_EXT, .modlo = EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT, .modhi = EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT},
+        {.fd = EGL_DMA_BUF_PLANE2_FD_EXT, .offset = EGL_DMA_BUF_PLANE2_OFFSET_EXT, .pitch = EGL_DMA_BUF_PLANE2_PITCH_EXT, .modlo = EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, .modhi = EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT},
+        {.fd = EGL_DMA_BUF_PLANE3_FD_EXT, .offset = EGL_DMA_BUF_PLANE3_OFFSET_EXT, .pitch = EGL_DMA_BUF_PLANE3_PITCH_EXT, .modlo = EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT, .modhi = EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT}};
 
     for (int i = 0; i < attrs.planes; i++) {
         attribs.push_back(attrNames[i].fd);
@@ -787,7 +788,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
 
     restoreEGL();
 
-    return {true, explicitFD == -1 ? std::nullopt : std::optional<int>{explicitFD}};
+    return {.success = true, .syncFD = explicitFD == -1 ? std::nullopt : std::optional<int>{explicitFD}};
 }
 
 void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment) {

@@ -49,7 +49,7 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
         drmModeModeInfo*      mode = nullptr;
         if (enable) {
             connectors.push_back(connector->id);
-            mode = (drmModeModeInfo*)&data.modeInfo;
+            mode = &data.modeInfo;
         }
 
         if (mode) {
