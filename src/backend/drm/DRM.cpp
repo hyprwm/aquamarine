@@ -5,6 +5,7 @@
 #include <aquamarine/backend/drm/Atomic.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 #include <aquamarine/allocator/DRMDumb.hpp>
+#include <aquamarine/renderer/EGLRenderer.hpp>
 #include <cstdint>
 #include <format>
 #include <hyprutils/string/VarList.hpp>
@@ -32,7 +33,6 @@ extern "C" {
 #include "FormatUtils.hpp"
 #include "Shared.hpp"
 #include "hwdata.hpp"
-#include "Renderer.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -562,7 +562,7 @@ bool Aquamarine::CDRMBackend::initMgpu() {
         return false;
     }
 
-    rendererState.renderer = CDRMRenderer::attempt(newAllocator, backend.lock());
+    rendererState.renderer = CEGLRenderer::attempt(newAllocator, backend.lock());
 
     if (!rendererState.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
@@ -937,7 +937,7 @@ void Aquamarine::CDRMBackend::onReady() {
         if (!a)
             backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
         else {
-            auto r = CDRMRenderer::attempt(a, backend.lock());
+            auto r = CEGLRenderer::attempt(a, backend.lock());
             if (!r)
                 backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
             else {

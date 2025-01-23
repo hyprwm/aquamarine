@@ -63,6 +63,6 @@ namespace Aquamarine {
         int                                                          drmfd = -1;
 
         friend class CDRMDumbBuffer;
-        friend class CDRMRenderer;
+        friend class CEGLRenderer;
     };
 };

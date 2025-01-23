@@ -1,6 +1,7 @@
 #pragma once
 
 #include <aquamarine/backend/DRM.hpp>
+#include <aquamarine/buffer/Buffer.hpp>
 #include "FormatUtils.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -21,11 +22,11 @@ namespace Aquamarine {
         GLuint   target = GL_TEXTURE_2D;
     };
 
-    class CDRMRendererBufferAttachment : public IAttachment {
+    class CEGLRendererBufferAttachment : public IAttachment {
       public:
-        CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
+        CEGLRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CEGLRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
                                      GLuint rbo_, SGLTex tex);
-        virtual ~CDRMRendererBufferAttachment() {
+        virtual ~CEGLRendererBufferAttachment() {
             ;
         }
         virtual eAttachmentType type() {
@@ -37,13 +38,13 @@ namespace Aquamarine {
         SGLTex                                        tex;
         Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
 
-        Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
+        Hyprutils::Memory::CWeakPointer<CEGLRenderer> renderer;
     };
 
-    class CDRMRenderer {
+    class CEGLRenderer {
       public:
-        ~CDRMRenderer();
-        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_,
+        ~CEGLRenderer();
+        static Hyprutils::Memory::CSharedPointer<CEGLRenderer> attempt(Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_,
                                                                        Hyprutils::Memory::CSharedPointer<CBackend>      backend_);
 
         int                                                    drmFD = -1;
@@ -60,7 +61,7 @@ namespace Aquamarine {
         void setEGL();
         void restoreEGL();
 
-        void onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
+        void onBufferAttachmentDrop(CEGLRendererBufferAttachment* attachment);
 
         struct {
             struct SShader {
@@ -96,11 +97,11 @@ namespace Aquamarine {
 
         SGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
 
-        Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
+        Hyprutils::Memory::CWeakPointer<CEGLRenderer> self;
         std::vector<SGLFormat>                        formats;
 
       private:
-        CDRMRenderer() = default;
+        CEGLRenderer() = default;
 
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
         std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);

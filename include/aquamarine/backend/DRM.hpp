@@ -14,7 +14,7 @@ namespace Aquamarine {
     class CDRMFB;
     class CDRMOutput;
     struct SDRMConnector;
-    class CDRMRenderer;
+    class CEGLRenderer;
     class CDRMDumbAllocator;
 
     typedef std::function<void(void)> FIdleCallback;
@@ -411,7 +411,7 @@ namespace Aquamarine {
 
         struct {
             Hyprutils::Memory::CSharedPointer<IAllocator>   allocator;
-            Hyprutils::Memory::CSharedPointer<CDRMRenderer> renderer; // may be null if creation fails
+            Hyprutils::Memory::CSharedPointer<CEGLRenderer> renderer; // may be null if creation fails
         } rendererState;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
