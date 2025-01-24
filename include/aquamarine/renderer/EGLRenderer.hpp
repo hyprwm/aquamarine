@@ -41,6 +41,23 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CEGLRenderer> renderer;
     };
 
+    class CEGLSync {
+      public:
+        ~CEGLSync();
+
+        EGLSyncKHR sync = nullptr;
+
+        int        fd();
+        bool       wait();
+
+      private:
+        CEGLSync() = default;
+
+        int m_iFd = -1;
+
+        friend class CEGLRenderer;
+    };
+
     class CEGLRenderer {
       public:
         ~CEGLRenderer();
@@ -123,6 +140,7 @@ namespace Aquamarine {
         CEGLRenderer() = default;
 
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
+        Hyprutils::Memory::CSharedPointer<CEGLSync>           createEGLSync(int fenceFD);
         bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
         void                                                  waitOnSync(int fd);
         int                                                   recreateBlitSync();

@@ -16,6 +16,18 @@ using namespace Hyprutils::Math;
 #define SP CSharedPointer
 #define WP CWeakPointer
 
+// macros
+#define GLCALL(__CALL__)                                                                                                                                                           \
+    {                                                                                                                                                                              \
+        __CALL__;                                                                                                                                                                  \
+        auto err = glGetError();                                                                                                                                                   \
+        if (err != GL_NO_ERROR) {                                                                                                                                                  \
+            backend->log(AQ_LOG_ERROR,                                                                                                                                             \
+                         std::format("[GLES] Error in call at {}@{}: 0x{:x}", __LINE__,                                                                                            \
+                                     ([]() constexpr -> std::string { return std::string(__FILE__).substr(std::string(__FILE__).find_last_of('/') + 1); })(), err));               \
+        }                                                                                                                                                                          \
+    }
+
 // static funcs
 static WP<CBackend> gBackend;
 
@@ -584,6 +596,45 @@ void CEGLRenderer::restoreEGL() {
         backend->log(AQ_LOG_WARNING, "CEGLRenderer: restoreEGL eglMakeCurrent failed");
 }
 
+SP<CEGLSync> CEGLRenderer::createEGLSync(int fenceFD) {
+    std::vector<EGLint> attribs;
+    int                 dupFd = -1;
+    if (fenceFD > 0) {
+        dupFd = fcntl(fenceFD, F_DUPFD_CLOEXEC, 0);
+        if (dupFd < 0) {
+            backend->log(AQ_LOG_ERROR, "createEGLSync: dup failed");
+            return nullptr;
+        }
+        // reserve number of elements to avoid reallocations
+        attribs.reserve(3);
+        attribs.push_back(EGL_SYNC_NATIVE_FENCE_FD_ANDROID);
+        attribs.push_back(dupFd);
+        attribs.push_back(EGL_NONE);
+    }
+
+    EGLSyncKHR sync = proc.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, attribs.data());
+    if (sync == EGL_NO_SYNC_KHR) {
+        backend->log(AQ_LOG_ERROR, "eglCreateSyncKHR failed");
+        if (dupFd >= 0)
+            close(dupFd);
+        return nullptr;
+    }
+
+    // we need to flush otherwise we might not get a valid fd
+    glFlush();
+
+    int fd = proc.eglDupNativeFenceFDANDROID(egl.display, sync);
+    if (fd == EGL_NO_NATIVE_FENCE_FD_ANDROID) {
+        backend->log(AQ_LOG_ERROR, "eglDupNativeFenceFDANDROID failed");
+        return nullptr;
+    }
+
+    auto eglsync   = SP<CEGLSync>(new CEGLSync);
+    eglsync->sync  = sync;
+    eglsync->m_iFd = fd;
+    return eglsync;
+}
+
 EGLImageKHR CEGLRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
     std::vector<uint32_t> attribs;
 
@@ -651,17 +702,6 @@ EGLImageKHR CEGLRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
 
     return image;
 }
-
-#define GLCALL(__CALL__)                                                                                                                                                           \
-    {                                                                                                                                                                              \
-        __CALL__;                                                                                                                                                                  \
-        auto err = glGetError();                                                                                                                                                   \
-        if (err != GL_NO_ERROR) {                                                                                                                                                  \
-            backend->log(AQ_LOG_ERROR,                                                                                                                                             \
-                         std::format("[GLES] Error in call at {}@{}: 0x{:x}", __LINE__,                                                                                            \
-                                     ([]() constexpr -> std::string { return std::string(__FILE__).substr(std::string(__FILE__).find_last_of('/') + 1); })(), err));               \
-        }                                                                                                                                                                          \
-    }
 
 SGLTex CEGLRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
     SGLTex     tex;
