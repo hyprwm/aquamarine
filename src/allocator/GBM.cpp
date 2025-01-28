@@ -24,8 +24,7 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor, 
             For cursors, don't, as these almost never support that.
         */
         if (!scanout) {
-            if (auto it =
-                    std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB2101010 || f.drmFormat == DRM_FORMAT_ABGR2101010; });
+            if (auto it = std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB2101010 || f.drmFormat == DRM_FORMAT_ABGR2101010; });
                 it != formats.end())
                 return *it;
         }
@@ -36,13 +35,11 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor, 
     }
 
     if (!scanout || cursor /* don't set opaque for cursor plane */) {
-        if (auto it = std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB8888 || f.drmFormat == DRM_FORMAT_ABGR8888; });
-            it != formats.end())
+        if (auto it = std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_ARGB8888 || f.drmFormat == DRM_FORMAT_ABGR8888; }); it != formats.end())
             return *it;
     }
 
-    if (auto it = std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB8888 || f.drmFormat == DRM_FORMAT_XBGR8888; });
-        it != formats.end())
+    if (auto it = std::ranges::find_if(formats, [](const auto& f) { return f.drmFormat == DRM_FORMAT_XRGB8888 || f.drmFormat == DRM_FORMAT_XBGR8888; }); it != formats.end())
         return *it;
 
     for (auto const& f : formats) {

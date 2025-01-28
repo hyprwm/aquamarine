@@ -43,6 +43,7 @@ bool Aquamarine::CHeadlessOutput::commit() {
     events.commit.emit();
     state->onCommit();
     needsFrame = false;
+    events.present.emit(IOutput::SPresentEvent{.presented = true});
     return true;
 }
 

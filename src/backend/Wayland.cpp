@@ -643,6 +643,7 @@ void Aquamarine::CWaylandOutput::sendFrameAndSetCallback() {
 void Aquamarine::CWaylandOutput::onFrameDone() {
     waylandState.frameCallback.reset();
     readyForFrameCallback = false;
+    events.present.emit(IOutput::SPresentEvent{.presented = true});
 
     // FIXME: this is wrong, but otherwise we get bugs.
     // thanks @phonetic112
