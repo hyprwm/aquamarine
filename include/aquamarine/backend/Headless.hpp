@@ -35,7 +35,7 @@ namespace Aquamarine {
 
     class CHeadlessBackend : public IBackendImplementation {
       public:
-        virtual ~CHeadlessBackend();
+        virtual ~CHeadlessBackend() = default;
         virtual eBackendType                                               type();
         virtual bool                                                       start();
         virtual std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>    pollFDs();

@@ -86,7 +86,7 @@ namespace Aquamarine {
         /* Create a backend, with the provided options. May return a single or a multi-backend. */
         static Hyprutils::Memory::CSharedPointer<CBackend> create(const std::vector<SBackendImplementationOptions>& backends, const SBackendOptions& options);
 
-        ~CBackend();
+        ~CBackend() = default;
 
         /* start the backend. Initializes all the stuff, and will return true on success, false on fail. */
         bool start();
