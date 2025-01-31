@@ -12,6 +12,7 @@
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
+using namespace Hyprutils::OS;
 #define SP CSharedPointer
 
 static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor, bool scanout) {
@@ -195,13 +196,13 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     for (size_t i = 0; i < (size_t)attrs.planes; ++i) {
         attrs.strides.at(i) = gbm_bo_get_stride_for_plane(bo, i);
         attrs.offsets.at(i) = gbm_bo_get_offset(bo, i);
-        attrs.fds.at(i)     = gbm_bo_get_fd_for_plane(bo, i);
+        attrs.fds.at(i)     = CFileDescriptor{gbm_bo_get_fd_for_plane(bo, i)};
 
-        if (attrs.fds.at(i) < 0) {
+        if (!attrs.fds.at(i).isValid()) {
             allocator->backend->log(AQ_LOG_ERROR, std::format("GBM: Failed to query fd for plane {}", i));
-            for (size_t j = 0; j < i; ++j) {
-                close(attrs.fds.at(j));
-            }
+            for (size_t j = 0; j < i; ++j)
+                attrs.fds.at(j).reset();
+
             attrs.planes = 0;
             return;
         }
@@ -226,10 +227,6 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 }
 
 Aquamarine::CGBMBuffer::~CGBMBuffer() {
-    for (size_t i = 0; i < (size_t)attrs.planes; i++) {
-        close(attrs.fds.at(i));
-    }
-
     events.destroy.emit();
     if (bo) {
         if (gboMapping)
@@ -258,7 +255,7 @@ bool Aquamarine::CGBMBuffer::good() {
     return bo;
 }
 
-SDMABUFAttrs Aquamarine::CGBMBuffer::dmabuf() {
+const SDMABUFAttrs& Aquamarine::CGBMBuffer::dmabuf() const {
     return attrs;
 }
 

@@ -637,7 +637,7 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
 
     for (int i = 0; i < attrs.planes; i++) {
         attribs.push_back(attrNames[i].fd);
-        attribs.push_back(attrs.fds[i]);
+        attribs.push_back(attrs.fds[i].get());
         attribs.push_back(attrNames[i].offset);
         attribs.push_back(attrs.offsets[i]);
         attribs.push_back(attrNames[i].pitch);
@@ -665,9 +665,9 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
 }
 
 SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
-    SGLTex     tex;
+    SGLTex      tex;
 
-    const auto dma = buffa->dmabuf();
+    const auto& dma = buffa->dmabuf();
 
     tex.image = createEGLImage(dma);
     if (tex.image == EGL_NO_IMAGE_KHR) {
@@ -785,8 +785,8 @@ int CDRMRenderer::recreateBlitSync() {
 void CDRMRenderer::clearBuffer(IBuffer* buf) {
     setEGL();
 
-    auto   dmabuf = buf->dmabuf();
-    GLuint rboID = 0, fboID = 0;
+    const auto& dmabuf = buf->dmabuf();
+    GLuint      rboID = 0, fboID = 0;
 
     if (!dmabuf.success) {
         backend->log(AQ_LOG_ERROR, "EGL (clear): cannot clear a non-dmabuf");
@@ -874,7 +874,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
 
     EGLImageKHR rboImage = nullptr;
     GLuint      rboID = 0, fboID = 0;
-    auto        toDma = to->dmabuf();
+    const auto& toDma = to->dmabuf();
 
     if (!verifyDestinationDMABUF(toDma)) {
         backend->log(AQ_LOG_ERROR, "EGL (blit): failed to blit: destination dmabuf unsupported");

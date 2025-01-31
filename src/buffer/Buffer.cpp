@@ -3,8 +3,8 @@
 
 using namespace Aquamarine;
 
-SDMABUFAttrs Aquamarine::IBuffer::dmabuf() {
-    return SDMABUFAttrs{};
+const SDMABUFAttrs& Aquamarine::IBuffer::dmabuf() const {
+    return m_attrs;
 }
 
 SSHMAttrs Aquamarine::IBuffer::shm() {

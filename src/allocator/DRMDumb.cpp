@@ -14,6 +14,7 @@
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
+using namespace Hyprutils::OS;
 #define SP CSharedPointer
 #define WP CWeakPointer
 
@@ -53,7 +54,7 @@ Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params,
         return;
     }
 
-    attrs.fds.at(0) = primeFD;
+    attrs.fds.at(0) = CFileDescriptor{primeFD};
 
     attrs.success = true;
 
@@ -94,7 +95,7 @@ bool Aquamarine::CDRMDumbBuffer::good() {
     return attrs.success && data;
 }
 
-SDMABUFAttrs Aquamarine::CDRMDumbBuffer::dmabuf() {
+const SDMABUFAttrs& Aquamarine::CDRMDumbBuffer::dmabuf() const {
     return attrs;
 }
 

@@ -709,11 +709,11 @@ bool Aquamarine::CWaylandOutput::setCursor(Hyprutils::Memory::CSharedPointer<IBu
         pool.reset();
 
         close(fd);
-    } else if (auto attrs = buffer->dmabuf(); attrs.success) {
+    } else if (const auto& attrs = buffer->dmabuf(); attrs.success) {
         auto params = makeShared<CCZwpLinuxBufferParamsV1>(backend->waylandState.dmabuf->sendCreateParams());
 
         for (int i = 0; i < attrs.planes; ++i) {
-            params->sendAdd(attrs.fds.at(i), i, attrs.offsets.at(i), attrs.strides.at(i), attrs.modifier >> 32, attrs.modifier & 0xFFFFFFFF);
+            params->sendAdd(attrs.fds.at(i).get(), i, attrs.offsets.at(i), attrs.strides.at(i), attrs.modifier >> 32, attrs.modifier & 0xFFFFFFFF);
         }
 
         cursorState.cursorWlBuffer = makeShared<CCWlBuffer>(params->sendCreateImmed(attrs.size.x, attrs.size.y, attrs.format, (zwpLinuxBufferParamsV1Flags)0));
@@ -781,10 +781,10 @@ Aquamarine::CWaylandBuffer::CWaylandBuffer(SP<IBuffer> buffer_, Hyprutils::Memor
         return;
     }
 
-    auto attrs = buffer->dmabuf();
+    const auto& attrs = buffer->dmabuf();
 
     for (int i = 0; i < attrs.planes; ++i) {
-        params->sendAdd(attrs.fds.at(i), i, attrs.offsets.at(i), attrs.strides.at(i), attrs.modifier >> 32, attrs.modifier & 0xFFFFFFFF);
+        params->sendAdd(attrs.fds.at(i).get(), i, attrs.offsets.at(i), attrs.strides.at(i), attrs.modifier >> 32, attrs.modifier & 0xFFFFFFFF);
     }
 
     waylandState.buffer = makeShared<CCWlBuffer>(params->sendCreateImmed(attrs.size.x, attrs.size.y, attrs.format, (zwpLinuxBufferParamsV1Flags)0));

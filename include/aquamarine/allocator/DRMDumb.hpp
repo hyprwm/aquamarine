@@ -16,7 +16,7 @@ namespace Aquamarine {
         virtual void                                   update(const Hyprutils::Math::CRegion& damage);
         virtual bool                                   isSynchronous();
         virtual bool                                   good();
-        virtual SDMABUFAttrs                           dmabuf();
+        virtual const SDMABUFAttrs&                    dmabuf() const;
         virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);
         virtual void                                   endDataPtr();
 

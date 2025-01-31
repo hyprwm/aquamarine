@@ -87,17 +87,17 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
 
     if (data.cursorFB && connector->crtc->cursor && connector->output->cursorVisible && enable &&
         (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS)) {
-        uint32_t boHandle = 0;
-        auto     attrs    = data.cursorFB->buffer->dmabuf();
+        uint32_t    boHandle = 0;
+        const auto& attrs    = data.cursorFB->buffer->dmabuf();
 
-        if (int ret = drmPrimeFDToHandle(connector->backend->gpu->fd, attrs.fds.at(0), &boHandle); ret) {
+        if (int ret = drmPrimeFDToHandle(connector->backend->gpu->fd, attrs.fds.at(0).get(), &boHandle); ret) {
             connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmPrimeFDToHandle failed: {}", strerror(-ret)));
             return false;
         }
 
         connector->backend->backend->log(AQ_LOG_DEBUG,
                                          std::format("legacy drm: cursor fb: {} with bo handle {} from fd {}, size {}", connector->backend->gpu->fd, boHandle,
-                                                     data.cursorFB->buffer->dmabuf().fds.at(0), data.cursorFB->buffer->size));
+                                                     data.cursorFB->buffer->dmabuf().fds.at(0).get(), data.cursorFB->buffer->size));
 
         Vector2D                cursorPos = connector->output->cursorPos;
 
