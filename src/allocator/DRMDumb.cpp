@@ -2,7 +2,6 @@
 #include <aquamarine/backend/Backend.hpp>
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/allocator/Swapchain.hpp>
-#include <aquamarine/renderer/EGLRenderer.hpp>
 #include "FormatUtils.hpp"
 #include "Shared.hpp"
 #include <fcntl.h>
@@ -11,6 +10,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <sys/mman.h>
+#include "../backend/drm/Renderer.hpp"
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
