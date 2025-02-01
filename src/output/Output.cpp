@@ -138,6 +138,10 @@ void Aquamarine::COutputState::setHDRMetadata(const hdr_output_metadata& metadat
     internalState.committed |= AQ_OUTPUT_STATE_HDR;
 }
 
+void Aquamarine::COutputState::setContentType(const uint16_t drmContentType) {
+    internalState.contentType = drmContentType;
+}
+
 void Aquamarine::COutputState::onCommit() {
     internalState.committed = 0;
     internalState.damage.clear();
