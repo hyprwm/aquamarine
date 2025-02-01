@@ -43,8 +43,10 @@ namespace Aquamarine {
     class CDRMRenderer {
       public:
         ~CDRMRenderer();
-        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_,
-                                                                       Hyprutils::Memory::CSharedPointer<CBackend>      backend_);
+
+        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend_, int drmFD, bool GLES2 = true);
+        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CBackend>      backend_,
+                                                                       Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, bool GLES2 = true);
 
         int                                                    drmFD = -1;
 
@@ -70,11 +72,6 @@ namespace Aquamarine {
         } gl;
 
         struct {
-            EGLDisplay                                    display        = nullptr;
-            EGLContext                                    context        = nullptr;
-            EGLSync                                       lastBlitSync   = nullptr;
-            int                                           lastBlitSyncFD = -1;
-
             PFNEGLGETPLATFORMDISPLAYEXTPROC               eglGetPlatformDisplayEXT               = nullptr;
             PFNEGLCREATEIMAGEKHRPROC                      eglCreateImageKHR                      = nullptr;
             PFNEGLDESTROYIMAGEKHRPROC                     eglDestroyImageKHR                     = nullptr;
@@ -86,6 +83,28 @@ namespace Aquamarine {
             PFNEGLWAITSYNCKHRPROC                         eglWaitSyncKHR                         = nullptr;
             PFNEGLCREATESYNCKHRPROC                       eglCreateSyncKHR                       = nullptr;
             PFNEGLDUPNATIVEFENCEFDANDROIDPROC             eglDupNativeFenceFDANDROID             = nullptr;
+            PFNEGLDEBUGMESSAGECONTROLKHRPROC              eglDebugMessageControlKHR              = nullptr;
+            PFNEGLQUERYDEVICESEXTPROC                     eglQueryDevicesEXT                     = nullptr;
+            PFNEGLQUERYDEVICESTRINGEXTPROC                eglQueryDeviceStringEXT                = nullptr;
+        } proc;
+
+        struct {
+            bool EXT_read_format_bgra               = false;
+            bool EXT_texture_format_BGRA8888        = false;
+            bool EXT_platform_device                = false;
+            bool KHR_platform_gbm                   = false;
+            bool EXT_image_dma_buf_import           = false;
+            bool EXT_image_dma_buf_import_modifiers = false;
+            bool KHR_display_reference              = false;
+            bool IMG_context_priority               = false;
+            bool EXT_create_context_robustness      = false;
+        } exts;
+
+        struct {
+            EGLDisplay display        = nullptr;
+            EGLContext context        = nullptr;
+            EGLSync    lastBlitSync   = nullptr;
+            int        lastBlitSyncFD = -1;
         } egl;
 
         struct {
@@ -103,11 +122,16 @@ namespace Aquamarine {
         CDRMRenderer() = default;
 
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
-        std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);
-        bool                                                  initDRMFormats();
         bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
         void                                                  waitOnSync(int fd);
         int                                                   recreateBlitSync();
+
+        void                                                  loadEGLAPI();
+        EGLDeviceEXT                                          eglDeviceFromDRMFD(int drmFD);
+        void                                                  initContext(bool GLES2);
+        void                                                  initResources();
+        bool                                                  initDRMFormats();
+        std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);
         bool                                                  hasModifiers = false;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
