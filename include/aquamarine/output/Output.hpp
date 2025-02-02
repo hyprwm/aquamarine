@@ -78,6 +78,7 @@ namespace Aquamarine {
             Hyprutils::Math::Mat3x3                        ctm;
             bool                                           wideColorGamut = false;
             hdr_output_metadata                            hdrMetadata;
+            uint16_t                                       contentType = DRM_MODE_CONTENT_TYPE_GRAPHICS;
         };
 
         const SInternalState& state();
@@ -99,6 +100,7 @@ namespace Aquamarine {
         void                  setCTM(const Hyprutils::Math::Mat3x3& ctm);
         void                  setWideColorGamut(bool wcg);
         void                  setHDRMetadata(const hdr_output_metadata& metadata);
+        void                  setContentType(const uint16_t drmContentType);
 
       private:
         SInternalState internalState;
