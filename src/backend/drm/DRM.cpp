@@ -470,7 +470,7 @@ bool Aquamarine::CDRMBackend::initResources() {
 
     backend->log(AQ_LOG_DEBUG, std::format("drm: found {} CRTCs", resources->count_crtcs));
 
-    for (size_t i = 0; i < resources->count_crtcs; ++i) {
+    for (int i = 0; i < resources->count_crtcs; ++i) {
         auto CRTC     = makeShared<SDRMCRTC>();
         CRTC->id      = resources->crtcs[i];
         CRTC->backend = self;
@@ -762,7 +762,7 @@ void Aquamarine::CDRMBackend::scanConnectors() {
         return;
     }
 
-    for (size_t i = 0; i < resources->count_connectors; ++i) {
+    for (int i = 0; i < resources->count_connectors; ++i) {
         uint32_t          connectorID = resources->connectors[i];
 
         SP<SDRMConnector> conn;
@@ -804,7 +804,7 @@ void Aquamarine::CDRMBackend::scanConnectors() {
 
     // cleanup hot unplugged connectors
     std::erase_if(connectors, [resources](const auto& conn) {
-        for (size_t i = 0; i < resources->count_connectors; ++i) {
+        for (int i = 0; i < resources->count_connectors; ++i) {
             if (resources->connectors[i] == conn->id)
                 return false;
         }
@@ -2103,7 +2103,7 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
 
     auto                    attrs = buffer->dmabuf();
     std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
-    for (size_t i = 0; i < attrs.planes; ++i) {
+    for (int i = 0; i < attrs.planes; ++i) {
         mods[i] = attrs.modifier;
     }
 

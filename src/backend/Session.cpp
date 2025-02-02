@@ -1025,7 +1025,7 @@ Aquamarine::CLibinputTabletPad::CLibinputTabletPad(Hyprutils::Memory::CSharedPoi
     paths.emplace_back(udev_device_get_syspath(udevice));
 
     int groupsno = libinput_device_tablet_pad_get_num_mode_groups(device->device);
-    for (size_t i = 0; i < groupsno; ++i) {
+    for (int i = 0; i < groupsno; ++i) {
         auto g = createGroupFromID(i);
         if (g)
             groups.emplace_back(g);
