@@ -154,6 +154,6 @@ eAllocatorType Aquamarine::CDRMDumbAllocator::type() {
     return eAllocatorType::AQ_ALLOCATOR_TYPE_DRM_DUMB;
 }
 
-Aquamarine::CDRMDumbAllocator::CDRMDumbAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) : drmfd(fd_), backend(backend_) {
+Aquamarine::CDRMDumbAllocator::CDRMDumbAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) : backend(backend_), drmfd(fd_) {
     ; // nothing to do
 }

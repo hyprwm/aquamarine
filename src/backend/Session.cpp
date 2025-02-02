@@ -118,7 +118,7 @@ static const libinput_interface libinputListener = {
 
 // ------------
 
-Aquamarine::CSessionDevice::CSessionDevice(Hyprutils::Memory::CSharedPointer<CSession> session_, const std::string& path_) : session(session_), path(path_) {
+Aquamarine::CSessionDevice::CSessionDevice(Hyprutils::Memory::CSharedPointer<CSession> session_, const std::string& path_) : path(path_), session(session_) {
     deviceID = libseat_open_device(session->libseatHandle, path.c_str(), &fd);
     if (deviceID < 0) {
         session->backend->log(AQ_LOG_ERROR, std::format("libseat: Couldn't open device at {}", path_));
