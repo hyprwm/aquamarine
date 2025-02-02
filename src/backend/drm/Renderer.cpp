@@ -16,12 +16,24 @@ using namespace Hyprutils::Math;
 #define SP CSharedPointer
 #define WP CWeakPointer
 
+// macros
+#define GLCALL(__CALL__)                                                                                                                                                           \
+    {                                                                                                                                                                              \
+        __CALL__;                                                                                                                                                                  \
+        auto err = glGetError();                                                                                                                                                   \
+        if (err != GL_NO_ERROR) {                                                                                                                                                  \
+            backend->log(AQ_LOG_ERROR,                                                                                                                                             \
+                         std::format("[GLES] Error in call at {}@{}: 0x{:x}", __LINE__,                                                                                            \
+                                     ([]() constexpr -> std::string { return std::string(__FILE__).substr(std::string(__FILE__).find_last_of('/') + 1); })(), err));               \
+        }                                                                                                                                                                          \
+    }
+
 // static funcs
-WP<CBackend> gBackend;
+static WP<CBackend> gBackend;
 
 // ------------------- shader utils
 
-GLuint compileShader(const GLuint& type, std::string src) {
+static GLuint compileShader(const GLuint& type, std::string src) {
     auto shader = glCreateShader(type);
 
     auto shaderSource = src.c_str();
@@ -38,7 +50,7 @@ GLuint compileShader(const GLuint& type, std::string src) {
     return shader;
 }
 
-GLuint createProgram(const std::string& vert, const std::string& frag) {
+static GLuint createProgram(const std::string& vert, const std::string& frag) {
     auto vertCompiled = compileShader(GL_VERTEX_SHADER, vert);
     if (vertCompiled == 0)
         return 0;
@@ -97,22 +109,112 @@ void main() {
 
 // ------------------- egl stuff
 
-inline void loadGLProc(void* pProc, const char* name) {
+static inline void loadGLProc(void* pProc, const char* name) {
     void* proc = (void*)eglGetProcAddress(name);
     if (!proc) {
-        gBackend->log(AQ_LOG_ERROR, std::format("eglGetProcAddress({}) failed", name));
+        gBackend->log(AQ_LOG_ERROR, std::format("eglGetProcAddress({}) failed, the display driver doesn't support it", name));
         abort();
     }
     *(void**)pProc = proc;
 }
 
+static enum eBackendLogLevel eglLogToLevel(EGLint type) {
+    switch (type) {
+        case EGL_DEBUG_MSG_CRITICAL_KHR: return AQ_LOG_CRITICAL;
+        case EGL_DEBUG_MSG_ERROR_KHR: return AQ_LOG_ERROR;
+        case EGL_DEBUG_MSG_WARN_KHR: return AQ_LOG_WARNING;
+        case EGL_DEBUG_MSG_INFO_KHR: return AQ_LOG_DEBUG;
+        default: return AQ_LOG_DEBUG;
+    }
+}
+
+static const char* eglErrorToString(EGLint error) {
+    switch (error) {
+        case EGL_SUCCESS: return "EGL_SUCCESS";
+        case EGL_NOT_INITIALIZED: return "EGL_NOT_INITIALIZED";
+        case EGL_BAD_ACCESS: return "EGL_BAD_ACCESS";
+        case EGL_BAD_ALLOC: return "EGL_BAD_ALLOC";
+        case EGL_BAD_ATTRIBUTE: return "EGL_BAD_ATTRIBUTE";
+        case EGL_BAD_CONTEXT: return "EGL_BAD_CONTEXT";
+        case EGL_BAD_CONFIG: return "EGL_BAD_CONFIG";
+        case EGL_BAD_CURRENT_SURFACE: return "EGL_BAD_CURRENT_SURFACE";
+        case EGL_BAD_DISPLAY: return "EGL_BAD_DISPLAY";
+        case EGL_BAD_DEVICE_EXT: return "EGL_BAD_DEVICE_EXT";
+        case EGL_BAD_SURFACE: return "EGL_BAD_SURFACE";
+        case EGL_BAD_MATCH: return "EGL_BAD_MATCH";
+        case EGL_BAD_PARAMETER: return "EGL_BAD_PARAMETER";
+        case EGL_BAD_NATIVE_PIXMAP: return "EGL_BAD_NATIVE_PIXMAP";
+        case EGL_BAD_NATIVE_WINDOW: return "EGL_BAD_NATIVE_WINDOW";
+        case EGL_CONTEXT_LOST: return "EGL_CONTEXT_LOST";
+        default: return "Unknown";
+    }
+}
+
+static void eglLog(EGLenum error, const char* command, EGLint type, EGLLabelKHR thread, EGLLabelKHR obj, const char* msg) {
+    gBackend->log(eglLogToLevel(type), std::format("[EGL] Command {} errored out with {} (0x{}): {}", command, eglErrorToString(error), error, msg));
+}
+
+static bool drmDeviceHasName(const drmDevice* device, const std::string& name) {
+    for (size_t i = 0; i < DRM_NODE_MAX; i++) {
+        if (!(device->available_nodes & (1 << i)))
+            continue;
+
+        if (device->nodes[i] == name)
+            return true;
+    }
+    return false;
+}
+
 // -------------------
+
+EGLDeviceEXT CDRMRenderer::eglDeviceFromDRMFD(int drmFD) {
+    EGLint nDevices = 0;
+    if (!proc.eglQueryDevicesEXT(0, nullptr, &nDevices)) {
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer(drm): eglQueryDevicesEXT failed");
+        return EGL_NO_DEVICE_EXT;
+    }
+
+    if (nDevices <= 0) {
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer(drm): no devices");
+        return EGL_NO_DEVICE_EXT;
+    }
+
+    std::vector<EGLDeviceEXT> devices;
+    devices.resize(nDevices);
+
+    if (!proc.eglQueryDevicesEXT(nDevices, devices.data(), &nDevices)) {
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer(drm): eglQueryDevicesEXT failed (2)");
+        return EGL_NO_DEVICE_EXT;
+    }
+
+    drmDevice* drmDev = nullptr;
+    if (int ret = drmGetDevice(drmFD, &drmDev); ret < 0) {
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer(drm): drmGetDevice failed");
+        drmFreeDevice(&drmDev);
+        return EGL_NO_DEVICE_EXT;
+    }
+
+    for (auto const& d : devices) {
+        auto devName = proc.eglQueryDeviceStringEXT(d, EGL_DRM_DEVICE_FILE_EXT);
+        if (!devName)
+            continue;
+
+        if (drmDeviceHasName(drmDev, devName)) {
+            backend->log(AQ_LOG_DEBUG, std::format("CDRMRenderer(drm): Using device {}", devName));
+            drmFreeDevice(&drmDev);
+            return d;
+        }
+    }
+
+    drmFreeDevice(&drmDev);
+    return EGL_NO_DEVICE_EXT;
+}
 
 std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFormat(EGLint format) {
     // TODO: return std::expected when clang supports it
 
     EGLint len = 0;
-    if (!egl.eglQueryDmaBufModifiersEXT(egl.display, format, 0, nullptr, nullptr, &len)) {
+    if (!proc.eglQueryDmaBufModifiersEXT(egl.display, format, 0, nullptr, nullptr, &len)) {
         backend->log(AQ_LOG_ERROR, std::format("EGL: eglQueryDmaBufModifiersEXT failed for format {}", fourccToName(format)));
         return std::nullopt;
     }
@@ -126,15 +228,20 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     mods.resize(len);
     external.resize(len);
 
-    egl.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len);
+    proc.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len);
 
     std::vector<std::pair<uint64_t, bool>> result;
     result.reserve(mods.size());
+
+    bool linearIsExternal = false;
     for (size_t i = 0; i < mods.size(); ++i) {
+        if (external.at(i) && mods.at(i) == DRM_FORMAT_MOD_LINEAR)
+            linearIsExternal = true;
         result.emplace_back(mods.at(i), external.at(i));
     }
 
-    if (std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
+    // if the driver doesn't mark linear as external, add it. It's allowed unless the driver says otherwise. (e.g. nvidia)
+    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
         result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
 
     return result;
@@ -144,9 +251,9 @@ bool CDRMRenderer::initDRMFormats() {
     std::vector<EGLint> formats;
 
     EGLint              len = 0;
-    egl.eglQueryDmaBufFormatsEXT(egl.display, 0, nullptr, &len);
+    proc.eglQueryDmaBufFormatsEXT(egl.display, 0, nullptr, &len);
     formats.resize(len);
-    egl.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len);
+    proc.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len);
 
     if (formats.size() == 0) {
         backend->log(AQ_LOG_ERROR, "EGL: Failed to get formats");
@@ -156,15 +263,18 @@ bool CDRMRenderer::initDRMFormats() {
     TRACE(backend->log(AQ_LOG_TRACE, "EGL: Supported formats:"));
 
     std::vector<SGLFormat> dmaFormats;
+    dmaFormats.reserve(formats.size());
 
     for (auto const& fmt : formats) {
         std::vector<std::pair<uint64_t, bool>> mods;
 
-        auto                                   ret = getModsForFormat(fmt);
-        if (!ret.has_value())
-            continue;
+        if (exts.EXT_image_dma_buf_import_modifiers) {
+            auto ret = getModsForFormat(fmt);
+            if (!ret.has_value())
+                continue;
 
-        mods = *ret;
+            mods = *ret;
+        }
 
         hasModifiers = hasModifiers || mods.size() > 0;
 
@@ -199,171 +309,268 @@ bool CDRMRenderer::initDRMFormats() {
 }
 
 Aquamarine::CDRMRenderer::~CDRMRenderer() {
-    eglMakeCurrent(egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    eglDestroyContext(egl.display, egl.context);
+    if (egl.display)
+        eglMakeCurrent(egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
-    eglTerminate(egl.display);
+    if (egl.display && egl.context != EGL_NO_CONTEXT && egl.context != nullptr)
+        eglDestroyContext(egl.display, egl.context);
+
+    if (egl.display)
+        eglTerminate(egl.display);
 
     eglReleaseThread();
 }
 
-SP<CDRMRenderer> CDRMRenderer::attempt(Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, SP<CBackend> backend_) {
+void CDRMRenderer::loadEGLAPI() {
+    const std::string EGLEXTENSIONS = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+
+    backend->log(AQ_LOG_DEBUG, std::format("Supported EGL client extensions: ({}) {}", std::count(EGLEXTENSIONS.begin(), EGLEXTENSIONS.end(), ' '), EGLEXTENSIONS));
+
+    exts.KHR_display_reference = EGLEXTENSIONS.contains("KHR_display_reference");
+    exts.EXT_platform_device   = EGLEXTENSIONS.contains("EXT_platform_device");
+    exts.KHR_platform_gbm      = EGLEXTENSIONS.contains("KHR_platform_gbm");
+
+    loadGLProc(&proc.eglGetPlatformDisplayEXT, "eglGetPlatformDisplayEXT");
+    loadGLProc(&proc.eglCreateImageKHR, "eglCreateImageKHR");
+    loadGLProc(&proc.eglDestroyImageKHR, "eglDestroyImageKHR");
+    loadGLProc(&proc.eglQueryDmaBufFormatsEXT, "eglQueryDmaBufFormatsEXT");
+    loadGLProc(&proc.eglQueryDmaBufModifiersEXT, "eglQueryDmaBufModifiersEXT");
+    loadGLProc(&proc.glEGLImageTargetTexture2DOES, "glEGLImageTargetTexture2DOES");
+    loadGLProc(&proc.glEGLImageTargetRenderbufferStorageOES, "glEGLImageTargetRenderbufferStorageOES");
+    loadGLProc(&proc.eglDestroySyncKHR, "eglDestroySyncKHR");
+    loadGLProc(&proc.eglWaitSyncKHR, "eglWaitSyncKHR");
+    loadGLProc(&proc.eglCreateSyncKHR, "eglCreateSyncKHR");
+    loadGLProc(&proc.eglDupNativeFenceFDANDROID, "eglDupNativeFenceFDANDROID");
+    loadGLProc(&proc.glEGLImageTargetRenderbufferStorageOES, "glEGLImageTargetRenderbufferStorageOES");
+
+    if (EGLEXTENSIONS.contains("EGL_EXT_device_base") || EGLEXTENSIONS.contains("EGL_EXT_device_enumeration"))
+        loadGLProc(&proc.eglQueryDevicesEXT, "eglQueryDevicesEXT");
+
+    if (EGLEXTENSIONS.contains("EGL_EXT_device_base") || EGLEXTENSIONS.contains("EGL_EXT_device_query"))
+        loadGLProc(&proc.eglQueryDeviceStringEXT, "eglQueryDeviceStringEXT");
+
+    if (EGLEXTENSIONS.contains("EGL_KHR_debug")) {
+        loadGLProc(&proc.eglDebugMessageControlKHR, "eglDebugMessageControlKHR");
+        static const EGLAttrib debugAttrs[] = {
+            EGL_DEBUG_MSG_CRITICAL_KHR, EGL_TRUE, EGL_DEBUG_MSG_ERROR_KHR, EGL_TRUE, EGL_DEBUG_MSG_WARN_KHR, EGL_TRUE, EGL_DEBUG_MSG_INFO_KHR, EGL_TRUE, EGL_NONE,
+        };
+        proc.eglDebugMessageControlKHR(::eglLog, debugAttrs);
+    }
+
+    if (EGLEXTENSIONS.contains("EXT_platform_device")) {
+        loadGLProc(&proc.eglQueryDevicesEXT, "eglQueryDevicesEXT");
+        loadGLProc(&proc.eglQueryDeviceStringEXT, "eglQueryDeviceStringEXT");
+    }
+
+    RASSERT(eglBindAPI(EGL_OPENGL_ES_API) != EGL_FALSE, "Couldn't bind to EGL's opengl ES API. This means your gpu driver f'd up. This is not a Hyprland or Aquamarine issue.");
+}
+
+void CDRMRenderer::initContext(bool GLES2) {
+    RASSERT(egl.display != nullptr && egl.display != EGL_NO_DISPLAY, "CDRMRenderer: Can't create EGL context without display");
+
+    EGLint major, minor;
+    if (eglInitialize(egl.display, &major, &minor) == EGL_FALSE) {
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer: fail, eglInitialize failed");
+        return;
+    }
+
+    std::string EGLEXTENSIONS = eglQueryString(egl.display, EGL_EXTENSIONS);
+
+    exts.IMG_context_priority               = EGLEXTENSIONS.contains("IMG_context_priority");
+    exts.EXT_create_context_robustness      = EGLEXTENSIONS.contains("EXT_create_context_robustness");
+    exts.EXT_image_dma_buf_import           = EGLEXTENSIONS.contains("EXT_image_dma_buf_import");
+    exts.EXT_image_dma_buf_import_modifiers = EGLEXTENSIONS.contains("EXT_image_dma_buf_import_modifiers");
+
+    std::vector<EGLint> attrs;
+
+    if (exts.IMG_context_priority) {
+        backend->log(AQ_LOG_DEBUG, "CDRMRenderer: IMG_context_priority supported, requesting high");
+        attrs.push_back(EGL_CONTEXT_PRIORITY_LEVEL_IMG);
+        attrs.push_back(EGL_CONTEXT_PRIORITY_HIGH_IMG);
+    }
+
+    if (exts.EXT_create_context_robustness) {
+        backend->log(AQ_LOG_DEBUG, "CDRMRenderer: EXT_create_context_robustness supported, requesting lose on reset");
+        attrs.push_back(EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT);
+        attrs.push_back(EGL_LOSE_CONTEXT_ON_RESET_EXT);
+    }
+
+    attrs.push_back(EGL_CONTEXT_OPENGL_DEBUG);
+    attrs.push_back(Aquamarine::isTrace() ? EGL_TRUE : EGL_FALSE);
+
+    auto attrsNoVer = attrs;
+
+    if (GLES2) {
+        attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
+        attrs.push_back(2);
+        attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
+        attrs.push_back(0);
+    } else {
+        attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
+        attrs.push_back(3);
+        attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
+        attrs.push_back(2);
+    }
+
+    attrs.push_back(EGL_NONE);
+
+    egl.context = eglCreateContext(egl.display, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attrs.data());
+    if (egl.context == EGL_NO_CONTEXT) {
+        if (GLES2) {
+            backend->log(AQ_LOG_ERROR, "CDRMRenderer: Can't create renderer, eglCreateContext failed with GLES 2.0");
+            return;
+        }
+
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer: eglCreateContext failed with GLES 3.2, retrying GLES 3.0");
+
+        attrs = attrsNoVer;
+        attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
+        attrs.push_back(3);
+        attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
+        attrs.push_back(0);
+
+        attrs.push_back(EGL_NONE);
+
+        egl.context = eglCreateContext(egl.display, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attrs.data());
+        if (egl.context == EGL_NO_CONTEXT) {
+            backend->log(AQ_LOG_ERROR, "CDRMRenderer: Can't create renderer, eglCreateContext failed with both GLES 3.2 and GLES 3.0");
+            return;
+        }
+    }
+
+    if (exts.IMG_context_priority) {
+        EGLint priority = EGL_CONTEXT_PRIORITY_MEDIUM_IMG;
+        eglQueryContext(egl.display, egl.context, EGL_CONTEXT_PRIORITY_LEVEL_IMG, &priority);
+        if (priority != EGL_CONTEXT_PRIORITY_HIGH_IMG)
+            backend->log(AQ_LOG_DEBUG, "CDRMRenderer: Failed to get a high priority context");
+        else
+            backend->log(AQ_LOG_DEBUG, "CDRMRenderer: Got a high priority context");
+    }
+
+    setEGL();
+
+    EGLEXTENSIONS = (const char*)glGetString(GL_EXTENSIONS);
+
+    std::string gpuName = "unknown";
+    char*       drmName = drmGetDeviceNameFromFd2(drmFD);
+    if (drmName != nullptr) {
+        gpuName = std::string{drmName};
+        free(drmName);
+    }
+
+    backend->log(AQ_LOG_DEBUG, std::format("Creating {}CDRMRenderer on gpu {}", GLES2 ? "GLES2 " : "", gpuName));
+    backend->log(AQ_LOG_DEBUG, std::format("Using: {}", (char*)glGetString(GL_VERSION)));
+    backend->log(AQ_LOG_DEBUG, std::format("Vendor: {}", (char*)glGetString(GL_VENDOR)));
+    backend->log(AQ_LOG_DEBUG, std::format("Renderer: {}", (char*)glGetString(GL_RENDERER)));
+    backend->log(AQ_LOG_DEBUG, std::format("Supported context extensions: ({}) {}", std::count(EGLEXTENSIONS.begin(), EGLEXTENSIONS.end(), ' '), EGLEXTENSIONS));
+
+    exts.EXT_read_format_bgra        = EGLEXTENSIONS.contains("GL_EXT_read_format_bgra");
+    exts.EXT_texture_format_BGRA8888 = EGLEXTENSIONS.contains("GL_EXT_texture_format_BGRA8888");
+
+    restoreEGL();
+}
+
+void CDRMRenderer::initResources() {
+    setEGL();
+
+    if (!exts.EXT_image_dma_buf_import || !initDRMFormats())
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer: initDRMFormats failed, dma-buf won't work");
+
+    gl.shader.program = createProgram(VERT_SRC, FRAG_SRC);
+    if (gl.shader.program == 0)
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer: texture shader failed");
+
+    gl.shader.proj      = glGetUniformLocation(gl.shader.program, "proj");
+    gl.shader.posAttrib = glGetAttribLocation(gl.shader.program, "pos");
+    gl.shader.texAttrib = glGetAttribLocation(gl.shader.program, "texcoord");
+    gl.shader.tex       = glGetUniformLocation(gl.shader.program, "tex");
+
+    gl.shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
+    if (gl.shaderExt.program == 0)
+        backend->log(AQ_LOG_ERROR, "CDRMRenderer: external texture shader failed");
+
+    gl.shaderExt.proj      = glGetUniformLocation(gl.shaderExt.program, "proj");
+    gl.shaderExt.posAttrib = glGetAttribLocation(gl.shaderExt.program, "pos");
+    gl.shaderExt.texAttrib = glGetAttribLocation(gl.shaderExt.program, "texcoord");
+    gl.shaderExt.tex       = glGetUniformLocation(gl.shaderExt.program, "tex");
+
+    restoreEGL();
+}
+
+SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GLES2) {
     SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
-    renderer->drmFD           = allocator_->drmFD();
+    renderer->drmFD           = drmFD;
     renderer->backend         = backend_;
     gBackend                  = backend_;
 
-    const std::string EGLEXTENSIONS = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+    renderer->loadEGLAPI();
 
-    if (!EGLEXTENSIONS.contains("KHR_platform_gbm")) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no gbm support");
+    if (!renderer->exts.EXT_platform_device) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer(drm): Can't create renderer, EGL doesn't support EXT_platform_device");
         return nullptr;
     }
 
-    // init egl
-
-    if (eglBindAPI(EGL_OPENGL_ES_API) == EGL_FALSE) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, eglBindAPI failed");
+    EGLDeviceEXT device = renderer->eglDeviceFromDRMFD(drmFD);
+    if (device == EGL_NO_DEVICE_EXT) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer(drm): Can't create renderer, no matching devices found");
         return nullptr;
     }
 
-    loadGLProc(&renderer->egl.eglGetPlatformDisplayEXT, "eglGetPlatformDisplayEXT");
-    loadGLProc(&renderer->egl.eglCreateImageKHR, "eglCreateImageKHR");
-    loadGLProc(&renderer->egl.eglDestroyImageKHR, "eglDestroyImageKHR");
-    loadGLProc(&renderer->egl.glEGLImageTargetTexture2DOES, "glEGLImageTargetTexture2DOES");
-    loadGLProc(&renderer->egl.glEGLImageTargetRenderbufferStorageOES, "glEGLImageTargetRenderbufferStorageOES");
-    loadGLProc(&renderer->egl.eglQueryDmaBufFormatsEXT, "eglQueryDmaBufFormatsEXT");
-    loadGLProc(&renderer->egl.eglQueryDmaBufModifiersEXT, "eglQueryDmaBufModifiersEXT");
-    loadGLProc(&renderer->egl.eglDestroySyncKHR, "eglDestroySyncKHR");
-    loadGLProc(&renderer->egl.eglWaitSyncKHR, "eglWaitSyncKHR");
-    loadGLProc(&renderer->egl.eglCreateSyncKHR, "eglCreateSyncKHR");
-    loadGLProc(&renderer->egl.eglDupNativeFenceFDANDROID, "eglDupNativeFenceFDANDROID");
-
-    if (!renderer->egl.eglCreateSyncKHR) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglCreateSyncKHR");
-        return nullptr;
+    std::vector<EGLint> attrs;
+    if (renderer->exts.KHR_display_reference) {
+        attrs.push_back(EGL_TRACK_REFERENCES_KHR);
+        attrs.push_back(EGL_TRUE);
     }
 
-    if (!renderer->egl.eglDupNativeFenceFDANDROID) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglDupNativeFenceFDANDROID");
-        return nullptr;
-    }
+    attrs.push_back(EGL_NONE);
 
-    if (!renderer->egl.eglGetPlatformDisplayEXT) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglGetPlatformDisplayEXT");
-        return nullptr;
-    }
-
-    if (!renderer->egl.eglCreateImageKHR) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglCreateImageKHR");
-        return nullptr;
-    }
-
-    if (!renderer->egl.eglQueryDmaBufFormatsEXT) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglQueryDmaBufFormatsEXT");
-        return nullptr;
-    }
-
-    if (!renderer->egl.eglQueryDmaBufModifiersEXT) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no eglQueryDmaBufModifiersEXT");
-        return nullptr;
-    }
-
-    std::vector<EGLint> attrs = {EGL_NONE};
-    renderer->egl.display     = renderer->egl.eglGetPlatformDisplayEXT(EGL_PLATFORM_GBM_KHR, allocator_->gbmDevice, attrs.data());
+    renderer->egl.display = renderer->proc.eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, device, attrs.data());
     if (renderer->egl.display == EGL_NO_DISPLAY) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, eglGetPlatformDisplayEXT failed");
         return nullptr;
     }
 
-    EGLint major, minor;
-    if (eglInitialize(renderer->egl.display, &major, &minor) == EGL_FALSE) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, eglInitialize failed");
+    renderer->initContext(GLES2);
+    if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
+        return nullptr;
+
+    renderer->initResources();
+
+    return renderer;
+}
+
+SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, bool GLES2) {
+    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
+    renderer->drmFD           = allocator_->drmFD();
+    renderer->backend         = backend_;
+    gBackend                  = backend_;
+
+    renderer->loadEGLAPI();
+
+    if (!renderer->exts.KHR_platform_gbm) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer(gbm): Can't create renderer, EGL doesn't support KHR_platform_gbm");
         return nullptr;
     }
 
-    attrs.clear();
-
-    const std::string EGLEXTENSIONS2 = eglQueryString(renderer->egl.display, EGL_EXTENSIONS);
-
-    if (EGLEXTENSIONS2.contains("IMG_context_priority")) {
-        attrs.push_back(EGL_CONTEXT_PRIORITY_LEVEL_IMG);
-        attrs.push_back(EGL_CONTEXT_PRIORITY_HIGH_IMG);
+    std::vector<EGLint> attrs;
+    if (renderer->exts.KHR_display_reference) {
+        attrs.push_back(EGL_TRACK_REFERENCES_KHR);
+        attrs.push_back(EGL_TRUE);
     }
-
-    if (EGLEXTENSIONS2.contains("EXT_create_context_robustness")) {
-        attrs.push_back(EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT);
-        attrs.push_back(EGL_LOSE_CONTEXT_ON_RESET_EXT);
-    }
-
-    if (!EGLEXTENSIONS2.contains("EXT_image_dma_buf_import_modifiers")) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no EXT_image_dma_buf_import_modifiers ext");
-        return nullptr;
-    }
-
-    if (!EGLEXTENSIONS2.contains("EXT_image_dma_buf_import")) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, no EXT_image_dma_buf_import ext");
-        return nullptr;
-    }
-
-    attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
-    attrs.push_back(2);
-    attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
-    attrs.push_back(0);
-    attrs.push_back(EGL_CONTEXT_OPENGL_DEBUG);
-    attrs.push_back(EGL_FALSE);
 
     attrs.push_back(EGL_NONE);
 
-    renderer->egl.context = eglCreateContext(renderer->egl.display, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attrs.data());
-    if (renderer->egl.context == EGL_NO_CONTEXT) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, eglCreateContext failed");
+    renderer->egl.display = renderer->proc.eglGetPlatformDisplayEXT(EGL_PLATFORM_GBM_KHR, allocator_->gbmDevice, attrs.data());
+    if (renderer->egl.display == EGL_NO_DISPLAY) {
+        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, eglGetPlatformDisplayEXT failed");
         return nullptr;
     }
 
-    if (EGLEXTENSIONS2.contains("IMG_context_priority")) {
-        EGLint priority = EGL_CONTEXT_PRIORITY_MEDIUM_IMG;
-        eglQueryContext(renderer->egl.display, renderer->egl.context, EGL_CONTEXT_PRIORITY_LEVEL_IMG, &priority);
-        if (priority != EGL_CONTEXT_PRIORITY_HIGH_IMG)
-            backend_->log(AQ_LOG_DEBUG, "CDRMRenderer: didnt get a high priority context");
-        else
-            backend_->log(AQ_LOG_DEBUG, "CDRMRenderer: got a high priority context");
-    }
-
-    // init shaders
-
-    renderer->setEGL();
-
-    if (!renderer->initDRMFormats()) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, initDRMFormats failed");
+    renderer->initContext(GLES2);
+    if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
-    }
 
-    renderer->gl.shader.program = createProgram(VERT_SRC, FRAG_SRC);
-    if (renderer->gl.shader.program == 0) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, shader failed");
-        return nullptr;
-    }
-
-    renderer->gl.shader.proj      = glGetUniformLocation(renderer->gl.shader.program, "proj");
-    renderer->gl.shader.posAttrib = glGetAttribLocation(renderer->gl.shader.program, "pos");
-    renderer->gl.shader.texAttrib = glGetAttribLocation(renderer->gl.shader.program, "texcoord");
-    renderer->gl.shader.tex       = glGetUniformLocation(renderer->gl.shader.program, "tex");
-
-    renderer->gl.shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
-    if (renderer->gl.shaderExt.program == 0) {
-        backend_->log(AQ_LOG_ERROR, "CDRMRenderer: fail, shaderExt failed");
-        return nullptr;
-    }
-
-    renderer->gl.shaderExt.proj      = glGetUniformLocation(renderer->gl.shaderExt.program, "proj");
-    renderer->gl.shaderExt.posAttrib = glGetAttribLocation(renderer->gl.shaderExt.program, "pos");
-    renderer->gl.shaderExt.texAttrib = glGetAttribLocation(renderer->gl.shaderExt.program, "texcoord");
-    renderer->gl.shaderExt.tex       = glGetUniformLocation(renderer->gl.shaderExt.program, "tex");
-
-    renderer->restoreEGL();
-
-    backend_->log(AQ_LOG_DEBUG, "CDRMRenderer: success");
+    renderer->initResources();
 
     return renderer;
 }
@@ -448,7 +655,7 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
 
     attribs.push_back(EGL_NONE);
 
-    EGLImageKHR image = egl.eglCreateImageKHR(egl.display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, (int*)attribs.data());
+    EGLImageKHR image = proc.eglCreateImageKHR(egl.display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, (int*)attribs.data());
     if (image == EGL_NO_IMAGE_KHR) {
         backend->log(AQ_LOG_ERROR, std::format("EGL: EGLCreateImageKHR failed: {}", eglGetError()));
         return EGL_NO_IMAGE_KHR;
@@ -456,17 +663,6 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
 
     return image;
 }
-
-#define GLCALL(__CALL__)                                                                                                                                                           \
-    {                                                                                                                                                                              \
-        __CALL__;                                                                                                                                                                  \
-        auto err = glGetError();                                                                                                                                                   \
-        if (err != GL_NO_ERROR) {                                                                                                                                                  \
-            backend->log(AQ_LOG_ERROR,                                                                                                                                             \
-                         std::format("[GLES] Error in call at {}@{}: 0x{:x}", __LINE__,                                                                                            \
-                                     ([]() constexpr -> std::string { return std::string(__FILE__).substr(std::string(__FILE__).find_last_of('/') + 1); })(), err));               \
-        }                                                                                                                                                                          \
-    }
 
 SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
     SGLTex     tex;
@@ -496,7 +692,7 @@ SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
     GLCALL(glBindTexture(tex.target, tex.texid));
     GLCALL(glTexParameteri(tex.target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
     GLCALL(glTexParameteri(tex.target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-    GLCALL(egl.glEGLImageTargetTexture2DOES(tex.target, tex.image));
+    GLCALL(proc.glEGLImageTargetTexture2DOES(tex.target, tex.image));
     GLCALL(glBindTexture(tex.target, 0));
 
     return tex;
@@ -523,7 +719,7 @@ void CDRMRenderer::waitOnSync(int fd) {
     attribs.push_back(dupFd);
     attribs.push_back(EGL_NONE);
 
-    EGLSyncKHR sync = egl.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, attribs.data());
+    EGLSyncKHR sync = proc.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, attribs.data());
     if (sync == EGL_NO_SYNC_KHR) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to create an egl sync for explicit"));
         if (dupFd >= 0)
@@ -532,15 +728,15 @@ void CDRMRenderer::waitOnSync(int fd) {
     }
 
     // we got a sync, now we just tell egl to wait before sampling
-    if (egl.eglWaitSyncKHR(egl.display, sync, 0) != EGL_TRUE) {
-        if (egl.eglDestroySyncKHR(egl.display, sync) != EGL_TRUE)
+    if (proc.eglWaitSyncKHR(egl.display, sync, 0) != EGL_TRUE) {
+        if (proc.eglDestroySyncKHR(egl.display, sync) != EGL_TRUE)
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to destroy sync"));
 
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to wait on the sync object"));
         return;
     }
 
-    if (egl.eglDestroySyncKHR(egl.display, sync) != EGL_TRUE)
+    if (proc.eglDestroySyncKHR(egl.display, sync) != EGL_TRUE)
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to destroy sync"));
 }
 
@@ -551,7 +747,7 @@ int CDRMRenderer::recreateBlitSync() {
         TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (recreateBlitSync): cleaning up old sync (fd {})", egl.lastBlitSyncFD)));
 
         // cleanup last sync
-        if (egl.eglDestroySyncKHR(egl.display, egl.lastBlitSync) != EGL_TRUE)
+        if (proc.eglDestroySyncKHR(egl.display, egl.lastBlitSync) != EGL_TRUE)
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to destroy old sync"));
 
         if (egl.lastBlitSyncFD >= 0)
@@ -561,7 +757,7 @@ int CDRMRenderer::recreateBlitSync() {
         egl.lastBlitSync   = nullptr;
     }
 
-    EGLSyncKHR sync = egl.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
+    EGLSyncKHR sync = proc.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
     if (sync == EGL_NO_SYNC_KHR) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to create an egl sync for explicit"));
         return -1;
@@ -570,10 +766,10 @@ int CDRMRenderer::recreateBlitSync() {
     // we need to flush otherwise we might not get a valid fd
     glFlush();
 
-    int fd = egl.eglDupNativeFenceFDANDROID(egl.display, sync);
+    int fd = proc.eglDupNativeFenceFDANDROID(egl.display, sync);
     if (fd == EGL_NO_NATIVE_FENCE_FD_ANDROID) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to dup egl fence fd"));
-        if (egl.eglDestroySyncKHR(egl.display, sync) != EGL_TRUE)
+        if (proc.eglDestroySyncKHR(egl.display, sync) != EGL_TRUE)
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to destroy new sync"));
         return -1;
     }
@@ -605,7 +801,7 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
 
     GLCALL(glGenRenderbuffers(1, &rboID));
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
-    GLCALL(egl.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage));
+    GLCALL(proc.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage));
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
     GLCALL(glGenFramebuffers(1, &fboID));
@@ -627,7 +823,7 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
 
     glDeleteFramebuffers(1, &fboID);
     glDeleteRenderbuffers(1, &rboID);
-    egl.eglDestroyImageKHR(egl.display, rboImage);
+    proc.eglDestroyImageKHR(egl.display, rboImage);
 
     restoreEGL();
 }
@@ -706,7 +902,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
 
             GLCALL(glGenRenderbuffers(1, &rboID));
             GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
-            GLCALL(egl.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage));
+            GLCALL(proc.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage));
             GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
             GLCALL(glGenFramebuffers(1, &fboID));
@@ -819,9 +1015,9 @@ void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachme
     if (attachment->fbo)
         GLCALL(glDeleteFramebuffers(1, &attachment->fbo));
     if (attachment->eglImage)
-        egl.eglDestroyImageKHR(egl.display, attachment->eglImage);
+        proc.eglDestroyImageKHR(egl.display, attachment->eglImage);
     if (attachment->tex.image)
-        egl.eglDestroyImageKHR(egl.display, attachment->tex.image);
+        proc.eglDestroyImageKHR(egl.display, attachment->tex.image);
 
     restoreEGL();
 }

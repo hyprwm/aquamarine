@@ -105,9 +105,8 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
 
-    // TODO: allow to send aq a content type, maybe? Wayland has a protocol for this.
     if (enable && connector->props.content_type)
-        add(connector->id, connector->props.content_type, DRM_MODE_CONTENT_TYPE_GRAPHICS);
+        add(connector->id, connector->props.content_type, STATE.contentType);
 
     add(connector->crtc->id, connector->crtc->props.active, enable);
 
