@@ -2,6 +2,7 @@
 
 #include <hyprutils/memory/SharedPtr.hpp>
 #include <hyprutils/signal/Signal.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 #include <vector>
 #include <functional>
 #include <mutex>
@@ -115,7 +116,7 @@ namespace Aquamarine {
         void removeIdleEvent(Hyprutils::Memory::CSharedPointer<std::function<void(void)>> pfn);
 
         // utils
-        int reopenDRMNode(int drmFD, bool allowRenderNode = true);
+        Hyprutils::OS::CFileDescriptor reopenDRMNode(int drmFD, bool allowRenderNode = true);
 
         // called when a new DRM card is hotplugged
         void onNewGpu(std::string path);

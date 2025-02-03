@@ -287,44 +287,40 @@ CGBMAllocator::~CGBMAllocator() {
     if (!gbmDevice)
         return;
 
-    int fd = gbm_device_get_fd(gbmDevice);
+    CFileDescriptor fd{gbm_device_get_fd(gbmDevice)};
     gbm_device_destroy(gbmDevice);
-
-    if (fd < 0)
-        return;
-
-    close(fd);
 }
 
-SP<CGBMAllocator> Aquamarine::CGBMAllocator::create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) {
+SP<CGBMAllocator> Aquamarine::CGBMAllocator::create(CFileDescriptor&& drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) {
     uint64_t capabilities = 0;
-    if (drmGetCap(drmfd_, DRM_CAP_PRIME, &capabilities) || !(capabilities & DRM_PRIME_CAP_EXPORT)) {
+    if (drmGetCap(drmfd_.get(), DRM_CAP_PRIME, &capabilities) || !(capabilities & DRM_PRIME_CAP_EXPORT)) {
         backend_->log(AQ_LOG_ERROR, "Cannot create a GBM Allocator: PRIME export is not supported by the gpu.");
         return nullptr;
     }
 
-    auto allocator = SP<CGBMAllocator>(new CGBMAllocator(drmfd_, backend_));
+    auto allocator = SP<CGBMAllocator>(new CGBMAllocator(std::move(drmfd_), backend_));
 
     if (!allocator->gbmDevice) {
         backend_->log(AQ_LOG_ERROR, "Cannot create a GBM Allocator: gbm failed to create a device.");
         return nullptr;
     }
 
-    backend_->log(AQ_LOG_DEBUG, std::format("Created a GBM allocator with drm fd {}", drmfd_));
+    backend_->log(AQ_LOG_DEBUG, std::format("Created a GBM allocator with drm fd {}", allocator->fd.get()));
 
     allocator->self = allocator;
 
     return allocator;
 }
 
-Aquamarine::CGBMAllocator::CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) : fd(fd_), backend(backend_), gbmDevice(gbm_create_device(fd_)) {
+Aquamarine::CGBMAllocator::CGBMAllocator(CFileDescriptor&& fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) :
+    fd(std::move(fd_)), backend(backend_), gbmDevice(gbm_create_device(fd.get())) {
     if (!gbmDevice) {
-        backend->log(AQ_LOG_ERROR, std::format("Couldn't open a GBM device at fd {}", fd_));
+        backend->log(AQ_LOG_ERROR, std::format("Couldn't open a GBM device at fd {}", fd.get()));
         return;
     }
 
     gbmDeviceBackendName = gbm_device_get_backend_name(gbmDevice);
-    auto drmName_        = drmGetDeviceNameFromFd2(fd_);
+    auto drmName_        = drmGetDeviceNameFromFd2(fd.get());
     drmName              = drmName_;
     free(drmName_);
 }
@@ -352,7 +348,7 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CGBMAllocator::getBacken
 }
 
 int Aquamarine::CGBMAllocator::drmFD() {
-    return fd;
+    return fd.get();
 }
 
 eAllocatorType Aquamarine::CGBMAllocator::type() {

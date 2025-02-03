@@ -706,27 +706,28 @@ inline const float fullVerts[] = {
     0, 1, // bottom left
 };
 
-void CDRMRenderer::waitOnSync(int fd) {
-    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (waitOnSync): attempting to wait on fd {}", fd)));
+void CDRMRenderer::waitOnSync(const CFileDescriptor& fd) {
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (waitOnSync): attempting to wait on fd {}", fd.get())));
 
     std::vector<EGLint> attribs;
-    int                 dupFd = fcntl(fd, F_DUPFD_CLOEXEC, 0);
-    if (dupFd < 0) {
+    //int                 dupFd = fcntl(fd, F_DUPFD_CLOEXEC, 0);
+    auto dupFd = fd.duplicate();
+    if (!dupFd.isValid()) {
         backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to dup fd for wait");
         return;
     }
 
     attribs.push_back(EGL_SYNC_NATIVE_FENCE_FD_ANDROID);
-    attribs.push_back(dupFd);
+    attribs.push_back(dupFd.get());
     attribs.push_back(EGL_NONE);
 
     EGLSyncKHR sync = proc.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, attribs.data());
     if (sync == EGL_NO_SYNC_KHR) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to create an egl sync for explicit"));
-        if (dupFd >= 0)
-            close(dupFd);
         return;
     }
+    if (dupFd.isValid())
+        dupFd.take(); // eglCreateSyncKHR takes ownership on success.
 
     // we got a sync, now we just tell egl to wait before sampling
     if (proc.eglWaitSyncKHR(egl.display, sync, 0) != EGL_TRUE) {
@@ -828,7 +829,7 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     restoreEGL();
 }
 
-CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, int waitFD) {
+CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, const CFileDescriptor& waitFD) {
     setEGL();
 
     if (from->dmabuf().size != to->dmabuf().size) {
@@ -836,7 +837,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
         return {};
     }
 
-    if (waitFD >= 0) {
+    if (waitFD.isValid()) {
         // wait on a provided explicit fence
         waitOnSync(waitFD);
     }

@@ -56,7 +56,7 @@ namespace Aquamarine {
             std::optional<Hyprutils::OS::CFileDescriptor> syncFD;
         };
 
-        SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to, int waitFD = -1);
+        SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to, const Hyprutils::OS::CFileDescriptor& waitFD = {});
         // can't be a SP<> because we call it from buf's ctor...
         void clearBuffer(IBuffer* buf);
 
@@ -124,7 +124,7 @@ namespace Aquamarine {
 
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
         bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
-        void                                                  waitOnSync(int fd);
+        void                                                  waitOnSync(const Hyprutils::OS::CFileDescriptor& fd);
         Hyprutils::OS::CFileDescriptor                        recreateBlitSync();
 
         void                                                  loadEGLAPI();

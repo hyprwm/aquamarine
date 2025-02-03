@@ -5,6 +5,7 @@
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
 #include <hyprutils/memory/WeakPtr.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
 #include <optional>

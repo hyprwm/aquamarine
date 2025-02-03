@@ -41,7 +41,7 @@ namespace Aquamarine {
     class CGBMAllocator : public IAllocator {
       public:
         ~CGBMAllocator();
-        static Hyprutils::Memory::CSharedPointer<CGBMAllocator> create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
+        static Hyprutils::Memory::CSharedPointer<CGBMAllocator> create(Hyprutils::OS::CFileDescriptor&& drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
 
         virtual Hyprutils::Memory::CSharedPointer<IBuffer>      acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain_);
         virtual Hyprutils::Memory::CSharedPointer<CBackend>     getBackend();
@@ -53,12 +53,12 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CGBMAllocator> self;
 
       private:
-        CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
+        CGBMAllocator(Hyprutils::OS::CFileDescriptor&& fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
 
         // a vector purely for tracking (debugging) the buffers and nothing more
         std::vector<Hyprutils::Memory::CWeakPointer<CGBMBuffer>> buffers;
 
-        int                                                      fd = -1;
+        Hyprutils::OS::CFileDescriptor                           fd;
         Hyprutils::Memory::CWeakPointer<CBackend>                backend;
 
         // gbm stuff
