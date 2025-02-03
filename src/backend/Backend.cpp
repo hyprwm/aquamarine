@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 using namespace Hyprutils::Memory;
+using namespace Hyprutils::OS;
 using namespace Aquamarine;
 #define SP CSharedPointer
 
@@ -145,12 +146,12 @@ bool Aquamarine::CBackend::start() {
     for (auto const& b : implementations) {
         if (b->drmFD() >= 0) {
             auto fd = reopenDRMNode(b->drmFD());
-            if (fd < 0) {
+            if (!fd.isValid()) {
                 // this is critical, we cannot create an allocator properly
                 log(AQ_LOG_CRITICAL, "Failed to create an allocator (reopenDRMNode failed)");
                 return false;
             }
-            primaryAllocator = CGBMAllocator::create(fd, self);
+            primaryAllocator = CGBMAllocator::create(std::move(fd), self);
             break;
         }
     }
@@ -291,17 +292,17 @@ void Aquamarine::CBackend::onNewGpu(std::string path) {
 
 // Yoinked from wlroots, render/allocator/allocator.c
 // Ref-counting reasons, see https://gitlab.freedesktop.org/mesa/drm/-/merge_requests/110
-int Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {
+CFileDescriptor Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {
 
     if (drmIsMaster(drmFD)) {
         // Only recent kernels support empty leases
-        uint32_t lesseeID = 0;
-        int      leaseFD  = drmModeCreateLease(drmFD, nullptr, 0, O_CLOEXEC, &lesseeID);
-        if (leaseFD >= 0) {
+        uint32_t        lesseeID = 0;
+        CFileDescriptor leaseFD{drmModeCreateLease(drmFD, nullptr, 0, O_CLOEXEC, &lesseeID)};
+        if (leaseFD.isValid()) {
             return leaseFD;
-        } else if (leaseFD != -EINVAL && leaseFD != -EOPNOTSUPP) {
+        } else if (leaseFD.get() != -EINVAL && leaseFD.get() != -EOPNOTSUPP) {
             log(AQ_LOG_ERROR, "reopenDRMNode: drmModeCreateLease failed");
-            return -1;
+            return {};
         }
         log(AQ_LOG_DEBUG, "reopenDRMNode: drmModeCreateLease failed, falling back to open");
     }
@@ -316,34 +317,32 @@ int Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {
 
         if (!name) {
             log(AQ_LOG_ERROR, "reopenDRMNode: drmGetDeviceNameFromFd2 failed");
-            return -1;
+            return {};
         }
     }
 
     log(AQ_LOG_DEBUG, std::format("reopenDRMNode: opening node {}", name));
 
-    int newFD = open(name, O_RDWR | O_CLOEXEC);
-    if (newFD < 0) {
+    CFileDescriptor newFD{open(name, O_RDWR | O_CLOEXEC)};
+    if (!newFD.isValid()) {
         log(AQ_LOG_ERROR, std::format("reopenDRMNode: failed to open node {}", name));
         free(name);
-        return -1;
+        return {};
     }
 
     free(name);
 
     // We need to authenticate if we are using a DRM primary node and are the master
-    if (drmIsMaster(drmFD) && drmGetNodeTypeFromFd(newFD) == DRM_NODE_PRIMARY) {
+    if (drmIsMaster(drmFD) && drmGetNodeTypeFromFd(newFD.get()) == DRM_NODE_PRIMARY) {
         drm_magic_t magic;
-        if (int ret = drmGetMagic(newFD, &magic); ret < 0) {
+        if (int ret = drmGetMagic(newFD.get(), &magic); ret < 0) {
             log(AQ_LOG_ERROR, std::format("reopenDRMNode: drmGetMagic failed: {}", strerror(-ret)));
-            close(newFD);
-            return -1;
+            return {};
         }
 
         if (int ret = drmAuthMagic(drmFD, magic); ret < 0) {
             log(AQ_LOG_ERROR, std::format("reopenDRMNode: drmAuthMagic failed: {}", strerror(-ret)));
-            close(newFD);
-            return -1;
+            return {};
         }
     }
 

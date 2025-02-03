@@ -4,6 +4,7 @@
 #include <tuple>
 #include <hyprutils/signal/Signal.hpp>
 #include <hyprutils/math/Region.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 #include "../misc/Attachment.hpp"
 
 namespace Aquamarine {
@@ -19,15 +20,15 @@ namespace Aquamarine {
     };
 
     struct SDMABUFAttrs {
-        bool                      success = false;
-        Hyprutils::Math::Vector2D size;
-        uint32_t                  format   = 0; // fourcc
-        uint64_t                  modifier = 0;
+        bool                                          success = false;
+        Hyprutils::Math::Vector2D                     size;
+        uint32_t                                      format   = 0; // fourcc
+        uint64_t                                      modifier = 0;
 
-        int                       planes  = 1;
-        std::array<uint32_t, 4>   offsets = {0};
-        std::array<uint32_t, 4>   strides = {0};
-        std::array<int, 4>        fds     = {-1, -1, -1, -1};
+        int                                           planes  = 1;
+        std::array<uint32_t, 4>                       offsets = {0};
+        std::array<uint32_t, 4>                       strides = {0};
+        std::array<Hyprutils::OS::CFileDescriptor, 4> fds;
     };
 
     struct SSHMAttrs {
@@ -50,7 +51,7 @@ namespace Aquamarine {
         virtual void                                   update(const Hyprutils::Math::CRegion& damage) = 0;
         virtual bool                                   isSynchronous() = 0; // whether the updates to this buffer are synchronous, aka happen over cpu
         virtual bool                                   good()          = 0;
-        virtual SDMABUFAttrs                           dmabuf();
+        virtual const SDMABUFAttrs&                    dmabuf() const;
         virtual SSHMAttrs                              shm();
         virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);
         virtual void                                   endDataPtr();
@@ -71,7 +72,8 @@ namespace Aquamarine {
         } events;
 
       private:
-        int locks = 0;
+        SDMABUFAttrs m_attrs{};
+        int          locks = 0;
     };
 
 };

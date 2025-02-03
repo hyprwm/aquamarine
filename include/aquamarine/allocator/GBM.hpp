@@ -1,5 +1,6 @@
 #pragma once
 
+#include <hyprutils/os/FileDescriptor.hpp>
 #include "Allocator.hpp"
 
 struct gbm_device;
@@ -19,7 +20,7 @@ namespace Aquamarine {
         virtual void                                   update(const Hyprutils::Math::CRegion& damage);
         virtual bool                                   isSynchronous();
         virtual bool                                   good();
-        virtual SDMABUFAttrs                           dmabuf();
+        virtual const SDMABUFAttrs&                    dmabuf() const;
         virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);
         virtual void                                   endDataPtr();
 
@@ -40,7 +41,7 @@ namespace Aquamarine {
     class CGBMAllocator : public IAllocator {
       public:
         ~CGBMAllocator();
-        static Hyprutils::Memory::CSharedPointer<CGBMAllocator> create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
+        static Hyprutils::Memory::CSharedPointer<CGBMAllocator> create(Hyprutils::OS::CFileDescriptor&& drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
 
         virtual Hyprutils::Memory::CSharedPointer<IBuffer>      acquire(const SAllocatorBufferParams& params, Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain_);
         virtual Hyprutils::Memory::CSharedPointer<CBackend>     getBackend();
@@ -52,12 +53,12 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CGBMAllocator> self;
 
       private:
-        CGBMAllocator(int fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
+        CGBMAllocator(Hyprutils::OS::CFileDescriptor&& fd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_);
 
         // a vector purely for tracking (debugging) the buffers and nothing more
         std::vector<Hyprutils::Memory::CWeakPointer<CGBMBuffer>> buffers;
 
-        int                                                      fd = -1;
+        Hyprutils::OS::CFileDescriptor                           fd;
         Hyprutils::Memory::CWeakPointer<CBackend>                backend;
 
         // gbm stuff
