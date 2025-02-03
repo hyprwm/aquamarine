@@ -1,6 +1,7 @@
 #pragma once
 
 #include <aquamarine/backend/DRM.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 #include "FormatUtils.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -51,8 +52,8 @@ namespace Aquamarine {
         int                                                    drmFD = -1;
 
         struct SBlitResult {
-            bool               success = false;
-            std::optional<int> syncFD;
+            bool                                          success = false;
+            std::optional<Hyprutils::OS::CFileDescriptor> syncFD;
         };
 
         SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to, int waitFD = -1);
@@ -101,10 +102,10 @@ namespace Aquamarine {
         } exts;
 
         struct {
-            EGLDisplay display        = nullptr;
-            EGLContext context        = nullptr;
-            EGLSync    lastBlitSync   = nullptr;
-            int        lastBlitSyncFD = -1;
+            EGLDisplay                     display      = nullptr;
+            EGLContext                     context      = nullptr;
+            EGLSync                        lastBlitSync = nullptr;
+            Hyprutils::OS::CFileDescriptor lastBlitSyncFD;
         } egl;
 
         struct {
@@ -124,7 +125,7 @@ namespace Aquamarine {
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
         bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
         void                                                  waitOnSync(int fd);
-        int                                                   recreateBlitSync();
+        Hyprutils::OS::CFileDescriptor                        recreateBlitSync();
 
         void                                                  loadEGLAPI();
         EGLDeviceEXT                                          eglDeviceFromDRMFD(int drmFD);

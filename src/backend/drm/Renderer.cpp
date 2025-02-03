@@ -13,6 +13,7 @@
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
+using namespace Hyprutils::OS;
 #define SP CSharedPointer
 #define WP CWeakPointer
 
@@ -740,27 +741,26 @@ void CDRMRenderer::waitOnSync(int fd) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to destroy sync"));
 }
 
-int CDRMRenderer::recreateBlitSync() {
+CFileDescriptor CDRMRenderer::recreateBlitSync() {
     TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): recreating blit sync"));
 
     if (egl.lastBlitSync) {
-        TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (recreateBlitSync): cleaning up old sync (fd {})", egl.lastBlitSyncFD)));
+        TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (recreateBlitSync): cleaning up old sync (fd {})", egl.lastBlitSyncFD.get())));
 
         // cleanup last sync
         if (proc.eglDestroySyncKHR(egl.display, egl.lastBlitSync) != EGL_TRUE)
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to destroy old sync"));
 
-        if (egl.lastBlitSyncFD >= 0)
-            close(egl.lastBlitSyncFD);
+        if (egl.lastBlitSyncFD.isValid())
+            egl.lastBlitSyncFD.reset();
 
-        egl.lastBlitSyncFD = -1;
-        egl.lastBlitSync   = nullptr;
+        egl.lastBlitSync = nullptr;
     }
 
     EGLSyncKHR sync = proc.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
     if (sync == EGL_NO_SYNC_KHR) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to create an egl sync for explicit"));
-        return -1;
+        return {};
     }
 
     // we need to flush otherwise we might not get a valid fd
@@ -771,15 +771,15 @@ int CDRMRenderer::recreateBlitSync() {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to dup egl fence fd"));
         if (proc.eglDestroySyncKHR(egl.display, sync) != EGL_TRUE)
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to destroy new sync"));
-        return -1;
+        return {};
     }
 
     egl.lastBlitSync   = sync;
-    egl.lastBlitSyncFD = fd;
+    egl.lastBlitSyncFD = CFileDescriptor{fd};
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (recreateBlitSync): success, new fence exported with fd {}", fd)));
 
-    return fd;
+    return egl.lastBlitSyncFD.duplicate();
 }
 
 void CDRMRenderer::clearBuffer(IBuffer* buf) {
@@ -992,14 +992,14 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
     // get an explicit sync fd for the secondary gpu.
     // when we pass buffers between gpus we should always use explicit sync,
     // as implicit is not guaranteed at all
-    int explicitFD = recreateBlitSync();
+    auto explicitFD = recreateBlitSync();
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
     restoreEGL();
 
-    return {.success = true, .syncFD = explicitFD == -1 ? std::nullopt : std::optional<int>{explicitFD}};
+    return {.success = true, .syncFD = explicitFD.isValid() ? std::nullopt : std::optional<CFileDescriptor>{std::move(explicitFD)}};
 }
 
 void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment) {

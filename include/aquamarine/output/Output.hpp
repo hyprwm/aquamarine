@@ -6,6 +6,7 @@
 #include <hyprutils/memory/SharedPtr.hpp>
 #include <hyprutils/math/Region.hpp>
 #include <hyprutils/math/Mat3x3.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 #include <drm_fourcc.h>
 #include <xf86drmMode.h>
 #include "../allocator/Swapchain.hpp"
@@ -74,7 +75,7 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<SOutputMode> customMode;
             uint32_t                                       drmFormat = DRM_FORMAT_INVALID;
             Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
-            int32_t                                        explicitInFence = -1, explicitOutFence = -1;
+            Hyprutils::OS::CFileDescriptor                 explicitInFence, explicitOutFence;
             Hyprutils::Math::Mat3x3                        ctm;
             bool                                           wideColorGamut = false;
             hdr_output_metadata                            hdrMetadata;
@@ -94,7 +95,7 @@ namespace Aquamarine {
         void                  setCustomMode(Hyprutils::Memory::CSharedPointer<SOutputMode> mode);
         void                  setFormat(uint32_t drmFormat);
         void                  setBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
-        void                  setExplicitInFence(int32_t fenceFD); // -1 removes
+        void                  setExplicitInFence(Hyprutils::OS::CFileDescriptor&& fenceFD);
         void                  enableExplicitOutFenceForNextCommit();
         void                  resetExplicitFences();
         void                  setCTM(const Hyprutils::Math::Mat3x3& ctm);

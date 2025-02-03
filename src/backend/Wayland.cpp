@@ -239,7 +239,7 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
     backend->backend->log(AQ_LOG_DEBUG, "New wayland pointer wl_pointer");
 
     pointer->setMotion([this](CCWlPointer* r, uint32_t serial, wl_fixed_t x, wl_fixed_t y) {
-        const auto STATE = backend->focusedOutput->state->state();
+        const auto& STATE = backend->focusedOutput->state->state();
 
         if (!backend->focusedOutput || (!STATE.mode && !STATE.customMode))
             return;

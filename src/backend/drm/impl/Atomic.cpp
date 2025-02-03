@@ -128,8 +128,8 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {});
 
-        if (connector->output->supportsExplicit && STATE.explicitInFence >= 0)
-            add(connector->crtc->primary->id, connector->crtc->primary->props.in_fence_fd, STATE.explicitInFence);
+        if (connector->output->supportsExplicit && STATE.explicitInFence.isValid())
+            add(connector->crtc->primary->id, connector->crtc->primary->props.in_fence_fd, STATE.explicitInFence.get());
 
         if (connector->crtc->primary->props.fb_damage_clips)
             add(connector->crtc->primary->id, connector->crtc->primary->props.fb_damage_clips, data.atomic.fbDamage);

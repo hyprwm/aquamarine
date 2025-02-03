@@ -1665,7 +1665,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
             auto NEWAQBUF   = mgpu.swapchain->next(nullptr);
             auto blitResult = backend->rendererState.renderer->blit(
-                STATE.buffer, NEWAQBUF, (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+                STATE.buffer, NEWAQBUF, (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence.get() : -1);
             if (!blitResult.success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but blit failed");
                 return false;
@@ -1675,9 +1675,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             // if the commit doesn't have an explicit fence, don't use the one we created, just fallback to implicit
             static auto NO_EXPLICIT = envEnabled("AQ_MGPU_NO_EXPLICIT");
             if (blitResult.syncFD.has_value() && !NO_EXPLICIT && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE))
-                state->setExplicitInFence(blitResult.syncFD.value());
+                state->setExplicitInFence(std::move(blitResult.syncFD.value()));
             else
-                state->setExplicitInFence(-1);
+                state->setExplicitInFence({});
 
             drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
         } else
