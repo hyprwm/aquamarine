@@ -106,10 +106,6 @@ void Aquamarine::CDRMDumbBuffer::endDataPtr() {
     ; // nothing to do
 }
 
-Aquamarine::CDRMDumbAllocator::~CDRMDumbAllocator() {
-    ; // nothing to do
-}
-
 SP<CDRMDumbAllocator> Aquamarine::CDRMDumbAllocator::create(int drmfd_, Hyprutils::Memory::CWeakPointer<CBackend> backend_) {
     if (drmGetNodeTypeFromFd(drmfd_) != DRM_NODE_PRIMARY) {
         backend_->log(AQ_LOG_ERROR, "DRM Dumb: Cannot create allocator when drmfd is not the primary node");

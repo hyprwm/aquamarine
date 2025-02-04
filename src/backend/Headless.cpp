@@ -78,10 +78,6 @@ bool Aquamarine::CHeadlessOutput::destroy() {
     return true;
 }
 
-Aquamarine::CHeadlessBackend::~CHeadlessBackend() {
-    ;
-}
-
 Aquamarine::CHeadlessBackend::CHeadlessBackend(SP<CBackend> backend_) : backend(backend_) {
     timers.timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
 }
