@@ -68,6 +68,28 @@ static udev_enumerate* enumDRMCards(udev* udev) {
     return enumerate;
 }
 
+static int gpuNumBuiltinPanels(const SP<CSessionDevice> gpu) {
+    auto resources = drmModeGetResources(gpu->fd);
+    if (!resources)
+        return 0;
+
+    int num = 0;
+    for (int i = 0; i < resources->count_connectors; ++i) {
+        auto drmConn = drmModeGetConnector(gpu->fd, resources->connectors[i]);
+        if (!drmConn)
+            continue;
+
+        if (drmConn->connector_type == DRM_MODE_CONNECTOR_LVDS || drmConn->connector_type == DRM_MODE_CONNECTOR_eDP || drmConn->connector_type == DRM_MODE_CONNECTOR_DSI)
+            num++;
+
+        drmModeFreeConnector(drmConn);
+    }
+
+    drmModeFreeResources(resources);
+
+    return num;
+}
+
 static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
     auto enumerate = enumDRMCards(backend->session->udevHandle);
 
@@ -84,6 +106,9 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
 
     udev_list_entry*               entry = nullptr;
     std::deque<SP<CSessionDevice>> devices;
+
+    int                            maxBuiltinPanels = 0;
+    SP<CSessionDevice>             maxBuiltinPanelsGPU;
 
     udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(enumerate)) {
         auto path   = udev_list_entry_get_name(entry);
@@ -131,6 +156,13 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
             devices.push_front(sessionDevice);
         else
             devices.push_back(sessionDevice);
+
+        int numBuiltinPanels = gpuNumBuiltinPanels(sessionDevice);
+        backend->log(AQ_LOG_TRACE, std::format("drm: Device {} has {} builtin {}", sessionDevice->path, numBuiltinPanels, numBuiltinPanels == 1 ? "panel" : "panels"));
+        if (numBuiltinPanels > maxBuiltinPanels) {
+            maxBuiltinPanelsGPU = sessionDevice;
+            maxBuiltinPanels    = numBuiltinPanels;
+        }
     }
 
     udev_enumerate_unref(enumerate);
@@ -174,6 +206,10 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
                 backend->log(AQ_LOG_ERROR, std::format("drm: Explicit device {} not found", d));
         }
     } else {
+        if (maxBuiltinPanelsGPU && devices.front() != maxBuiltinPanelsGPU) {
+            std::erase(devices, maxBuiltinPanelsGPU);
+            devices.push_front(maxBuiltinPanelsGPU);
+        }
         for (auto const& d : devices) {
             vecDevices.push_back(d);
         }
