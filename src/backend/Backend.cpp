@@ -155,8 +155,10 @@ bool Aquamarine::CBackend::start() {
         }
     }
 
-    if (!primaryAllocator)
+    if (!primaryAllocator) {
+        log(AQ_LOG_CRITICAL, "Cannot open backend: no allocator available");
         return false;
+    }
 
     ready = true;
     for (auto const& b : implementations) {
