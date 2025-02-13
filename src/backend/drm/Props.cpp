@@ -111,7 +111,7 @@ namespace Aquamarine {
         if (!prop)
             return false;
 
-        for (uint32_t i = 0; i < prop->count_enums; ++i) {
+        for (int i = 0; i < prop->count_enums; ++i) {
             const prop_info* p = (prop_info*)bsearch(prop->enums[i].name, info, info_len, sizeof(info[0]), comparePropInfo);
             if (p)
                 result[p->index] = prop->enums[i].value;

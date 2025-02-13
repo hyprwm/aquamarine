@@ -775,7 +775,7 @@ Aquamarine::CWaylandBuffer::CWaylandBuffer(SP<IBuffer> buffer_, Hyprutils::Memor
 
     auto attrs = buffer->dmabuf();
 
-    for (size_t i = 0; i < attrs.planes; ++i) {
+    for (int i = 0; i < attrs.planes; ++i) {
         params->sendAdd(attrs.fds.at(i), i, attrs.offsets.at(i), attrs.strides.at(i), attrs.modifier >> 32, attrs.modifier & 0xFFFFFFFF);
     }
 
