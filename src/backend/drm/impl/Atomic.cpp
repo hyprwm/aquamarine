@@ -138,6 +138,41 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     }
 }
 
+// HW capabilites aren't checked. Should be handled by the drivers (and highly unlikely to get a format outside of bpc range)
+// https://drmdb.emersion.fr/properties/3233857728/max%20bpc
+static uint8_t getMaxBPC(uint32_t drmFormat) {
+    switch (drmFormat) {
+        case DRM_FORMAT_XRGB8888:
+        case DRM_FORMAT_XBGR8888:
+        case DRM_FORMAT_RGBX8888:
+        case DRM_FORMAT_BGRX8888:
+
+        case DRM_FORMAT_ARGB8888:
+        case DRM_FORMAT_ABGR8888:
+        case DRM_FORMAT_RGBA8888:
+        case DRM_FORMAT_BGRA8888: return 8;
+
+        case DRM_FORMAT_XRGB2101010:
+        case DRM_FORMAT_XBGR2101010:
+        case DRM_FORMAT_RGBX1010102:
+        case DRM_FORMAT_BGRX1010102:
+
+        case DRM_FORMAT_ARGB2101010:
+        case DRM_FORMAT_ABGR2101010:
+        case DRM_FORMAT_RGBA1010102:
+        case DRM_FORMAT_BGRA1010102: return 10;
+
+        case DRM_FORMAT_XRGB16161616:
+        case DRM_FORMAT_XBGR16161616:
+
+        case DRM_FORMAT_ARGB16161616:
+        case DRM_FORMAT_ABGR16161616: return 16;
+
+        // FIXME? handle non-rgb formats and some weird stuff like DRM_FORMAT_AXBXGXRX106106106106
+        default: return 8;
+    }
+}
+
 void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     if (!data.modeset)
         return;
@@ -155,7 +190,7 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
         add(connector->id, connector->props.link_status, DRM_MODE_LINK_STATUS_GOOD);
 
     if (connector->props.max_bpc && connector->maxBpcBounds.at(1))
-        add(connector->id, connector->props.max_bpc, 8); // FIXME: this isnt always 8
+        add(connector->id, connector->props.max_bpc, getMaxBPC(data.mainFB->buffer->dmabuf().format));
 
     if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
         add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
