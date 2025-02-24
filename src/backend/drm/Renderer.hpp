@@ -24,7 +24,7 @@ namespace Aquamarine {
     class CDRMRendererBufferAttachment : public IAttachment {
       public:
         CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
-                                     GLuint rbo_, SGLTex tex);
+                                     GLuint rbo_, SGLTex tex, uint8_t* intermediateBuf, size_t intermediateBufLen);
         virtual ~CDRMRendererBufferAttachment() {
             ;
         }
@@ -32,10 +32,14 @@ namespace Aquamarine {
             return AQ_ATTACHMENT_DRM_RENDERER_DATA;
         }
 
-        EGLImageKHR                                   eglImage = nullptr;
-        GLuint                                        fbo = 0, rbo = 0;
-        SGLTex                                        tex;
-        Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
+        EGLImageKHR                            eglImage = nullptr;
+        GLuint                                 fbo = 0, rbo = 0;
+        SGLTex                                 tex;
+        Hyprutils::Signal::CHyprSignalListener bufferDestroy;
+        // This is malloc'd manually instead of using a std::vector to keep lifetime management in line with the rest of the class,
+        // which e.g. doesn't immediately free the eglImage on drop but instead waits until onBufferAttachmentDrop.
+        uint8_t*                                      intermediateBuf    = nullptr;
+        size_t                                        intermediateBufLen = 0;
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
     };
@@ -55,7 +59,8 @@ namespace Aquamarine {
             std::optional<int> syncFD;
         };
 
-        SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to, int waitFD = -1);
+        SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to,
+                         Hyprutils::Memory::CSharedPointer<CDRMRenderer> primaryRenderer, int waitFD = -1);
         // can't be a SP<> because we call it from buf's ctor...
         void clearBuffer(IBuffer* buf);
 
@@ -86,6 +91,7 @@ namespace Aquamarine {
             PFNEGLDEBUGMESSAGECONTROLKHRPROC              eglDebugMessageControlKHR              = nullptr;
             PFNEGLQUERYDEVICESEXTPROC                     eglQueryDevicesEXT                     = nullptr;
             PFNEGLQUERYDEVICESTRINGEXTPROC                eglQueryDeviceStringEXT                = nullptr;
+            PFNGLREADNPIXELSEXTPROC                       glReadnPixelsEXT                       = nullptr;
         } proc;
 
         struct {
@@ -114,6 +120,7 @@ namespace Aquamarine {
         } savedEGLState;
 
         SGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
+        void                                          readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, uint8_t* out, size_t out_len);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
         std::vector<SGLFormat>                        formats;
