@@ -13,6 +13,7 @@
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
+using namespace Hyprutils::OS;
 #define SP CSharedPointer
 #define WP CWeakPointer
 
@@ -637,7 +638,7 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
 
     for (int i = 0; i < attrs.planes; i++) {
         attribs.push_back(attrNames[i].fd);
-        attribs.push_back(attrs.fds[i]);
+        attribs.push_back(attrs.fds[i].get());
         attribs.push_back(attrNames[i].offset);
         attribs.push_back(attrs.offsets[i]);
         attribs.push_back(attrNames[i].pitch);
@@ -665,9 +666,9 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
 }
 
 SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
-    SGLTex     tex;
+    SGLTex      tex;
 
-    const auto dma = buffa->dmabuf();
+    const auto& dma = buffa->dmabuf();
 
     tex.image = createEGLImage(dma);
     if (tex.image == EGL_NO_IMAGE_KHR) {
@@ -705,27 +706,28 @@ inline const float fullVerts[] = {
     0, 1, // bottom left
 };
 
-void CDRMRenderer::waitOnSync(int fd) {
-    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (waitOnSync): attempting to wait on fd {}", fd)));
+void CDRMRenderer::waitOnSync(const CFileDescriptor& fd) {
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (waitOnSync): attempting to wait on fd {}", fd.get())));
 
     std::vector<EGLint> attribs;
-    int                 dupFd = fcntl(fd, F_DUPFD_CLOEXEC, 0);
-    if (dupFd < 0) {
+    //int                 dupFd = fcntl(fd, F_DUPFD_CLOEXEC, 0);
+    auto dupFd = fd.duplicate();
+    if (!dupFd.isValid()) {
         backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to dup fd for wait");
         return;
     }
 
     attribs.push_back(EGL_SYNC_NATIVE_FENCE_FD_ANDROID);
-    attribs.push_back(dupFd);
+    attribs.push_back(dupFd.get());
     attribs.push_back(EGL_NONE);
 
     EGLSyncKHR sync = proc.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, attribs.data());
     if (sync == EGL_NO_SYNC_KHR) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to create an egl sync for explicit"));
-        if (dupFd >= 0)
-            close(dupFd);
         return;
     }
+    if (dupFd.isValid())
+        dupFd.take(); // eglCreateSyncKHR takes ownership on success.
 
     // we got a sync, now we just tell egl to wait before sampling
     if (proc.eglWaitSyncKHR(egl.display, sync, 0) != EGL_TRUE) {
@@ -740,27 +742,26 @@ void CDRMRenderer::waitOnSync(int fd) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (waitOnSync): failed to destroy sync"));
 }
 
-int CDRMRenderer::recreateBlitSync() {
+CFileDescriptor CDRMRenderer::recreateBlitSync() {
     TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): recreating blit sync"));
 
     if (egl.lastBlitSync) {
-        TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (recreateBlitSync): cleaning up old sync (fd {})", egl.lastBlitSyncFD)));
+        TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (recreateBlitSync): cleaning up old sync (fd {})", egl.lastBlitSyncFD.get())));
 
         // cleanup last sync
         if (proc.eglDestroySyncKHR(egl.display, egl.lastBlitSync) != EGL_TRUE)
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to destroy old sync"));
 
-        if (egl.lastBlitSyncFD >= 0)
-            close(egl.lastBlitSyncFD);
+        if (egl.lastBlitSyncFD.isValid())
+            egl.lastBlitSyncFD.reset();
 
-        egl.lastBlitSyncFD = -1;
-        egl.lastBlitSync   = nullptr;
+        egl.lastBlitSync = nullptr;
     }
 
     EGLSyncKHR sync = proc.eglCreateSyncKHR(egl.display, EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
     if (sync == EGL_NO_SYNC_KHR) {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to create an egl sync for explicit"));
-        return -1;
+        return {};
     }
 
     // we need to flush otherwise we might not get a valid fd
@@ -771,22 +772,22 @@ int CDRMRenderer::recreateBlitSync() {
         TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to dup egl fence fd"));
         if (proc.eglDestroySyncKHR(egl.display, sync) != EGL_TRUE)
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (recreateBlitSync): failed to destroy new sync"));
-        return -1;
+        return {};
     }
 
     egl.lastBlitSync   = sync;
-    egl.lastBlitSyncFD = fd;
+    egl.lastBlitSyncFD = CFileDescriptor{fd};
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (recreateBlitSync): success, new fence exported with fd {}", fd)));
 
-    return fd;
+    return egl.lastBlitSyncFD.duplicate();
 }
 
 void CDRMRenderer::clearBuffer(IBuffer* buf) {
     setEGL();
 
-    auto   dmabuf = buf->dmabuf();
-    GLuint rboID = 0, fboID = 0;
+    const auto& dmabuf = buf->dmabuf();
+    GLuint      rboID = 0, fboID = 0;
 
     if (!dmabuf.success) {
         backend->log(AQ_LOG_ERROR, "EGL (clear): cannot clear a non-dmabuf");
@@ -828,7 +829,7 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     restoreEGL();
 }
 
-CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, int waitFD) {
+CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, const CFileDescriptor& waitFD) {
     setEGL();
 
     if (from->dmabuf().size != to->dmabuf().size) {
@@ -836,7 +837,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
         return {};
     }
 
-    if (waitFD >= 0) {
+    if (waitFD.isValid()) {
         // wait on a provided explicit fence
         waitOnSync(waitFD);
     }
@@ -874,7 +875,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
 
     EGLImageKHR rboImage = nullptr;
     GLuint      rboID = 0, fboID = 0;
-    auto        toDma = to->dmabuf();
+    const auto& toDma = to->dmabuf();
 
     if (!verifyDestinationDMABUF(toDma)) {
         backend->log(AQ_LOG_ERROR, "EGL (blit): failed to blit: destination dmabuf unsupported");
@@ -992,14 +993,14 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
     // get an explicit sync fd for the secondary gpu.
     // when we pass buffers between gpus we should always use explicit sync,
     // as implicit is not guaranteed at all
-    int explicitFD = recreateBlitSync();
+    auto explicitFD = recreateBlitSync();
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
     restoreEGL();
 
-    return {.success = true, .syncFD = explicitFD == -1 ? std::nullopt : std::optional<int>{explicitFD}};
+    return {.success = true, .syncFD = explicitFD.isValid() ? std::nullopt : std::optional<CFileDescriptor>{std::move(explicitFD)}};
 }
 
 void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment) {

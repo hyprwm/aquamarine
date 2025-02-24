@@ -1,6 +1,7 @@
 #include <aquamarine/output/Output.hpp>
 
 using namespace Aquamarine;
+using namespace Hyprutils::OS;
 
 Aquamarine::IOutput::~IOutput() {
     events.destroy.emit();
@@ -108,8 +109,8 @@ void Aquamarine::COutputState::setBuffer(Hyprutils::Memory::CSharedPointer<IBuff
     internalState.committed |= AQ_OUTPUT_STATE_BUFFER;
 }
 
-void Aquamarine::COutputState::setExplicitInFence(int32_t fenceFD) {
-    internalState.explicitInFence = fenceFD;
+void Aquamarine::COutputState::setExplicitInFence(CFileDescriptor&& fenceFD) {
+    internalState.explicitInFence = std::move(fenceFD);
     internalState.committed |= AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE;
 }
 
@@ -119,8 +120,8 @@ void Aquamarine::COutputState::enableExplicitOutFenceForNextCommit() {
 
 void Aquamarine::COutputState::resetExplicitFences() {
     // fences are now used, let's reset them to not confuse ourselves later.
-    internalState.explicitInFence  = -1;
-    internalState.explicitOutFence = -1;
+    internalState.explicitInFence.reset();
+    internalState.explicitOutFence.reset();
 }
 
 void Aquamarine::COutputState::setCTM(const Hyprutils::Math::Mat3x3& ctm) {

@@ -37,6 +37,7 @@ extern "C" {
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
+using namespace Hyprutils::OS;
 #define SP CSharedPointer
 
 Aquamarine::CDRMBackend::CDRMBackend(SP<CBackend> backend_) : backend(backend_) {
@@ -1686,9 +1687,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 mgpu.swapchain = CSwapchain::create(backend->rendererState.allocator, backend.lock());
             }
 
-            auto OPTIONS = swapchain->currentOptions();
-            auto bufDma  = STATE.buffer->dmabuf();
-            OPTIONS.size = STATE.buffer->size;
+            auto        OPTIONS = swapchain->currentOptions();
+            const auto& bufDma  = STATE.buffer->dmabuf();
+            OPTIONS.size        = STATE.buffer->size;
             if (OPTIONS.format == DRM_FORMAT_INVALID)
                 OPTIONS.format = bufDma.format;
             OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
@@ -1699,9 +1700,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 return false;
             }
 
-            auto NEWAQBUF   = mgpu.swapchain->next(nullptr);
-            auto blitResult = backend->rendererState.renderer->blit(
-                STATE.buffer, NEWAQBUF, (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+            auto                  NEWAQBUF = mgpu.swapchain->next(nullptr);
+            const CFileDescriptor defaultFd;
+            auto                  blitResult = backend->rendererState.renderer->blit(
+                STATE.buffer, NEWAQBUF, (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : defaultFd);
             if (!blitResult.success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but blit failed");
                 return false;
@@ -1711,9 +1713,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             // if the commit doesn't have an explicit fence, don't use the one we created, just fallback to implicit
             static auto NO_EXPLICIT = envEnabled("AQ_MGPU_NO_EXPLICIT");
             if (blitResult.syncFD.has_value() && !NO_EXPLICIT && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE))
-                state->setExplicitInFence(blitResult.syncFD.value());
+                state->setExplicitInFence(std::move(blitResult.syncFD.value()));
             else
-                state->setExplicitInFence(-1);
+                state->setExplicitInFence({});
 
             drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
         } else
@@ -1735,7 +1737,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     // sometimes, our consumer could f up the swapchain format and change it without the state changing
     bool formatMismatch = false;
     if (data.mainFB) {
-        if (const auto params = data.mainFB->buffer->dmabuf(); params.success && params.format != STATE.drmFormat) {
+        if (const auto& params = data.mainFB->buffer->dmabuf(); params.success && params.format != STATE.drmFormat) {
             // formats mismatch. Update the state format and roll with it
             backend->backend->log(AQ_LOG_WARNING,
                                   std::format("drm: Formats mismatch in commit, buffer is {} but output is set to {}. Modesetting to {}", fourccToName(params.format),
@@ -2024,7 +2026,7 @@ Aquamarine::CDRMFB::CDRMFB(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<
 }
 
 void Aquamarine::CDRMFB::import() {
-    auto attrs = buffer->dmabuf();
+    const auto& attrs = buffer->dmabuf();
     if (!attrs.success) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted has no dmabuf or a drm handle");
         return;
@@ -2037,14 +2039,14 @@ void Aquamarine::CDRMFB::import() {
 
     // TODO: check format
     for (int i = 0; i < attrs.planes; ++i) {
-        int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i), &boHandles[i]);
+        int ret = drmPrimeFDToHandle(backend->gpu->fd, attrs.fds.at(i).get(), &boHandles[i]);
         if (ret) {
             backend->backend->log(AQ_LOG_ERROR, "drm: drmPrimeFDToHandle failed");
             drop();
             return;
         }
 
-        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i), boHandles.at(i))));
+        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: plane {} has fd {}, got handle {}", i, attrs.fds.at(i).get(), boHandles.at(i))));
     }
 
     id = submitBuffer();
@@ -2137,7 +2139,7 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
     if (!buffer->dmabuf().success)
         return 0;
 
-    auto                    attrs = buffer->dmabuf();
+    const auto&             attrs = buffer->dmabuf();
     std::array<uint64_t, 4> mods  = {0, 0, 0, 0};
     for (int i = 0; i < attrs.planes; ++i) {
         mods[i] = attrs.modifier;
