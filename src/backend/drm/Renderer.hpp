@@ -36,6 +36,8 @@ namespace Aquamarine {
         GLuint                                        fbo = 0, rbo = 0;
         SGLTex                                        tex;
         Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
+        // This is malloc'd manually instead of using a std::vector to keep lifetime management in line with the rest of the class,
+        // which e.g. doesn't immediately free the eglImage on drop but instead waits until onBufferAttachmentDrop.
         uint8_t*                                      intermediateBuf    = nullptr;
         size_t                                        intermediateBufLen = 0;
 
