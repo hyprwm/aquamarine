@@ -140,10 +140,16 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         return;
     }
 
-    // FIXME: Nvidia cannot render to linear buffers. What do?
     if (MULTIGPU) {
-        allocator->backend->log(AQ_LOG_DEBUG, "GBM: Buffer is marked as multigpu, forcing linear");
-        explicitModifiers = {DRM_FORMAT_MOD_LINEAR};
+        // Try to use the linear format if available for cross-GPU compatibility.
+        // However, Nvidia doesn't support linear, so this is a best-effort basis.
+        for (auto const& f : FORMATS) {
+            if (f.drmFormat == DRM_FORMAT_MOD_LINEAR) {
+                allocator->backend->log(AQ_LOG_DEBUG, "GBM: Buffer is marked as multigpu, using linear format");
+                explicitModifiers = {DRM_FORMAT_MOD_LINEAR};
+                break;
+            }
+        }
     }
 
     uint32_t flags = GBM_BO_USE_RENDERING;
