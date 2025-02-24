@@ -341,7 +341,7 @@ void CDRMRenderer::loadEGLAPI() {
     loadGLProc(&proc.eglWaitSyncKHR, "eglWaitSyncKHR");
     loadGLProc(&proc.eglCreateSyncKHR, "eglCreateSyncKHR");
     loadGLProc(&proc.eglDupNativeFenceFDANDROID, "eglDupNativeFenceFDANDROID");
-    loadGLProc(&proc.glEGLImageTargetRenderbufferStorageOES, "glEGLImageTargetRenderbufferStorageOES");
+    loadGLProc(&proc.glReadnPixelsEXT, "glReadnPixelsEXT");
 
     if (EGLEXTENSIONS.contains("EGL_EXT_device_base") || EGLEXTENSIONS.contains("EGL_EXT_device_enumeration"))
         loadGLProc(&proc.eglQueryDevicesEXT, "eglQueryDevicesEXT");
@@ -698,6 +698,52 @@ SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
     return tex;
 }
 
+// TODO: Would another format be more efficient than GL_RGBA?
+const GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
+
+void         CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, uint8_t* out, size_t outlen) {
+    setEGL();
+
+    auto hadAttachment = buf->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
+    auto att           = (CDRMRendererBufferAttachment*)hadAttachment.get();
+    if (!hadAttachment) {
+        // should never remove anything, but JIC. We'll leak an EGLImage if this removes anything.
+        buf->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
+        auto newAttachment = makeShared<CDRMRendererBufferAttachment>(self, buf, nullptr, 0, 0, SGLTex{}, nullptr, 0);
+        att                = newAttachment.get();
+        buf->attachments.add(newAttachment);
+    }
+
+    auto dma = buf->dmabuf();
+    if (!att->eglImage) {
+        att->eglImage = createEGLImage(dma);
+        if (att->eglImage == EGL_NO_IMAGE_KHR) {
+            backend->log(AQ_LOG_ERROR, std::format("EGL (readBuffer): createEGLImage failed: {}", eglGetError()));
+            return;
+        }
+
+        GLCALL(glGenRenderbuffers(1, &att->rbo));
+        GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, att->rbo));
+        GLCALL(proc.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)att->eglImage));
+        GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+
+        GLCALL(glGenFramebuffers(1, &att->fbo));
+        GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, att->fbo));
+        GLCALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, att->rbo));
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            backend->log(AQ_LOG_ERROR, std::format("EGL (readBuffer): glCheckFramebufferStatus failed: {}", glGetError()));
+            return;
+        }
+    }
+
+    GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, att->fbo));
+    GLCALL(proc.glReadnPixelsEXT(0, 0, dma.size.x, dma.size.y, GL_RGBA, GL_UNSIGNED_BYTE, outlen, out));
+
+    GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    restoreEGL();
+}
+
 inline const float fullVerts[] = {
     1, 0, // top right
     0, 0, // top left
@@ -828,7 +874,7 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     restoreEGL();
 }
 
-CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, int waitFD) {
+CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
     setEGL();
 
     if (from->dmabuf().size != to->dmabuf().size) {
@@ -846,22 +892,45 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
     // both from and to have the same AQ_ATTACHMENT_DRM_RENDERER_DATA.
     // Those buffers always come from different swapchains, so it's OK.
 
-    SGLTex fromTex;
+    SGLTex   fromTex;
+    auto     fromDma            = from->dmabuf();
+    uint8_t* intermediateBuf    = nullptr;
+    size_t   intermediateBufLen = 0;
     {
         auto attachment = from->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
         if (attachment) {
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): From attachment found"));
-            auto att = (CDRMRendererBufferAttachment*)attachment.get();
-            fromTex  = att->tex;
+            auto att           = (CDRMRendererBufferAttachment*)attachment.get();
+            fromTex            = att->tex;
+            intermediateBuf    = att->intermediateBuf;
+            intermediateBufLen = att->intermediateBufLen;
         }
 
-        if (!fromTex.image) {
+        if (!fromTex.image && !intermediateBuf) {
             backend->log(AQ_LOG_DEBUG, "EGL (blit): No attachment in from, creating a new image");
             fromTex = glTex(from);
 
+            if (!fromTex.image && primaryRenderer) {
+                backend->log(AQ_LOG_DEBUG, "EGL (blit): Failed to create image from source buffer directly, allocating intermediate buffer");
+                static_assert(PIXEL_BUFFER_FORMAT == GL_RGBA); // If the pixel buffer format changes, the below size calculation probably needs to as well.
+                intermediateBufLen = fromDma.size.x * fromDma.size.y * 4;
+                intermediateBuf    = (uint8_t*)malloc(intermediateBufLen);
+                if (intermediateBuf == nullptr) {
+                    backend->log(AQ_LOG_ERROR, "EGL (blit): Failed to allocate intermediate buffer");
+                    return {};
+                }
+                fromTex.target = GL_TEXTURE_2D;
+                GLCALL(glGenTextures(1, &fromTex.texid));
+            }
+
             // should never remove anything, but JIC. We'll leak an EGLImage if this removes anything.
             from->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-            from->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, from, nullptr, 0, 0, fromTex));
+            from->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, from, nullptr, 0, 0, fromTex, intermediateBuf, intermediateBufLen));
+        }
+
+        if (intermediateBuf) {
+            // Note: this might modify from's attachments
+            primaryRenderer->readBuffer(from, intermediateBuf, intermediateBufLen);
         }
     }
 
@@ -916,7 +985,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
 
             // should never remove anything, but JIC. We'll leak an RBO and FBO if this removes anything.
             to->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, SGLTex{}));
+            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, SGLTex{}, nullptr, 0));
         }
     }
 
@@ -963,6 +1032,10 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
 
     GLCALL(glTexParameteri(fromTex.target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GLCALL(glTexParameteri(fromTex.target, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+
+    if (intermediateBuf) {
+        GLCALL(glTexImage2D(fromTex.target, 0, PIXEL_BUFFER_FORMAT, fromDma.size.x, fromDma.size.y, 0, PIXEL_BUFFER_FORMAT, GL_UNSIGNED_BYTE, intermediateBuf));
+    }
 
     GLCALL(glUseProgram(SHADER.program));
     GLCALL(glDisable(GL_BLEND));
@@ -1018,6 +1091,8 @@ void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachme
         proc.eglDestroyImageKHR(egl.display, attachment->eglImage);
     if (attachment->tex.image)
         proc.eglDestroyImageKHR(egl.display, attachment->tex.image);
+    if (attachment->intermediateBuf)
+        free(attachment->intermediateBuf);
 
     restoreEGL();
 }
@@ -1043,7 +1118,7 @@ bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
 }
 
 CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
-                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex tex_) :
-    eglImage(image), fbo(fbo_), rbo(rbo_), tex(tex_), renderer(renderer_) {
+                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex tex_, uint8_t* intermediateBuf_, size_t intermediateBufLen_) :
+    eglImage(image), fbo(fbo_), rbo(rbo_), tex(tex_), intermediateBuf(intermediateBuf_), intermediateBufLen(intermediateBufLen_), renderer(renderer_) {
     bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
 }
