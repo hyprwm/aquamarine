@@ -9,6 +9,7 @@
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
 #include <aquamarine/allocator/GBM.hpp>
+#include <span>
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -699,9 +700,9 @@ SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
 }
 
 // TODO: Would another format be more efficient than GL_RGBA?
-const GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
+constexpr GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
 
-void         CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, uint8_t* out, size_t outlen) {
+void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out) {
     setEGL();
 
     auto hadAttachment = buf->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
@@ -709,7 +710,7 @@ void         CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer>
     if (!hadAttachment) {
         // should never remove anything, but JIC. We'll leak an EGLImage if this removes anything.
         buf->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-        auto newAttachment = makeShared<CDRMRendererBufferAttachment>(self, buf, nullptr, 0, 0, SGLTex{}, nullptr, 0);
+        auto newAttachment = makeShared<CDRMRendererBufferAttachment>(self, buf, nullptr, 0, 0, SGLTex{}, std::vector<uint8_t>());
         att                = newAttachment.get();
         buf->attachments.add(newAttachment);
     }
@@ -738,7 +739,7 @@ void         CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer>
     }
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, att->fbo));
-    GLCALL(proc.glReadnPixelsEXT(0, 0, dma.size.x, dma.size.y, GL_RGBA, GL_UNSIGNED_BYTE, outlen, out));
+    GLCALL(proc.glReadnPixelsEXT(0, 0, dma.size.x, dma.size.y, GL_RGBA, GL_UNSIGNED_BYTE, out.size(), out.data()));
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     restoreEGL();
@@ -892,45 +893,40 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     // both from and to have the same AQ_ATTACHMENT_DRM_RENDERER_DATA.
     // Those buffers always come from different swapchains, so it's OK.
 
-    SGLTex   fromTex;
-    auto     fromDma            = from->dmabuf();
-    uint8_t* intermediateBuf    = nullptr;
-    size_t   intermediateBufLen = 0;
+    SGLTex             fromTex;
+    auto               fromDma = from->dmabuf();
+    std::span<uint8_t> intermediateBuf;
     {
         auto attachment = from->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
         if (attachment) {
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): From attachment found"));
-            auto att           = (CDRMRendererBufferAttachment*)attachment.get();
-            fromTex            = att->tex;
-            intermediateBuf    = att->intermediateBuf;
-            intermediateBufLen = att->intermediateBufLen;
+            auto att        = (CDRMRendererBufferAttachment*)attachment.get();
+            fromTex         = att->tex;
+            intermediateBuf = att->intermediateBuf;
         }
 
-        if (!fromTex.image && !intermediateBuf) {
+        if (!fromTex.image && intermediateBuf.empty()) {
             backend->log(AQ_LOG_DEBUG, "EGL (blit): No attachment in from, creating a new image");
             fromTex = glTex(from);
 
+            auto newAttachment = makeShared<CDRMRendererBufferAttachment>(self, from, nullptr, 0, 0, fromTex, std::vector<uint8_t>());
             if (!fromTex.image && primaryRenderer) {
                 backend->log(AQ_LOG_DEBUG, "EGL (blit): Failed to create image from source buffer directly, allocating intermediate buffer");
                 static_assert(PIXEL_BUFFER_FORMAT == GL_RGBA); // If the pixel buffer format changes, the below size calculation probably needs to as well.
-                intermediateBufLen = fromDma.size.x * fromDma.size.y * 4;
-                intermediateBuf    = (uint8_t*)malloc(intermediateBufLen);
-                if (intermediateBuf == nullptr) {
-                    backend->log(AQ_LOG_ERROR, "EGL (blit): Failed to allocate intermediate buffer");
-                    return {};
-                }
-                fromTex.target = GL_TEXTURE_2D;
+                newAttachment->intermediateBuf.resize(fromDma.size.x * fromDma.size.y * 4);
+                intermediateBuf = newAttachment->intermediateBuf;
+                fromTex.target  = GL_TEXTURE_2D;
                 GLCALL(glGenTextures(1, &fromTex.texid));
             }
 
             // should never remove anything, but JIC. We'll leak an EGLImage if this removes anything.
             from->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-            from->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, from, nullptr, 0, 0, fromTex, intermediateBuf, intermediateBufLen));
+            from->attachments.add(newAttachment);
         }
 
-        if (intermediateBuf) {
+        if (!intermediateBuf.empty()) {
             // Note: this might modify from's attachments
-            primaryRenderer->readBuffer(from, intermediateBuf, intermediateBufLen);
+            primaryRenderer->readBuffer(from, intermediateBuf);
         }
     }
 
@@ -985,7 +981,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
             // should never remove anything, but JIC. We'll leak an RBO and FBO if this removes anything.
             to->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, SGLTex{}, nullptr, 0));
+            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, SGLTex{}, std::vector<uint8_t>()));
         }
     }
 
@@ -1033,8 +1029,8 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     GLCALL(glTexParameteri(fromTex.target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GLCALL(glTexParameteri(fromTex.target, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
 
-    if (intermediateBuf)
-        GLCALL(glTexImage2D(fromTex.target, 0, PIXEL_BUFFER_FORMAT, fromDma.size.x, fromDma.size.y, 0, PIXEL_BUFFER_FORMAT, GL_UNSIGNED_BYTE, intermediateBuf));
+    if (!intermediateBuf.empty())
+        GLCALL(glTexImage2D(fromTex.target, 0, PIXEL_BUFFER_FORMAT, fromDma.size.x, fromDma.size.y, 0, PIXEL_BUFFER_FORMAT, GL_UNSIGNED_BYTE, intermediateBuf.data()));
 
     GLCALL(glUseProgram(SHADER.program));
     GLCALL(glDisable(GL_BLEND));
@@ -1090,8 +1086,6 @@ void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachme
         proc.eglDestroyImageKHR(egl.display, attachment->eglImage);
     if (attachment->tex.image)
         proc.eglDestroyImageKHR(egl.display, attachment->tex.image);
-    if (attachment->intermediateBuf)
-        free(attachment->intermediateBuf);
 
     restoreEGL();
 }
@@ -1117,7 +1111,7 @@ bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
 }
 
 CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
-                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex tex_, uint8_t* intermediateBuf_, size_t intermediateBufLen_) :
-    eglImage(image), fbo(fbo_), rbo(rbo_), tex(tex_), intermediateBuf(intermediateBuf_), intermediateBufLen(intermediateBufLen_), renderer(renderer_) {
+                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex tex_, std::vector<uint8_t> intermediateBuf_) :
+    eglImage(image), fbo(fbo_), rbo(rbo_), tex(tex_), intermediateBuf(intermediateBuf_), renderer(renderer_) {
     bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
 }
