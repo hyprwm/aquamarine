@@ -10,6 +10,7 @@
 #include <optional>
 #include <tuple>
 #include <vector>
+#include <span>
 
 namespace Aquamarine {
 

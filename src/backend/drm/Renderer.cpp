@@ -9,7 +9,6 @@
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
 #include <aquamarine/allocator/GBM.hpp>
-#include <span>
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
@@ -924,7 +923,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
             from->attachments.add(newAttachment);
         }
 
-        if (!intermediateBuf.empty()) {
+        if (!intermediateBuf.empty() && primaryRenderer) {
             // Note: this might modify from's attachments
             primaryRenderer->readBuffer(from, intermediateBuf);
         }
