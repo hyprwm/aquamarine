@@ -698,7 +698,6 @@ SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
     return tex;
 }
 
-// TODO: Would another format be more efficient than GL_RGBA?
 constexpr GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
 
 void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out) {
