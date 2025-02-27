@@ -45,7 +45,7 @@ namespace Aquamarine {
     // and on destruction, it restores the previous EGL context.
     class EglContextGuard {
       public:
-        EglContextGuard(CDRMRenderer& renderer_);
+        EglContextGuard(const CDRMRenderer& renderer_);
         ~EglContextGuard();
 
         // No copy or move constructors
@@ -55,7 +55,7 @@ namespace Aquamarine {
         EglContextGuard& operator=(EglContextGuard&&)      = delete;
 
       private:
-        CDRMRenderer& renderer;
+        const CDRMRenderer& renderer;
         struct {
             EGLDisplay display = nullptr;
             EGLContext context = nullptr;

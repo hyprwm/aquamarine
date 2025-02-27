@@ -571,7 +571,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory:
     return renderer;
 }
 
-EglContextGuard::EglContextGuard(CDRMRenderer& renderer_) : renderer(renderer_) {
+EglContextGuard::EglContextGuard(const CDRMRenderer& renderer_) : renderer(renderer_) {
     savedEGLState.display = eglGetCurrentDisplay();
     savedEGLState.context = eglGetCurrentContext();
     savedEGLState.draw    = eglGetCurrentSurface(EGL_DRAW);
