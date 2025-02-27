@@ -40,19 +40,19 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
     };
 
-    // EglContextGuard is a RAII abstraction for the EGL context.
+    // CEglContextGuard is a RAII abstraction for the EGL context.
     // On initialization, it sets the EGL context to the renderer's display,
     // and on destruction, it restores the previous EGL context.
-    class EglContextGuard {
+    class CEglContextGuard {
       public:
-        EglContextGuard(const CDRMRenderer& renderer_);
-        ~EglContextGuard();
+        CEglContextGuard(const CDRMRenderer& renderer_);
+        ~CEglContextGuard();
 
         // No copy or move constructors
-        EglContextGuard(const EglContextGuard&)            = delete;
-        EglContextGuard& operator=(const EglContextGuard&) = delete;
-        EglContextGuard(EglContextGuard&&)                 = delete;
-        EglContextGuard& operator=(EglContextGuard&&)      = delete;
+        CEglContextGuard(const CEglContextGuard&)            = delete;
+        CEglContextGuard& operator=(const CEglContextGuard&) = delete;
+        CEglContextGuard(CEglContextGuard&&)                 = delete;
+        CEglContextGuard& operator=(CEglContextGuard&&)      = delete;
 
       private:
         const CDRMRenderer& renderer;
@@ -150,6 +150,6 @@ namespace Aquamarine {
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
 
-        friend class EglContextGuard;
+        friend class CEglContextGuard;
     };
 };
