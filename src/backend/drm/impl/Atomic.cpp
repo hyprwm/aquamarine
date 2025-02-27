@@ -244,10 +244,7 @@ bool Aquamarine::CDRMAtomicRequest::commit(uint32_t flagssss) {
         return false;
     }
 
-    if (!conn)
-        return false;
-
-    if (auto ret = drmModeAtomicCommit(backend->gpu->fd, req, flagssss, &conn->pendingPageFlip); ret) {
+    if (auto ret = drmModeAtomicCommit(backend->gpu->fd, req, flagssss, conn ? &conn->pendingPageFlip : nullptr); ret) {
         backend->log((flagssss & DRM_MODE_ATOMIC_TEST_ONLY) ? AQ_LOG_DEBUG : AQ_LOG_ERROR,
                      std::format("atomic drm request: failed to commit: {}, flags: {}", strerror(ret == -1 ? errno : -ret), flagsToStr(flagssss)));
         return false;

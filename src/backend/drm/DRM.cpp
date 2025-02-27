@@ -909,7 +909,7 @@ int Aquamarine::CDRMBackend::drmFD() {
 static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void* data) {
     auto pageFlip = (SDRMPageFlip*)data;
 
-    if (!pageFlip->connector)
+    if (!pageFlip || !pageFlip->connector)
         return;
 
     pageFlip->connector->isPageFlipPending = false;
