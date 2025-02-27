@@ -40,6 +40,29 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
     };
 
+    // EglContextGuard is a RAII abstraction for the EGL context.
+    // On initialization, it sets the EGL context to the renderer's display,
+    // and on destruction, it restores the previous EGL context.
+    class EglContextGuard {
+      public:
+        EglContextGuard(CDRMRenderer& renderer_);
+        ~EglContextGuard();
+
+        // No copy or move constructors
+        EglContextGuard(const EglContextGuard&)            = delete;
+        EglContextGuard& operator=(const EglContextGuard&) = delete;
+        EglContextGuard(EglContextGuard&&)                 = delete;
+        EglContextGuard& operator=(EglContextGuard&&)      = delete;
+
+      private:
+        CDRMRenderer& renderer;
+        struct {
+            EGLDisplay display = nullptr;
+            EGLContext context = nullptr;
+            EGLSurface draw = nullptr, read = nullptr;
+        } savedEGLState;
+    };
+
     class CDRMRenderer {
       public:
         ~CDRMRenderer();
@@ -58,9 +81,6 @@ namespace Aquamarine {
         SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to, int waitFD = -1);
         // can't be a SP<> because we call it from buf's ctor...
         void clearBuffer(IBuffer* buf);
-
-        void setEGL();
-        void restoreEGL();
 
         void onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
 
@@ -107,12 +127,6 @@ namespace Aquamarine {
             int        lastBlitSyncFD = -1;
         } egl;
 
-        struct {
-            EGLDisplay display = nullptr;
-            EGLContext context = nullptr;
-            EGLSurface draw = nullptr, read = nullptr;
-        } savedEGLState;
-
         SGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
@@ -135,5 +149,7 @@ namespace Aquamarine {
         bool                                                  hasModifiers = false;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
+
+        friend class EglContextGuard;
     };
 };
