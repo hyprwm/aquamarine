@@ -42,6 +42,29 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
     };
 
+    // CEglContextGuard is a RAII abstraction for the EGL context.
+    // On initialization, it sets the EGL context to the renderer's display,
+    // and on destruction, it restores the previous EGL context.
+    class CEglContextGuard {
+      public:
+        CEglContextGuard(const CDRMRenderer& renderer_);
+        ~CEglContextGuard();
+
+        // No copy or move constructors
+        CEglContextGuard(const CEglContextGuard&)            = delete;
+        CEglContextGuard& operator=(const CEglContextGuard&) = delete;
+        CEglContextGuard(CEglContextGuard&&)                 = delete;
+        CEglContextGuard& operator=(CEglContextGuard&&)      = delete;
+
+      private:
+        const CDRMRenderer& renderer;
+        struct {
+            EGLDisplay display = nullptr;
+            EGLContext context = nullptr;
+            EGLSurface draw = nullptr, read = nullptr;
+        } savedEGLState;
+    };
+
     class CDRMRenderer {
       public:
         ~CDRMRenderer();
@@ -61,9 +84,6 @@ namespace Aquamarine {
                          Hyprutils::Memory::CSharedPointer<CDRMRenderer> primaryRenderer, int waitFD = -1);
         // can't be a SP<> because we call it from buf's ctor...
         void clearBuffer(IBuffer* buf);
-
-        void setEGL();
-        void restoreEGL();
 
         void onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
 
@@ -111,12 +131,6 @@ namespace Aquamarine {
             int        lastBlitSyncFD = -1;
         } egl;
 
-        struct {
-            EGLDisplay display = nullptr;
-            EGLContext context = nullptr;
-            EGLSurface draw = nullptr, read = nullptr;
-        } savedEGLState;
-
         SGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
         void                                          readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out);
 
@@ -140,5 +154,7 @@ namespace Aquamarine {
         bool                                                  hasModifiers = false;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
+
+        friend class CEglContextGuard;
     };
 };
