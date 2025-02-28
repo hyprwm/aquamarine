@@ -447,7 +447,7 @@ void CDRMRenderer::initContext(bool GLES2) {
             backend->log(AQ_LOG_DEBUG, "CDRMRenderer: Got a high priority context");
     }
 
-    setEGL();
+    CEglContextGuard eglContext(*this);
 
     EGLEXTENSIONS = (const char*)glGetString(GL_EXTENSIONS);
 
@@ -466,12 +466,10 @@ void CDRMRenderer::initContext(bool GLES2) {
 
     exts.EXT_read_format_bgra        = EGLEXTENSIONS.contains("GL_EXT_read_format_bgra");
     exts.EXT_texture_format_BGRA8888 = EGLEXTENSIONS.contains("GL_EXT_texture_format_BGRA8888");
-
-    restoreEGL();
 }
 
 void CDRMRenderer::initResources() {
-    setEGL();
+    CEglContextGuard eglContext(*this);
 
     if (!exts.EXT_image_dma_buf_import || !initDRMFormats())
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: initDRMFormats failed, dma-buf won't work");
@@ -493,8 +491,6 @@ void CDRMRenderer::initResources() {
     gl.shaderExt.posAttrib = glGetAttribLocation(gl.shaderExt.program, "pos");
     gl.shaderExt.texAttrib = glGetAttribLocation(gl.shaderExt.program, "texcoord");
     gl.shaderExt.tex       = glGetUniformLocation(gl.shaderExt.program, "tex");
-
-    restoreEGL();
 }
 
 SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GLES2) {
@@ -575,25 +571,25 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory:
     return renderer;
 }
 
-void CDRMRenderer::setEGL() {
+CEglContextGuard::CEglContextGuard(const CDRMRenderer& renderer_) : renderer(renderer_) {
     savedEGLState.display = eglGetCurrentDisplay();
     savedEGLState.context = eglGetCurrentContext();
     savedEGLState.draw    = eglGetCurrentSurface(EGL_DRAW);
     savedEGLState.read    = eglGetCurrentSurface(EGL_READ);
 
-    if (!eglMakeCurrent(egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, egl.context))
-        backend->log(AQ_LOG_WARNING, "CDRMRenderer: setEGL eglMakeCurrent failed");
+    if (!eglMakeCurrent(renderer.egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, renderer.egl.context))
+        renderer.backend->log(AQ_LOG_WARNING, "CDRMRenderer: setEGL eglMakeCurrent failed");
 }
 
-void CDRMRenderer::restoreEGL() {
-    EGLDisplay dpy = savedEGLState.display ? savedEGLState.display : egl.display;
+CEglContextGuard::~CEglContextGuard() {
+    EGLDisplay dpy = savedEGLState.display ? savedEGLState.display : renderer.egl.display;
 
     // egl can't handle this
     if (dpy == EGL_NO_DISPLAY)
         return;
 
     if (!eglMakeCurrent(dpy, savedEGLState.draw, savedEGLState.read, savedEGLState.context))
-        backend->log(AQ_LOG_WARNING, "CDRMRenderer: restoreEGL eglMakeCurrent failed");
+        renderer.backend->log(AQ_LOG_WARNING, "CDRMRenderer: restoreEGL eglMakeCurrent failed");
 }
 
 EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
@@ -783,10 +779,9 @@ int CDRMRenderer::recreateBlitSync() {
 }
 
 void CDRMRenderer::clearBuffer(IBuffer* buf) {
-    setEGL();
-
-    auto   dmabuf = buf->dmabuf();
-    GLuint rboID = 0, fboID = 0;
+    CEglContextGuard eglContext(*this);
+    auto             dmabuf = buf->dmabuf();
+    GLuint           rboID = 0, fboID = 0;
 
     if (!dmabuf.success) {
         backend->log(AQ_LOG_ERROR, "EGL (clear): cannot clear a non-dmabuf");
@@ -824,12 +819,10 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     glDeleteFramebuffers(1, &fboID);
     glDeleteRenderbuffers(1, &rboID);
     proc.eglDestroyImageKHR(egl.display, rboImage);
-
-    restoreEGL();
 }
 
 CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, int waitFD) {
-    setEGL();
+    CEglContextGuard eglContext(*this);
 
     if (from->dmabuf().size != to->dmabuf().size) {
         backend->log(AQ_LOG_ERROR, "EGL (blit): buffer sizes mismatched");
@@ -997,13 +990,11 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, i
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
-    restoreEGL();
-
     return {.success = true, .syncFD = explicitFD == -1 ? std::nullopt : std::optional<int>{explicitFD}};
 }
 
 void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment) {
-    setEGL();
+    CEglContextGuard eglContext(*this);
 
     TRACE(backend->log(AQ_LOG_TRACE,
                        std::format("EGL (onBufferAttachmentDrop): dropping fbo {} rbo {} image 0x{:x}", attachment->fbo, attachment->rbo, (uintptr_t)attachment->eglImage)));
@@ -1018,8 +1009,6 @@ void CDRMRenderer::onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachme
         proc.eglDestroyImageKHR(egl.display, attachment->eglImage);
     if (attachment->tex.image)
         proc.eglDestroyImageKHR(egl.display, attachment->tex.image);
-
-    restoreEGL();
 }
 
 bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
