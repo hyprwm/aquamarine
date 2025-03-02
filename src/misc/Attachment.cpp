@@ -4,32 +4,16 @@ using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 #define SP CSharedPointer
 
-bool Aquamarine::CAttachmentManager::has(eAttachmentType type) {
-    for (auto const& a : attachments) {
-        if (a->type() == type)
-            return true;
-    }
-    return false;
-}
-
-SP<IAttachment> Aquamarine::CAttachmentManager::get(eAttachmentType type) {
-    for (auto const& a : attachments) {
-        if (a->type() == type)
-            return a;
-    }
-    return nullptr;
-}
-
 void Aquamarine::CAttachmentManager::add(SP<IAttachment> attachment) {
-    attachments.emplace_back(attachment);
+    const IAttachment& att   = *attachment;
+    attachments[typeid(att)] = attachment;
 }
 
 void Aquamarine::CAttachmentManager::remove(SP<IAttachment> attachment) {
-    std::erase(attachments, attachment);
-}
-
-void Aquamarine::CAttachmentManager::removeByType(eAttachmentType type) {
-    std::erase_if(attachments, [type](const auto& e) { return e->type() == type; });
+    const IAttachment& att = *attachment;
+    auto               it  = attachments.find(typeid(att));
+    if (it != attachments.end())
+        attachments.erase(it);
 }
 
 void Aquamarine::CAttachmentManager::clear() {
