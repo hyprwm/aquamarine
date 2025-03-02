@@ -698,14 +698,10 @@ constexpr GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
 
 void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out) {
     CEglContextGuard eglContext(*this);
-    auto             hadAttachment = buf->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-    auto             att           = (CDRMRendererBufferAttachment*)hadAttachment.get();
-    if (!hadAttachment) {
-        // should never remove anything, but JIC. We'll leak an EGLImage if this removes anything.
-        buf->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-        auto newAttachment = makeShared<CDRMRendererBufferAttachment>(self, buf, nullptr, 0, 0, SGLTex{}, std::vector<uint8_t>());
-        att                = newAttachment.get();
-        buf->attachments.add(newAttachment);
+    auto             att = buf->attachments.get<CDRMRendererBufferAttachment>();
+    if (!att) {
+        att = makeShared<CDRMRendererBufferAttachment>(self, buf, nullptr, 0, 0, SGLTex{}, std::vector<uint8_t>());
+        buf->attachments.add(att);
     }
 
     auto dma = buf->dmabuf();
@@ -886,31 +882,28 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     auto               fromDma = from->dmabuf();
     std::span<uint8_t> intermediateBuf;
     {
-        auto attachment = from->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
+        auto attachment = from->attachments.get<CDRMRendererBufferAttachment>();
         if (attachment) {
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): From attachment found"));
-            auto att        = (CDRMRendererBufferAttachment*)attachment.get();
-            fromTex         = att->tex;
-            intermediateBuf = att->intermediateBuf;
+            fromTex         = attachment->tex;
+            intermediateBuf = attachment->intermediateBuf;
         }
 
         if (!fromTex.image && intermediateBuf.empty()) {
             backend->log(AQ_LOG_DEBUG, "EGL (blit): No attachment in from, creating a new image");
             fromTex = glTex(from);
 
-            auto newAttachment = makeShared<CDRMRendererBufferAttachment>(self, from, nullptr, 0, 0, fromTex, std::vector<uint8_t>());
+            attachment = makeShared<CDRMRendererBufferAttachment>(self, from, nullptr, 0, 0, fromTex, std::vector<uint8_t>());
+            from->attachments.add(attachment);
+
             if (!fromTex.image && primaryRenderer) {
                 backend->log(AQ_LOG_DEBUG, "EGL (blit): Failed to create image from source buffer directly, allocating intermediate buffer");
                 static_assert(PIXEL_BUFFER_FORMAT == GL_RGBA); // If the pixel buffer format changes, the below size calculation probably needs to as well.
-                newAttachment->intermediateBuf.resize(fromDma.size.x * fromDma.size.y * 4);
-                intermediateBuf = newAttachment->intermediateBuf;
+                attachment->intermediateBuf.resize(fromDma.size.x * fromDma.size.y * 4);
+                intermediateBuf = attachment->intermediateBuf;
                 fromTex.target  = GL_TEXTURE_2D;
                 GLCALL(glGenTextures(1, &fromTex.texid));
             }
-
-            // should never remove anything, but JIC. We'll leak an EGLImage if this removes anything.
-            from->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
-            from->attachments.add(newAttachment);
         }
 
         if (!intermediateBuf.empty() && primaryRenderer) {
@@ -936,13 +929,12 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     }
 
     {
-        auto attachment = to->attachments.get(AQ_ATTACHMENT_DRM_RENDERER_DATA);
+        auto attachment = to->attachments.get<CDRMRendererBufferAttachment>();
         if (attachment) {
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): To attachment found"));
-            auto att = (CDRMRendererBufferAttachment*)attachment.get();
-            rboImage = att->eglImage;
-            fboID    = att->fbo;
-            rboID    = att->rbo;
+            rboImage = attachment->eglImage;
+            fboID    = attachment->fbo;
+            rboID    = attachment->rbo;
         }
 
         if (!rboImage) {
@@ -968,8 +960,6 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
                 return {};
             }
 
-            // should never remove anything, but JIC. We'll leak an RBO and FBO if this removes anything.
-            to->attachments.removeByType(AQ_ATTACHMENT_DRM_RENDERER_DATA);
             to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, SGLTex{}, std::vector<uint8_t>()));
         }
     }

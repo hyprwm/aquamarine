@@ -1621,7 +1621,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
-    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->attachments.has(AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE)) {
+    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->attachments.has<CDRMBufferUnimportable>()) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer."));
         return false;
     }
@@ -2003,9 +2003,8 @@ SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CW
     if (isNew)
         *isNew = true;
 
-    if (buffer_->attachments.has(AQ_ATTACHMENT_DRM_BUFFER)) {
-        auto at = (CDRMBufferAttachment*)buffer_->attachments.get(AQ_ATTACHMENT_DRM_BUFFER).get();
-        fb      = at->fb;
+    if (auto at = buffer_->attachments.get<CDRMBufferAttachment>()) {
+        fb = at->fb;
         TRACE(backend_->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: buffer has drmfb attachment with fb {:x}", (uintptr_t)fb.get())));
     }
 
@@ -2036,7 +2035,7 @@ void Aquamarine::CDRMFB::import() {
         return;
     }
 
-    if (buffer->attachments.has(AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE)) {
+    if (buffer->attachments.has<CDRMBufferUnimportable>()) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted is unimportable");
         return;
     }

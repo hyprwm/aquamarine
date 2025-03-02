@@ -25,9 +25,6 @@ namespace Aquamarine {
         virtual ~CDRMBufferAttachment() {
             ;
         }
-        virtual eAttachmentType type() {
-            return AQ_ATTACHMENT_DRM_BUFFER;
-        }
 
         Hyprutils::Memory::CSharedPointer<CDRMFB> fb;
     };
@@ -39,9 +36,6 @@ namespace Aquamarine {
         }
         virtual ~CDRMBufferUnimportable() {
             ;
-        }
-        virtual eAttachmentType type() {
-            return AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE;
         }
     };
 
