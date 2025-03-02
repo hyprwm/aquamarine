@@ -508,7 +508,6 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
 }
 
 Aquamarine::CWaylandOutput::~CWaylandOutput() {
-    backend->idleCallbacks.clear(); // FIXME: mega hack to avoid a UAF in frame events
     events.destroy.emit();
     if (waylandState.xdgToplevel)
         waylandState.xdgToplevel->sendDestroy();
@@ -769,8 +768,13 @@ void Aquamarine::CWaylandOutput::scheduleFrame(const scheduleFrameReason reason)
 
     if (waylandState.frameCallback)
         frameScheduledWhileWaiting = true;
-    else
-        backend->idleCallbacks.emplace_back([this]() { sendFrameAndSetCallback(); });
+    else {
+        auto w = self;
+        backend->idleCallbacks.emplace_back([w]() {
+            if (auto o = w.lock())
+                o->sendFrameAndSetCallback();
+        });
+    }
 }
 
 Aquamarine::CWaylandBuffer::CWaylandBuffer(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_) : buffer(buffer_), backend(backend_) {
