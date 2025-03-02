@@ -26,7 +26,7 @@ namespace Aquamarine {
             return attachments.contains(typeid(T));
         }
         template <AttachmentConcept T>
-        const Hyprutils::Memory::CSharedPointer<T>& get() const {
+        Hyprutils::Memory::CSharedPointer<T> get() const {
             auto it = attachments.find(typeid(T));
             if (it == attachments.end())
                 return nullptr;
