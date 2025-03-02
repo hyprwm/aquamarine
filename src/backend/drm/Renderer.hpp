@@ -10,6 +10,7 @@
 #include <optional>
 #include <tuple>
 #include <vector>
+#include <span>
 
 namespace Aquamarine {
 
@@ -24,7 +25,7 @@ namespace Aquamarine {
     class CDRMRendererBufferAttachment : public IAttachment {
       public:
         CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
-                                     GLuint rbo_, SGLTex tex);
+                                     GLuint rbo_, SGLTex tex, std::vector<uint8_t> intermediateBuf_);
         virtual ~CDRMRendererBufferAttachment() {
             ;
         }
@@ -36,6 +37,7 @@ namespace Aquamarine {
         GLuint                                        fbo = 0, rbo = 0;
         SGLTex                                        tex;
         Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
+        std::vector<uint8_t>                          intermediateBuf;
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
     };
@@ -78,7 +80,8 @@ namespace Aquamarine {
             std::optional<int> syncFD;
         };
 
-        SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to, int waitFD = -1);
+        SBlitResult blit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to,
+                         Hyprutils::Memory::CSharedPointer<CDRMRenderer> primaryRenderer, int waitFD = -1);
         // can't be a SP<> because we call it from buf's ctor...
         void clearBuffer(IBuffer* buf);
 
@@ -106,6 +109,7 @@ namespace Aquamarine {
             PFNEGLDEBUGMESSAGECONTROLKHRPROC              eglDebugMessageControlKHR              = nullptr;
             PFNEGLQUERYDEVICESEXTPROC                     eglQueryDevicesEXT                     = nullptr;
             PFNEGLQUERYDEVICESTRINGEXTPROC                eglQueryDeviceStringEXT                = nullptr;
+            PFNGLREADNPIXELSEXTPROC                       glReadnPixelsEXT                       = nullptr;
         } proc;
 
         struct {
@@ -128,6 +132,7 @@ namespace Aquamarine {
         } egl;
 
         SGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
+        void                                          readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
         std::vector<SGLFormat>                        formats;

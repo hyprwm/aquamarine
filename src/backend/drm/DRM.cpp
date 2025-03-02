@@ -1699,9 +1699,12 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 return false;
             }
 
-            auto NEWAQBUF   = mgpu.swapchain->next(nullptr);
+            auto                         NEWAQBUF = mgpu.swapchain->next(nullptr);
+            SP<Aquamarine::CDRMRenderer> primaryRenderer;
+            if (backend->primary)
+                primaryRenderer = backend->primary->rendererState.renderer;
             auto blitResult = backend->rendererState.renderer->blit(
-                STATE.buffer, NEWAQBUF, (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+                STATE.buffer, NEWAQBUF, primaryRenderer, (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
             if (!blitResult.success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but blit failed");
                 return false;
@@ -1881,8 +1884,11 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
                 return false;
             }
 
-            auto NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
-            if (!backend->rendererState.renderer->blit(buffer, NEWAQBUF).success) {
+            auto                         NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
+            SP<Aquamarine::CDRMRenderer> primaryRenderer;
+            if (backend->primary)
+                primaryRenderer = backend->primary->rendererState.renderer;
+            if (!backend->rendererState.renderer->blit(buffer, NEWAQBUF, primaryRenderer).success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but cursor blit failed");
                 return false;
             }
