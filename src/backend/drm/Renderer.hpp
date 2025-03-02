@@ -29,9 +29,6 @@ namespace Aquamarine {
         virtual ~CDRMRendererBufferAttachment() {
             ;
         }
-        virtual eAttachmentType type() {
-            return AQ_ATTACHMENT_DRM_RENDERER_DATA;
-        }
 
         EGLImageKHR                                   eglImage = nullptr;
         GLuint                                        fbo = 0, rbo = 0;

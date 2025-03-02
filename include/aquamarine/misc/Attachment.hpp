@@ -2,33 +2,56 @@
 
 #include <vector>
 #include <hyprutils/memory/SharedPtr.hpp>
+#include <unordered_map>
+#include <typeindex>
 
 namespace Aquamarine {
-    enum eAttachmentType : uint32_t {
-        AQ_ATTACHMENT_DRM_BUFFER = 0,
-        AQ_ATTACHMENT_DRM_KMS_UNIMPORTABLE,
-        AQ_ATTACHMENT_DRM_RENDERER_DATA,
-    };
-
     class IAttachment {
       public:
         virtual ~IAttachment() {
             ;
         }
-
-        virtual eAttachmentType type() = 0;
     };
 
+    template <typename T>
+    concept AttachmentConcept = std::is_base_of_v<IAttachment, T>;
+
+    // CAttachmentManager is a registry for arbitrary attachment types.
+    // Any type implementing IAttachment can be added, retrieved, and removed from the registry.
+    // However, only one attachment of a given type is permitted.
     class CAttachmentManager {
       public:
-        bool                                           has(eAttachmentType type);
-        Hyprutils::Memory::CSharedPointer<IAttachment> get(eAttachmentType type);
-        void                                           add(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
-        void                                           remove(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
-        void                                           removeByType(eAttachmentType type);
-        void                                           clear();
+        // has checks if the manager has an attachment of the specified type
+        template <AttachmentConcept T>
+        bool has() const {
+            return attachments.contains(typeid(T));
+        }
+        // get retrieves the attachment on the specified type,
+        // returning nullptr if no attachment of the specified type is present.
+        template <AttachmentConcept T>
+        const Hyprutils::Memory::CSharedPointer<T>& get() const {
+            auto it = attachments.find(typeid(T));
+            if (it == attachments.end())
+                return nullptr;
+            // Reinterpret SP<IAttachment> into SP<T>.
+            // This is safe because we looked up this attachment by typeid(T),
+            // so it must be an SP<T>.
+            return *reinterpret_cast<const Hyprutils::Memory::CSharedPointer<T>*>(&it->second);
+        }
+        // add adds an attachment, removing the previous attachment of the same type if it exists
+        void add(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
+        // remove removes the specified attachment, doing nothing if it does not exist.
+        // Note that this will not remove a different attachment of the same type.
+        void remove(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
+        // remove removes the attachment of the specified type, doing nothing if it does not exist
+        template <AttachmentConcept T>
+        void removeByType() {
+            attachments.erase(typeid(T));
+        }
+        // clear removes all attachments
+        void clear();
 
       private:
-        std::vector<Hyprutils::Memory::CSharedPointer<IAttachment>> attachments;
+        std::unordered_map<std::type_index, Hyprutils::Memory::CSharedPointer<IAttachment>> attachments;
     };
 };
