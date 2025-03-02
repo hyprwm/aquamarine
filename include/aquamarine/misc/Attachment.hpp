@@ -21,13 +21,10 @@ namespace Aquamarine {
     // However, only one attachment of a given type is permitted.
     class CAttachmentManager {
       public:
-        // has checks if the manager has an attachment of the specified type
         template <AttachmentConcept T>
         bool has() const {
             return attachments.contains(typeid(T));
         }
-        // get retrieves the attachment on the specified type,
-        // returning nullptr if no attachment of the specified type is present.
         template <AttachmentConcept T>
         const Hyprutils::Memory::CSharedPointer<T>& get() const {
             auto it = attachments.find(typeid(T));
@@ -38,17 +35,13 @@ namespace Aquamarine {
             // so it must be an SP<T>.
             return *reinterpret_cast<const Hyprutils::Memory::CSharedPointer<T>*>(&it->second);
         }
-        // add adds an attachment, removing the previous attachment of the same type if it exists
+        // Also removes the previous attachment of the same type if one exists
         void add(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
-        // remove removes the specified attachment, doing nothing if it does not exist.
-        // Note that this will not remove a different attachment of the same type.
         void remove(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
-        // remove removes the attachment of the specified type, doing nothing if it does not exist
         template <AttachmentConcept T>
         void removeByType() {
             attachments.erase(typeid(T));
         }
-        // clear removes all attachments
         void clear();
 
       private:
