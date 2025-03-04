@@ -137,6 +137,14 @@ add_test(
   COMMAND simpleWindow "simpleWindow")
 add_dependencies(tests simpleWindow)
 
+add_executable(attachments "tests/Attachments.cpp")
+target_link_libraries(attachments PRIVATE PkgConfig::deps aquamarine)
+add_test(
+  NAME "attachments"
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+  COMMAND attachments "attachments")
+add_dependencies(tests attachments)
+
 # Installation
 install(TARGETS aquamarine)
 install(DIRECTORY "include/aquamarine" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
