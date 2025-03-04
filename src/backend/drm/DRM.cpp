@@ -76,7 +76,7 @@ static int gpuNumBuiltinPanels(const SP<CSessionDevice> gpu) {
     int num = 0;
     for (int i = 0; i < resources->count_connectors; ++i) {
         auto drmConn = drmModeGetConnector(gpu->fd, resources->connectors[i]);
-        if (!drmConn)
+        if (!drmConn || drmConn->connection != DRM_MODE_CONNECTED)
             continue;
 
         if (drmConn->connector_type == DRM_MODE_CONNECTOR_LVDS || drmConn->connector_type == DRM_MODE_CONNECTOR_eDP || drmConn->connector_type == DRM_MODE_CONNECTOR_DSI)
