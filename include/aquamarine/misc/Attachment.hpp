@@ -33,7 +33,7 @@ namespace Aquamarine {
             // Reinterpret SP<IAttachment> into SP<T>.
             // This is safe because we looked up this attachment by typeid(T),
             // so it must be an SP<T>.
-            return Hyprutils::Memory::CSharedPointer<T>(it->second.impl_);
+            return Hyprutils::Memory::CSharedPointer<T>(it->second, Hyprutils::Memory::FORCE_REINTERPRET);
         }
         // Also removes the previous attachment of the same type if one exists
         void add(Hyprutils::Memory::CSharedPointer<IAttachment> attachment);
