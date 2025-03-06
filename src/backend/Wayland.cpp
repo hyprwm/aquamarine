@@ -769,8 +769,7 @@ void Aquamarine::CWaylandOutput::scheduleFrame(const scheduleFrameReason reason)
     if (waylandState.frameCallback)
         frameScheduledWhileWaiting = true;
     else {
-        auto w = self;
-        backend->idleCallbacks.emplace_back([w]() {
+        backend->idleCallbacks.emplace_back([w = self]() {
             if (auto o = w.lock())
                 o->sendFrameAndSetCallback();
         });
