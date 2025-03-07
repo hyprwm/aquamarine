@@ -224,10 +224,6 @@ Aquamarine::CWaylandKeyboard::CWaylandKeyboard(SP<CCWlKeyboard> keyboard_, Hypru
     });
 }
 
-Aquamarine::CWaylandKeyboard::~CWaylandKeyboard() {
-    ;
-}
-
 const std::string& Aquamarine::CWaylandKeyboard::getName() {
     return name;
 }
@@ -298,10 +294,6 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
     });
 
     pointer->setFrame([this](CCWlPointer* r) { events.frame.emit(); });
-}
-
-Aquamarine::CWaylandPointer::~CWaylandPointer() {
-    ;
 }
 
 const std::string& Aquamarine::CWaylandPointer::getName() {
