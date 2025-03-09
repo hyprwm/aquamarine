@@ -29,7 +29,7 @@ pkg_check_modules(
   libinput>=1.26.0
   wayland-client
   wayland-protocols
-  hyprutils>=0.2.3
+  hyprutils>=0.5.2
   pixman-1
   libdrm
   gbm
@@ -136,6 +136,14 @@ add_test(
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
   COMMAND simpleWindow "simpleWindow")
 add_dependencies(tests simpleWindow)
+
+add_executable(attachments "tests/Attachments.cpp")
+target_link_libraries(attachments PRIVATE PkgConfig::deps aquamarine)
+add_test(
+  NAME "attachments"
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+  COMMAND attachments "attachments")
+add_dependencies(tests attachments)
 
 # Installation
 install(TARGETS aquamarine)
