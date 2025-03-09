@@ -29,7 +29,7 @@ pkg_check_modules(
   libinput>=1.26.0
   wayland-client
   wayland-protocols
-  hyprutils>=0.2.3
+  hyprutils>=0.5.2
   pixman-1
   libdrm
   gbm
