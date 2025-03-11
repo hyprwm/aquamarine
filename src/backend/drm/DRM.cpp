@@ -1996,6 +1996,7 @@ SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CW
     if (fb) {
         if (isNew)
             *isNew = false;
+        fb->buffer = buffer_;
         return fb;
     }
 
