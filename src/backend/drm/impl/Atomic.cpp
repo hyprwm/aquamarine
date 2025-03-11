@@ -62,12 +62,13 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
                                  plane->props.src_y, plane->props.src_w, plane->props.src_h, plane->props.crtc_w, plane->props.crtc_h, plane->props.fb_id, plane->props.crtc_id)));
 
     // src_ are 16.16 fixed point (lol)
+    auto size = fb->buffer->getSize();
     add(plane->id, plane->props.src_x, 0);
     add(plane->id, plane->props.src_y, 0);
-    add(plane->id, plane->props.src_w, ((uint64_t)fb->buffer->size.x) << 16);
-    add(plane->id, plane->props.src_h, ((uint64_t)fb->buffer->size.y) << 16);
-    add(plane->id, plane->props.crtc_w, (uint32_t)fb->buffer->size.x);
-    add(plane->id, plane->props.crtc_h, (uint32_t)fb->buffer->size.y);
+    add(plane->id, plane->props.src_w, ((uint64_t)size.x) << 16);
+    add(plane->id, plane->props.src_h, ((uint64_t)size.y) << 16);
+    add(plane->id, plane->props.crtc_w, (uint32_t)size.x);
+    add(plane->id, plane->props.crtc_h, (uint32_t)size.y);
     add(plane->id, plane->props.fb_id, fb->id);
     add(plane->id, plane->props.crtc_id, crtc);
     planePropsPos(plane, pos);

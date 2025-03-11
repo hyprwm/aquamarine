@@ -54,24 +54,21 @@ namespace Aquamarine {
         virtual SSHMAttrs                              shm();
         virtual std::tuple<uint8_t*, uint32_t, size_t> beginDataPtr(uint32_t flags);
         virtual void                                   endDataPtr();
-        virtual void                                   sendRelease();
-        virtual void                                   lock();
-        virtual void                                   unlock();
-        virtual bool                                   locked();
 
-        Hyprutils::Math::Vector2D                      size;
-        bool                                           opaque          = false;
-        bool                                           lockedByBackend = false;
+        virtual bool                                   getOpaque();
+        virtual Hyprutils::Math::Vector2D&             getSize();
+        virtual CAttachmentManager&                    getAttachments();
+        virtual Hyprutils::Signal::CSignal&            getDestroyEvent();
 
-        CAttachmentManager                             attachments;
+      protected:
+        Hyprutils::Math::Vector2D size;
+        bool                      opaque = false;
+
+        CAttachmentManager        attachments;
 
         struct {
             Hyprutils::Signal::CSignal destroy;
-            Hyprutils::Signal::CSignal backendRelease;
         } events;
-
-      private:
-        int locks = 0;
     };
 
 };

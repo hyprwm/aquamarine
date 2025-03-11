@@ -97,7 +97,7 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
 
         connector->backend->backend->log(AQ_LOG_DEBUG,
                                          std::format("legacy drm: cursor fb: {} with bo handle {} from fd {}, size {}", connector->backend->gpu->fd, boHandle,
-                                                     data.cursorFB->buffer->dmabuf().fds.at(0), data.cursorFB->buffer->size));
+                                                     data.cursorFB->buffer->dmabuf().fds.at(0), data.cursorFB->buffer->getSize()));
 
         Vector2D                cursorPos = connector->output->cursorPos;
 
@@ -106,8 +106,8 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
             .crtc_id = connector->crtc->id,
             .x       = (int32_t)cursorPos.x,
             .y       = (int32_t)cursorPos.y,
-            .width   = (uint32_t)data.cursorFB->buffer->size.x,
-            .height  = (uint32_t)data.cursorFB->buffer->size.y,
+            .width   = (uint32_t)data.cursorFB->buffer->getSize().x,
+            .height  = (uint32_t)data.cursorFB->buffer->getSize().y,
             .handle  = boHandle,
             .hot_x   = (int32_t)connector->output->cursorHotspot.x,
             .hot_y   = (int32_t)connector->output->cursorHotspot.y,

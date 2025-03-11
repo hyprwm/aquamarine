@@ -1502,11 +1502,6 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     if (crtc->cursor && data.cursorFB)
         crtc->cursor->back = data.cursorFB;
 
-    if (data.mainFB)
-        data.mainFB->buffer->lockedByBackend = true;
-    if (crtc->cursor && data.cursorFB)
-        data.cursorFB->buffer->lockedByBackend = true;
-
     pendingCursorFB.reset();
 
     if (output->state->state().committed & COutputState::AQ_OUTPUT_STATE_MODE)
@@ -1528,20 +1523,10 @@ void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& da
 }
 
 void Aquamarine::SDRMConnector::onPresent() {
-    crtc->primary->last  = crtc->primary->front;
     crtc->primary->front = crtc->primary->back;
-    if (crtc->primary->last && crtc->primary->last->buffer) {
-        crtc->primary->last->buffer->lockedByBackend = false;
-        crtc->primary->last->buffer->events.backendRelease.emit();
-    }
 
     if (crtc->cursor) {
-        crtc->cursor->last  = crtc->cursor->front;
         crtc->cursor->front = crtc->cursor->back;
-        if (crtc->cursor->last && crtc->cursor->last->buffer) {
-            crtc->cursor->last->buffer->lockedByBackend = false;
-            crtc->cursor->last->buffer->events.backendRelease.emit();
-        }
     }
 }
 
@@ -1621,7 +1606,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
-    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->attachments.has<CDRMBufferUnimportable>()) {
+    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->getAttachments().has<CDRMBufferUnimportable>()) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer."));
         return false;
     }
@@ -1688,7 +1673,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
             auto OPTIONS = swapchain->currentOptions();
             auto bufDma  = STATE.buffer->dmabuf();
-            OPTIONS.size = STATE.buffer->size;
+            OPTIONS.size = STATE.buffer->getSize();
             if (OPTIONS.format == DRM_FORMAT_INVALID)
                 OPTIONS.format = bufDma.format;
             OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
@@ -2003,7 +1988,7 @@ SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CW
     if (isNew)
         *isNew = true;
 
-    if (auto at = buffer_->attachments.get<CDRMBufferAttachment>()) {
+    if (auto at = buffer_->getAttachments().get<CDRMBufferAttachment>()) {
         fb = at->fb;
         TRACE(backend_->log(AQ_LOG_TRACE, std::format("drm: CDRMFB: buffer has drmfb attachment with fb {:x}", (uintptr_t)fb.get())));
     }
@@ -2019,7 +2004,7 @@ SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CW
     if (!fb->id)
         return nullptr;
 
-    buffer_->attachments.add(makeShared<CDRMBufferAttachment>(fb));
+    buffer_->getAttachments().add(makeShared<CDRMBufferAttachment>(fb));
 
     return fb;
 }
@@ -2035,7 +2020,7 @@ void Aquamarine::CDRMFB::import() {
         return;
     }
 
-    if (buffer->attachments.has<CDRMBufferUnimportable>()) {
+    if (buffer->getAttachments().has<CDRMBufferUnimportable>()) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Buffer submitted is unimportable");
         return;
     }
@@ -2056,7 +2041,7 @@ void Aquamarine::CDRMFB::import() {
 
     if (!id) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer to KMS");
-        buffer->attachments.add(makeShared<CDRMBufferUnimportable>());
+        buffer->getAttachments().add(makeShared<CDRMBufferUnimportable>());
         drop();
         return;
     }
@@ -2065,7 +2050,7 @@ void Aquamarine::CDRMFB::import() {
 
     closeHandles();
 
-    listeners.destroyBuffer = buffer->events.destroy.registerListener([this](std::any d) {
+    listeners.destroyBuffer = buffer->getDestroyEvent().registerListener([this](std::any d) {
         drop();
         dead      = true;
         id        = 0;

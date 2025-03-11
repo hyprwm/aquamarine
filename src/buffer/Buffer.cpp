@@ -19,23 +19,18 @@ void Aquamarine::IBuffer::endDataPtr() {
     ; // empty
 }
 
-void Aquamarine::IBuffer::sendRelease() {
-    ;
+bool Aquamarine::IBuffer::getOpaque() {
+    return opaque;
 }
 
-void Aquamarine::IBuffer::lock() {
-    locks++;
+Hyprutils::Math::Vector2D& Aquamarine::IBuffer::getSize() {
+    return size;
 }
 
-void Aquamarine::IBuffer::unlock() {
-    locks--;
-
-    ASSERT(locks >= 0);
-
-    if (locks <= 0)
-        sendRelease();
+CAttachmentManager& Aquamarine::IBuffer::getAttachments() {
+    return attachments;
 }
 
-bool Aquamarine::IBuffer::locked() {
-    return locks;
+Hyprutils::Signal::CSignal& Aquamarine::IBuffer::getDestroyEvent() {
+    return events.destroy;
 }
