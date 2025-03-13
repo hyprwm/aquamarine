@@ -11,7 +11,7 @@
   libffi,
   libGL,
   libinput,
-  mesa,
+  libgbm,
   pixman,
   pkg-config,
   seatd,
@@ -58,7 +58,7 @@ in
       libffi
       libGL
       libinput
-      mesa
+      libgbm
       pixman
       seatd
       udev
