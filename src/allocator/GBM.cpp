@@ -72,7 +72,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
     const bool CURSOR           = params.cursor && params.scanout;
     const bool MULTIGPU         = params.multigpu && params.scanout;
-    const bool EXPLICIT_SCANOUT = params.scanout && swapchain->currentOptions().scanoutOutput;
+    const bool EXPLICIT_SCANOUT = params.scanout && swapchain->currentOptions().scanoutOutput && !params.multigpu;
 
     TRACE(allocator->backend->log(AQ_LOG_TRACE,
                                   std::format("GBM: Allocating a buffer: size {}, format {}, cursor: {}, multigpu: {}, scanout: {}", attrs.size, fourccToName(attrs.format), CURSOR,
@@ -153,7 +153,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     }
 
     uint32_t flags = GBM_BO_USE_RENDERING;
-    if (params.scanout)
+    if (params.scanout && !MULTIGPU)
         flags |= GBM_BO_USE_SCANOUT;
 
     uint64_t modifier = DRM_FORMAT_MOD_INVALID;
@@ -223,7 +223,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
     free(modName);
 
-    if (params.scanout && swapchain->backendImpl->type() == AQ_BACKEND_DRM) {
+    if (params.scanout && !MULTIGPU && swapchain->backendImpl->type() == AQ_BACKEND_DRM) {
         // clear the buffer using the DRM renderer to avoid uninitialized mem
         auto impl = (CDRMBackend*)swapchain->backendImpl.get();
         if (impl->rendererState.renderer)

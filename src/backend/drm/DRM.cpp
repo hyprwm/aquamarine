@@ -993,7 +993,8 @@ void Aquamarine::CDRMBackend::onReady() {
         backend->log(AQ_LOG_DEBUG, std::format("drm: onReady: connector {} has output name {}", c->id, c->output->name));
 
         // swapchain has to be created here because allocator is absent in connect if not ready
-        c->output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
+        auto primaryBackend  = primary ? primary : self;
+        c->output->swapchain = CSwapchain::create(backend->primaryAllocator, primaryBackend.lock());
         c->output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!primary, .scanoutOutput = c->output}); // mark the swapchain for scanout
         c->output->needsFrame = true;
 
@@ -1071,6 +1072,10 @@ SP<IAllocator> Aquamarine::CDRMBackend::preferredAllocator() {
 
 std::vector<SP<IAllocator>> Aquamarine::CDRMBackend::getAllocators() {
     return {backend->primaryAllocator, dumbAllocator};
+}
+
+Hyprutils::Memory::CWeakPointer<IBackendImplementation> Aquamarine::CDRMBackend::getPrimary() {
+    return primary;
 }
 
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
@@ -1467,7 +1472,8 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (!backend->backend->ready)
         return;
 
-    output->swapchain = CSwapchain::create(backend->backend->primaryAllocator, backend->self.lock());
+    auto primaryBackend = backend->primary ? backend->primary : backend;
+    output->swapchain   = CSwapchain::create(backend->backend->primaryAllocator, primaryBackend.lock());
     output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary, .scanoutOutput = output}); // mark the swapchain for scanout
     output->needsFrame = true;
     backend->backend->events.newOutput.emit(SP<IOutput>(output));

@@ -211,6 +211,10 @@ std::vector<SP<IAllocator>> Aquamarine::CHeadlessBackend::getAllocators() {
     return {backend->primaryAllocator};
 }
 
+Hyprutils::Memory::CWeakPointer<IBackendImplementation> Aquamarine::CHeadlessBackend::getPrimary() {
+    return {};
+}
+
 bool Aquamarine::CHeadlessBackend::CTimer::expired() {
     return std::chrono::steady_clock::now() > when;
 }

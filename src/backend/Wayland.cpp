@@ -447,6 +447,10 @@ std::vector<SP<IAllocator>> Aquamarine::CWaylandBackend::getAllocators() {
     return {backend->primaryAllocator};
 }
 
+Hyprutils::Memory::CWeakPointer<IBackendImplementation> Aquamarine::CWaylandBackend::getPrimary() {
+    return {};
+}
+
 Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_) : backend(backend_) {
     name = name_;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <hyprutils/memory/SharedPtr.hpp>
+#include <hyprutils/memory/WeakPtr.hpp>
 #include <hyprutils/signal/Signal.hpp>
 #include <vector>
 #include <functional>
@@ -79,6 +80,7 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CSharedPointer<IAllocator>              preferredAllocator()                       = 0;
         virtual std::vector<SDRMFormat>                                    getRenderableFormats(); // empty = use getRenderFormats
         virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators() = 0;
+        virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary()    = 0;
     };
 
     class CBackend {

@@ -136,6 +136,7 @@ namespace Aquamarine {
         virtual bool                                                       createOutput(const std::string& name = "");
         virtual Hyprutils::Memory::CSharedPointer<IAllocator>              preferredAllocator();
         virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators();
+        virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary();
 
         Hyprutils::Memory::CWeakPointer<CWaylandBackend>                   self;
 

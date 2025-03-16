@@ -369,6 +369,7 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CSharedPointer<IAllocator>              preferredAllocator();
         virtual std::vector<SDRMFormat>                                    getRenderableFormats();
         virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators();
+        virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary();
 
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                       self;
 
