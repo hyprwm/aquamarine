@@ -542,8 +542,7 @@ bool Aquamarine::CWaylandOutput::test() {
 }
 
 bool Aquamarine::CWaylandOutput::commit() {
-    Vector2D pixelSize   = {};
-    uint32_t refreshRate = 0;
+    Vector2D pixelSize = {};
 
     if (state->internalState.customMode)
         pixelSize = state->internalState.customMode->pixelSize;

@@ -181,7 +181,6 @@ void Aquamarine::CHeadlessBackend::dispatchTimers() {
 void Aquamarine::CHeadlessBackend::updateTimerFD() {
     long long  lowestNs = TIMESPEC_NSEC_PER_SEC * 240 /* 240s, 4 mins */;
     const auto clocknow = std::chrono::steady_clock::now();
-    bool       any      = false;
 
     for (auto const& t : timers.timers) {
         auto delta = std::chrono::duration_cast<std::chrono::microseconds>(t.when - clocknow).count() * 1000 /* µs -> ns */;
