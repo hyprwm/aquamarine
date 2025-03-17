@@ -95,10 +95,6 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
     return backend;
 }
 
-Aquamarine::CBackend::~CBackend() {
-    ;
-}
-
 bool Aquamarine::CBackend::start() {
     log(AQ_LOG_DEBUG, "Starting the Aquamarine backend!");
 
