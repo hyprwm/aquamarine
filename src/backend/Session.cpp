@@ -620,7 +620,6 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             break;
         }
         case LIBINPUT_EVENT_TOUCH_FRAME: {
-            auto te = libinput_event_get_touch_event(e);
             hlDevice->touch->events.frame.emit();
             break;
         }
@@ -709,7 +708,8 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
                 break;
             }
 
-            // fallthrough. If this is proximity in, also process axis.
+            // If this is proximity in, also process axis.
+            [[fallthrough]];
         }
         case LIBINPUT_EVENT_TABLET_TOOL_AXIS: {
             auto                tte  = libinput_event_get_tablet_tool_event(e);
