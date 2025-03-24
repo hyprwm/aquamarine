@@ -1,13 +1,20 @@
 #include "Renderer.hpp"
+#include <utility>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_enums.hpp>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <algorithm>
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
+#include <poll.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include "Math.hpp"
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
+#include "aquamarine/backend/Backend.hpp"
 #include <aquamarine/allocator/GBM.hpp>
 
 using namespace Aquamarine;
@@ -15,6 +22,7 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 #define WP CWeakPointer
+#define UP CUniquePointer
 
 // macros
 #define GLCALL(__CALL__)                                                                                                                                                           \
@@ -365,6 +373,103 @@ void CDRMRenderer::loadEGLAPI() {
     RASSERT(eglBindAPI(EGL_OPENGL_ES_API) != EGL_FALSE, "Couldn't bind to EGL's opengl ES API. This means your gpu driver f'd up. This is not a Hyprland or Aquamarine issue.");
 }
 
+void CDRMRenderer::loadVulkanAPI() {
+    if (g_pVulkanInstance)
+        return;
+
+    // TODO: fill in version and maybe have aq as the engine instead of the app
+    vk::ApplicationInfo    appInfo("Aquamarine", VK_MAKE_VERSION(1, 0, 0), "No Engine", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_1);
+    vk::InstanceCreateInfo createInfo({}, &appInfo);
+    auto                   res = vk::createInstanceUnique(createInfo);
+    if (res.result == vk::Result::eSuccess) {
+        g_pVulkanInstance = std::move(res.value);
+        backend->log(AQ_LOG_DEBUG, "Successfully created Vulkan instance");
+    } else {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to create Vulkan instance: {}", vk::to_string(res.result)));
+    }
+}
+
+void CDRMRenderer::loadVulkanDevice() {
+    if (!g_pVulkanInstance)
+        return;
+
+    struct stat drmStat;
+    if (fstat(drmFD, &drmStat) != 0) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to query DRM fstat: errno {}", errno));
+        return;
+    }
+    auto drmMajor = major(drmStat.st_rdev);
+    auto drmMinor = minor(drmStat.st_rdev);
+
+    auto physRes = g_pVulkanInstance->enumeratePhysicalDevices();
+    if (physRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to query Vulkan devices: {}", vk::to_string(physRes.result)));
+        return;
+    }
+
+    vk::PhysicalDevice physicalDevice;
+    for (const auto& device : physRes.value) {
+        vk::StructureChain<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceDrmPropertiesEXT> propChain;
+        device.getProperties2(&propChain.get<vk::PhysicalDeviceProperties2>());
+        const auto& drmProps = propChain.get<vk::PhysicalDeviceDrmPropertiesEXT>();
+        if (drmProps.hasPrimary && drmProps.primaryMajor == drmMajor && drmProps.primaryMinor == drmMinor) {
+            physicalDevice = device;
+            break;
+        }
+    }
+    if (!physicalDevice) {
+        backend->log(AQ_LOG_WARNING, "Didn't find Vulkan device");
+        return;
+    }
+
+    vk::PhysicalDeviceMemoryProperties memProps;
+    physicalDevice.getMemoryProperties(&memProps);
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+        if (memProps.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible)
+            vkMemTypeIndex = i;
+        //if (memProps.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eHostCoherent)
+        //    break;
+    }
+    if (vkMemTypeIndex == UINT32_MAX) {
+        backend->log(AQ_LOG_WARNING, "Vulkan device does not support host visible memory");
+        return;
+    }
+
+    auto     queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+    uint32_t bestFamIdx            = UINT32_MAX;
+    for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
+        const auto& fam = queueFamilyProperties[i];
+        // select this queue if it supports transfer
+        if (fam.queueFlags & vk::QueueFlagBits::eTransfer)
+            bestFamIdx = i;
+        // this is the best queue if it doesn't support graphics or compute and is dedicated to transfer
+        if (!(fam.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)))
+            break;
+    }
+    if (bestFamIdx == UINT32_MAX) {
+        backend->log(AQ_LOG_WARNING, "Vulkan device does not have any transfer queue families");
+        return;
+    }
+
+    float                     queuePriority = 1.;
+    vk::DeviceQueueCreateInfo queueCreateInfo({}, bestFamIdx, 1, &queuePriority);
+    std::vector<const char*>  deviceExtensions = {
+        vk::KHRExternalMemoryFdExtensionName,
+        vk::EXTExternalMemoryDmaBufExtensionName,
+    };
+    vk::DeviceCreateInfo devCreateInfo({}, 1, &queueCreateInfo);
+    devCreateInfo.enabledExtensionCount   = deviceExtensions.size();
+    devCreateInfo.ppEnabledExtensionNames = deviceExtensions.data();
+
+    auto devRes = physicalDevice.createDeviceUnique(devCreateInfo);
+    if (devRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to create Vulkan device: {}", vk::to_string(physRes.result)));
+        return;
+    }
+    vkDevice = std::move(devRes.value);
+    backend->log(AQ_LOG_DEBUG, "Successfully created Vulkan device");
+}
+
 void CDRMRenderer::initContext(bool GLES2) {
     RASSERT(egl.display != nullptr && egl.display != EGL_NO_DISPLAY, "CDRMRenderer: Can't create EGL context without display");
 
@@ -500,6 +605,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GL
     gBackend                  = backend_;
 
     renderer->loadEGLAPI();
+    renderer->loadVulkanAPI();
 
     if (!renderer->exts.EXT_platform_device) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer(drm): Can't create renderer, EGL doesn't support EXT_platform_device");
@@ -530,6 +636,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GL
     if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
 
+    renderer->loadVulkanDevice();
     renderer->initResources();
 
     return renderer;
@@ -542,6 +649,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory:
     gBackend                  = backend_;
 
     renderer->loadEGLAPI();
+    renderer->loadVulkanAPI();
 
     if (!renderer->exts.KHR_platform_gbm) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer(gbm): Can't create renderer, EGL doesn't support KHR_platform_gbm");
@@ -566,6 +674,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory:
     if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
 
+    renderer->loadVulkanDevice();
     renderer->initResources();
 
     return renderer;
@@ -860,13 +969,83 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     proc.eglDestroyImageKHR(egl.display, rboImage);
 }
 
-CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
-    CEglContextGuard eglContext(*this);
+std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf) {
+    if (!vkDevice || vkMemTypeIndex == UINT32_MAX)
+        return {};
 
-    if (from->dmabuf().size != to->dmabuf().size) {
+    auto attachment = buf->attachments.get<CDRMRenderer::CVulkanBufferAttachment>();
+    if (attachment)
+        return attachment->hostMapping;
+
+    auto dma  = buf->dmabuf();
+    auto vkFd = dup(dma.fds[0]);
+    if (vkFd < 0) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to dup fd: errno {}", errno));
+        return {};
+    }
+    vk::DeviceSize                                                        memSize      = dma.strides[0] * uint32_t(dma.size.y);
+    vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportMemoryFdInfoKHR> memAllocInfo = {
+        {memSize, vkMemTypeIndex},
+        {vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, vkFd},
+    };
+    auto allocRes = vkDevice->allocateMemoryUnique(memAllocInfo.get<vk::MemoryAllocateInfo>());
+    if (allocRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to allocate GPU memory: {}", vk::to_string(allocRes.result)));
+        return {};
+    }
+
+    auto mapRes = vkDevice->mapMemory(*allocRes.value, 0, memSize);
+    if (mapRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to map GPU memory: {}", vk::to_string(mapRes.result)));
+        return {};
+    }
+
+    backend->log(AQ_LOG_DEBUG, "vkMapBufferToHost: successfully created memory mapping");
+
+    auto hostMapping = std::span(static_cast<uint8_t*>(mapRes.value), static_cast<size_t>(memSize));
+    attachment       = makeShared<CDRMRenderer::CVulkanBufferAttachment>(std::move(allocRes.value), hostMapping);
+    buf->attachments.add(attachment);
+
+    return hostMapping;
+}
+
+CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
+    auto fromDma = from->dmabuf();
+    auto toDma   = to->dmabuf();
+    if (fromDma.size != toDma.size) {
         backend->log(AQ_LOG_ERROR, "EGL (blit): buffer sizes mismatched");
         return {};
     }
+
+    //if (primaryRenderer && fromDma.format == toDma.format && from->attachments.has<CDRMRenderer::CVulkanBufferAttachment>() && to->attachments.has<CDRMRenderer::CVulkanBufferAttachment>()) {
+    if (fromDma.format == toDma.format) {
+        //auto fromMem = primaryRenderer->vkMapBufferToHost(from);
+        auto fromMem = vkMapBufferToHost(from);
+        auto toMem   = vkMapBufferToHost(to);
+        if (fromMem.data() && toMem.data()) {
+            if (fromMem.size() == toMem.size()) {
+                if (waitFD >= 0) {
+                    pollfd pfd = {
+                        .fd     = waitFD,
+                        .events = POLLIN,
+                    };
+
+                    int ret = poll(&pfd, 1, -1);
+                    if (ret < 0) {
+                        backend->log(AQ_LOG_WARNING, "Vulkan blit: Failed to wait on sync_file with poll");
+                    }
+                }
+                std::memcpy(toMem.data(), fromMem.data(), toMem.size());
+                return {true};
+            } else {
+                backend->log(AQ_LOG_WARNING, "Vulkan blit: host memory mapping sizes mismatched");
+            }
+        } else {
+            backend->log(AQ_LOG_WARNING, "Vulkan blit: failed to map buffer(s)");
+        }
+    }
+
+    CEglContextGuard eglContext(*this);
 
     if (waitFD >= 0) {
         // wait on a provided explicit fence
@@ -879,7 +1058,6 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     // Those buffers always come from different swapchains, so it's OK.
 
     SGLTex             fromTex;
-    auto               fromDma = from->dmabuf();
     std::span<uint8_t> intermediateBuf;
     {
         auto attachment = from->attachments.get<CDRMRendererBufferAttachment>();
@@ -921,7 +1099,6 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
     EGLImageKHR rboImage = nullptr;
     GLuint      rboID = 0, fboID = 0;
-    auto        toDma = to->dmabuf();
 
     if (!verifyDestinationDMABUF(toDma)) {
         backend->log(AQ_LOG_ERROR, "EGL (blit): failed to blit: destination dmabuf unsupported");
@@ -1090,3 +1267,6 @@ CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CW
     eglImage(image), fbo(fbo_), rbo(rbo_), tex(tex_), intermediateBuf(intermediateBuf_), renderer(renderer_) {
     bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
 }
+
+CDRMRenderer::CVulkanBufferAttachment::CVulkanBufferAttachment(vk::UniqueDeviceMemory vkMemory_, std::span<uint8_t> hostMapping_) :
+    vkMemory(std::move(vkMemory_)), hostMapping(hostMapping_) {}

@@ -1,5 +1,12 @@
 #pragma once
 
+#include "aquamarine/misc/Attachment.hpp"
+#include <hyprutils/memory/UniquePtr.hpp>
+#define VULKAN_HPP_NO_EXCEPTIONS
+#define VULKAN_HPP_ASSERT_ON_RESULT(...)                                                                                                                                           \
+    do {                                                                                                                                                                           \
+    } while (0)
+
 #include <aquamarine/backend/DRM.hpp>
 #include "FormatUtils.hpp"
 #include <EGL/egl.h>
@@ -11,6 +18,7 @@
 #include <tuple>
 #include <vector>
 #include <span>
+#include <vulkan/vulkan.hpp>
 
 namespace Aquamarine {
 
@@ -21,6 +29,8 @@ namespace Aquamarine {
         GLuint   texid  = 0;
         GLuint   target = GL_TEXTURE_2D;
     };
+
+    inline vk::UniqueInstance g_pVulkanInstance;
 
     class CDRMRendererBufferAttachment : public IAttachment {
       public:
@@ -143,6 +153,8 @@ namespace Aquamarine {
         int                                                   recreateBlitSync();
 
         void                                                  loadEGLAPI();
+        void                                                  loadVulkanAPI();
+        void                                                  loadVulkanDevice();
         EGLDeviceEXT                                          eglDeviceFromDRMFD(int drmFD);
         void                                                  initContext(bool GLES2);
         void                                                  initResources();
@@ -151,6 +163,21 @@ namespace Aquamarine {
         bool                                                  hasModifiers = false;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
+
+        std::span<uint8_t>                                    vkMapBufferToHost(Hyprutils::Memory::CSharedPointer<IBuffer> from);
+        vk::UniqueDevice                                      vkDevice;
+        uint32_t                                              vkMemTypeIndex = UINT32_MAX;
+
+        class CVulkanBufferAttachment : public IAttachment {
+          public:
+            CVulkanBufferAttachment(vk::UniqueDeviceMemory vkMemory_, std::span<uint8_t> hostMapping_);
+            virtual ~CVulkanBufferAttachment() {
+                ;
+            }
+
+            vk::UniqueDeviceMemory vkMemory;
+            std::span<uint8_t>     hostMapping;
+        };
 
         friend class CEglContextGuard;
     };
