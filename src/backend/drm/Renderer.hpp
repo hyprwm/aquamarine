@@ -1,12 +1,12 @@
 #pragma once
 
-#include "aquamarine/misc/Attachment.hpp"
-#include <hyprutils/memory/UniquePtr.hpp>
 #define VULKAN_HPP_NO_EXCEPTIONS
 #define VULKAN_HPP_ASSERT_ON_RESULT(...)                                                                                                                                           \
     do {                                                                                                                                                                           \
     } while (0)
 
+#include "aquamarine/misc/Attachment.hpp"
+#include <hyprutils/memory/UniquePtr.hpp>
 #include <aquamarine/backend/DRM.hpp>
 #include "FormatUtils.hpp"
 #include <EGL/egl.h>

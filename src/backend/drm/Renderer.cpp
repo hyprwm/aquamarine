@@ -1010,7 +1010,7 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
     }
     vk::DeviceSize                                                        memSize      = dma.strides[0] * uint32_t(dma.size.y);
     vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportMemoryFdInfoKHR> memAllocInfo = {
-        {memSize, vkGpuMemTypeIdx},
+        {memSize + dma.offsets[0], vkGpuMemTypeIdx},
         {vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, vkFd},
     };
     auto allocRes = vkDevice->allocateMemoryUnique(memAllocInfo.get<vk::MemoryAllocateInfo>());
@@ -1032,7 +1032,7 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
     auto hostBufUsage = vk::BufferUsageFlagBits::eTransferDst;
     if (writing)
         std::swap(gpuBufUsage, hostBufUsage);
-    vk::BufferCreateInfo bufferInfo = {{}, memSize, gpuBufUsage, vk::SharingMode::eExclusive};
+    vk::BufferCreateInfo bufferInfo = {{}, memSize + dma.offsets[0], gpuBufUsage, vk::SharingMode::eExclusive};
     auto                 gpuBufRes  = vkDevice->createBufferUnique(bufferInfo);
     if (gpuBufRes.result != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create GPU buffer: {}", vk::to_string(gpuBufRes.result)));
@@ -1058,7 +1058,7 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
         return {};
     }
 
-    auto mapRes = vkDevice->mapMemory(*hostMem, 0, memSize);
+    auto mapRes = vkDevice->mapMemory(*hostMem, dma.offsets[0], memSize);
     if (mapRes.result != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to map GPU memory: {}", vk::to_string(mapRes.result)));
         return {};
@@ -1093,10 +1093,13 @@ void CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, bool writing) {
         0,
         att->hostMapping.size(),
     };
-    if (writing)
+    if (writing) {
+        copyRegion.dstOffset = buf->dmabuf().offsets[0];
         vkCmdBuf->copyBuffer(att->hostVisibleBuf.get(), att->gpuBuf.get(), copyRegion);
-    else
+    } else {
+        copyRegion.srcOffset = buf->dmabuf().offsets[0];
         vkCmdBuf->copyBuffer(att->gpuBuf.get(), att->hostVisibleBuf.get(), copyRegion);
+    }
 
     res = vkCmdBuf->end();
     if (res != vk::Result::eSuccess) {
