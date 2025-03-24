@@ -1008,7 +1008,12 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to dup fd: errno {}", errno));
         return {};
     }
-    vk::DeviceSize                                                        memSize      = dma.strides[0] * uint32_t(dma.size.y);
+    auto seekRes = lseek(dma.fds[0], 0, SEEK_END);
+    if (seekRes < 0) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to lseek fd: errno {}", errno));
+        return {};
+    }
+    auto                                                                  memSize      = static_cast<vk::DeviceSize>(seekRes);
     vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportMemoryFdInfoKHR> memAllocInfo = {
         {memSize + dma.offsets[0], vkGpuMemTypeIdx},
         {vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, vkFd},
