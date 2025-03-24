@@ -1,4 +1,5 @@
 #include "Renderer.hpp"
+#include <sys/mman.h>
 #include <utility>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -425,12 +426,18 @@ void CDRMRenderer::loadVulkanDevice() {
     vk::PhysicalDeviceMemoryProperties memProps;
     physicalDevice.getMemoryProperties(&memProps);
     for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
-        if (memProps.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible)
-            vkMemTypeIndex = i;
-        //if (memProps.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eHostCoherent)
-        //    break;
+        auto flags = memProps.memoryTypes[i].propertyFlags;
+        if (vkGpuMemTypeIdx == UINT32_MAX && flags & vk::MemoryPropertyFlagBits::eDeviceLocal)
+            vkGpuMemTypeIdx = i;
+        if (flags & (vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent) &&
+            (vkHostMemTypeIdx == UINT32_MAX || (flags & vk::MemoryPropertyFlagBits::eHostCached)))
+            vkHostMemTypeIdx = i;
     }
-    if (vkMemTypeIndex == UINT32_MAX) {
+    if (vkGpuMemTypeIdx == UINT32_MAX) {
+        backend->log(AQ_LOG_WARNING, "Vulkan device does not have device local memory");
+        return;
+    }
+    if (vkHostMemTypeIdx == UINT32_MAX) {
         backend->log(AQ_LOG_WARNING, "Vulkan device does not support host visible memory");
         return;
     }
@@ -439,12 +446,12 @@ void CDRMRenderer::loadVulkanDevice() {
     uint32_t bestFamIdx            = UINT32_MAX;
     for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
         const auto& fam = queueFamilyProperties[i];
-        // select this queue if it supports transfer
-        if (fam.queueFlags & vk::QueueFlagBits::eTransfer)
+        if (fam.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) {
             bestFamIdx = i;
-        // this is the best queue if it doesn't support graphics or compute and is dedicated to transfer
-        if (!(fam.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)))
+        } else if (fam.queueFlags & vk::QueueFlagBits::eTransfer) {
+            bestFamIdx = i;
             break;
+        }
     }
     if (bestFamIdx == UINT32_MAX) {
         backend->log(AQ_LOG_WARNING, "Vulkan device does not have any transfer queue families");
@@ -468,6 +475,24 @@ void CDRMRenderer::loadVulkanDevice() {
     }
     vkDevice = std::move(devRes.value);
     backend->log(AQ_LOG_DEBUG, "Successfully created Vulkan device");
+
+    vkQueue = vkDevice->getQueue(bestFamIdx, 0);
+
+    vk::CommandPoolCreateInfo poolInfo = {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, // Optional, useful if you reuse command buffers
+                                          bestFamIdx};
+    auto                      poolRes  = vkDevice->createCommandPoolUnique(poolInfo);
+    if (poolRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to create Vulkan command poool: {}", vk::to_string(poolRes.result)));
+        return;
+    }
+    vkCmdPool                               = std::move(poolRes.value);
+    vk::CommandBufferAllocateInfo allocInfo = {vkCmdPool.get(), vk::CommandBufferLevel::ePrimary, 1};
+    auto                          cmdBufRes = vkDevice->allocateCommandBuffersUnique(allocInfo);
+    if (cmdBufRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to create Vulkan command buffer: {}", vk::to_string(poolRes.result)));
+        return;
+    }
+    vkCmdBuf = std::move(cmdBufRes.value[0]);
 }
 
 void CDRMRenderer::initContext(bool GLES2) {
@@ -969,8 +994,8 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     proc.eglDestroyImageKHR(egl.display, rboImage);
 }
 
-std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf) {
-    if (!vkDevice || vkMemTypeIndex == UINT32_MAX)
+std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing) {
+    if (!vkDevice || vkHostMemTypeIdx == UINT32_MAX)
         return {};
 
     auto attachment = buf->attachments.get<CDRMRenderer::CVulkanBufferAttachment>();
@@ -985,16 +1010,55 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf) {
     }
     vk::DeviceSize                                                        memSize      = dma.strides[0] * uint32_t(dma.size.y);
     vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportMemoryFdInfoKHR> memAllocInfo = {
-        {memSize, vkMemTypeIndex},
+        {memSize, vkGpuMemTypeIdx},
         {vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, vkFd},
     };
     auto allocRes = vkDevice->allocateMemoryUnique(memAllocInfo.get<vk::MemoryAllocateInfo>());
     if (allocRes.result != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to allocate GPU memory: {}", vk::to_string(allocRes.result)));
+        close(vkFd);
+        return {};
+    }
+    auto                   gpuMem           = std::move(allocRes.value);
+    vk::MemoryAllocateInfo hostMemAllocInfo = {memSize, vkHostMemTypeIdx};
+    allocRes                                = vkDevice->allocateMemoryUnique(hostMemAllocInfo);
+    if (allocRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to allocate host visible memory: {}", vk::to_string(allocRes.result)));
+        return {};
+    }
+    auto hostMem = std::move(allocRes.value);
+
+    auto gpuBufUsage  = vk::BufferUsageFlagBits::eTransferSrc;
+    auto hostBufUsage = vk::BufferUsageFlagBits::eTransferDst;
+    if (writing)
+        std::swap(gpuBufUsage, hostBufUsage);
+    vk::BufferCreateInfo bufferInfo = {{}, memSize, gpuBufUsage, vk::SharingMode::eExclusive};
+    auto                 gpuBufRes  = vkDevice->createBufferUnique(bufferInfo);
+    if (gpuBufRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create GPU buffer: {}", vk::to_string(gpuBufRes.result)));
+        return {};
+    }
+    auto gpuBuf = std::move(gpuBufRes.value);
+    auto res    = vkDevice->bindBufferMemory(gpuBuf.get(), gpuMem.get(), 0);
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to bind GPU buffer to memory: {}", vk::to_string(res)));
         return {};
     }
 
-    auto mapRes = vkDevice->mapMemory(*allocRes.value, 0, memSize);
+    bufferInfo.usage = hostBufUsage;
+    auto hostBufRes  = vkDevice->createBufferUnique(bufferInfo);
+    if (hostBufRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create host visible buffer: {}", vk::to_string(gpuBufRes.result)));
+        return {};
+    }
+    auto hostBuf = std::move(hostBufRes.value);
+    res          = vkDevice->bindBufferMemory(hostBuf.get(), hostMem.get(), 0);
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to bind host visible buffer to memory: {}", vk::to_string(res)));
+        return {};
+    }
+
+    auto mapRes = vkDevice->mapMemory(*hostMem, 0, memSize);
     if (mapRes.result != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to map GPU memory: {}", vk::to_string(mapRes.result)));
         return {};
@@ -1003,10 +1067,54 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf) {
     backend->log(AQ_LOG_DEBUG, "vkMapBufferToHost: successfully created memory mapping");
 
     auto hostMapping = std::span(static_cast<uint8_t*>(mapRes.value), static_cast<size_t>(memSize));
-    attachment       = makeShared<CDRMRenderer::CVulkanBufferAttachment>(std::move(allocRes.value), hostMapping);
+    attachment       = makeShared<CDRMRenderer::CVulkanBufferAttachment>(std::move(gpuMem), std::move(gpuBuf), std::move(hostMem), std::move(hostBuf), hostMapping);
     buf->attachments.add(attachment);
 
     return hostMapping;
+}
+
+void CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, bool writing) {
+    if (!vkCmdBuf)
+        return;
+
+    auto att = buf->attachments.get<CDRMRenderer::CVulkanBufferAttachment>();
+    if (!att)
+        return;
+
+    vk::CommandBufferBeginInfo beginInfo = {vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+    auto                       res       = vkCmdBuf->begin(beginInfo);
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to begin command buffer: {}", vk::to_string(res)));
+        return;
+    }
+
+    vk::BufferCopy copyRegion = {
+        0,
+        0,
+        att->hostMapping.size(),
+    };
+    if (writing)
+        vkCmdBuf->copyBuffer(att->hostVisibleBuf.get(), att->gpuBuf.get(), copyRegion);
+    else
+        vkCmdBuf->copyBuffer(att->gpuBuf.get(), att->hostVisibleBuf.get(), copyRegion);
+
+    res = vkCmdBuf->end();
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to end command buffer: {}", vk::to_string(res)));
+        return;
+    }
+
+    vk::SubmitInfo submitInfo = {0, nullptr, nullptr, 1, &vkCmdBuf.get()};
+
+    auto           fenceRes = vkDevice->createFenceUnique({});
+    if (fenceRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to create fence: {}", vk::to_string(fenceRes.result)));
+        return;
+    }
+    auto fence = std::move(fenceRes.value);
+    vkQueue.submit(1, &submitInfo, fence.get());
+    vkDevice->waitForFences(1, &fence.get(), VK_TRUE, UINT64_MAX);
+    vkCmdBuf->reset();
 }
 
 CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
@@ -1020,11 +1128,11 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     //if (primaryRenderer && fromDma.format == toDma.format && from->attachments.has<CDRMRenderer::CVulkanBufferAttachment>() && to->attachments.has<CDRMRenderer::CVulkanBufferAttachment>()) {
     if (fromDma.format == toDma.format) {
         //auto fromMem = primaryRenderer->vkMapBufferToHost(from);
-        auto fromMem = vkMapBufferToHost(from);
-        auto toMem   = vkMapBufferToHost(to);
+        auto fromMem = vkMapBufferToHost(from, false);
+        auto toMem   = vkMapBufferToHost(to, true);
         if (fromMem.data() && toMem.data()) {
             if (fromMem.size() == toMem.size()) {
-                if (waitFD >= 0) {
+                if (waitFD >= 0 && false) {
                     pollfd pfd = {
                         .fd     = waitFD,
                         .events = POLLIN,
@@ -1035,7 +1143,9 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
                         backend->log(AQ_LOG_WARNING, "Vulkan blit: Failed to wait on sync_file with poll");
                     }
                 }
+                copyVkStagingBuffer(from, false);
                 std::memcpy(toMem.data(), fromMem.data(), toMem.size());
+                copyVkStagingBuffer(to, true);
                 return {true};
             } else {
                 backend->log(AQ_LOG_WARNING, "Vulkan blit: host memory mapping sizes mismatched");
@@ -1267,6 +1377,3 @@ CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CW
     eglImage(image), fbo(fbo_), rbo(rbo_), tex(tex_), intermediateBuf(intermediateBuf_), renderer(renderer_) {
     bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
 }
-
-CDRMRenderer::CVulkanBufferAttachment::CVulkanBufferAttachment(vk::UniqueDeviceMemory vkMemory_, std::span<uint8_t> hostMapping_) :
-    vkMemory(std::move(vkMemory_)), hostMapping(hostMapping_) {}

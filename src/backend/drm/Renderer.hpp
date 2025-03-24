@@ -164,18 +164,29 @@ namespace Aquamarine {
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
 
-        std::span<uint8_t>                                    vkMapBufferToHost(Hyprutils::Memory::CSharedPointer<IBuffer> from);
+        std::span<uint8_t>                                    vkMapBufferToHost(Hyprutils::Memory::CSharedPointer<IBuffer> from, bool writing);
+        void                                                  copyVkStagingBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, bool writing);
         vk::UniqueDevice                                      vkDevice;
-        uint32_t                                              vkMemTypeIndex = UINT32_MAX;
+        vk::UniqueCommandPool                                 vkCmdPool;
+        vk::UniqueCommandBuffer                               vkCmdBuf;
+        vk::Queue                                             vkQueue;
+        uint32_t                                              vkGpuMemTypeIdx  = UINT32_MAX;
+        uint32_t                                              vkHostMemTypeIdx = UINT32_MAX;
 
         class CVulkanBufferAttachment : public IAttachment {
           public:
-            CVulkanBufferAttachment(vk::UniqueDeviceMemory vkMemory_, std::span<uint8_t> hostMapping_);
+            CVulkanBufferAttachment(vk::UniqueDeviceMemory gpuMem_, vk::UniqueBuffer gpuBuf_, vk::UniqueDeviceMemory hostVisibleMem_, vk::UniqueBuffer hostVisibleBuf_,
+                                    std::span<uint8_t> hostMapping_) :
+                gpuMem(std::move(gpuMem_)), gpuBuf(std::move(gpuBuf_)), hostVisibleMem(std::move(hostVisibleMem_)), hostVisibleBuf(std::move(hostVisibleBuf_)),
+                hostMapping(hostMapping_) {}
             virtual ~CVulkanBufferAttachment() {
                 ;
             }
 
-            vk::UniqueDeviceMemory vkMemory;
+            vk::UniqueDeviceMemory gpuMem;
+            vk::UniqueBuffer       gpuBuf;
+            vk::UniqueDeviceMemory hostVisibleMem;
+            vk::UniqueBuffer       hostVisibleBuf;
             std::span<uint8_t>     hostMapping;
         };
 
