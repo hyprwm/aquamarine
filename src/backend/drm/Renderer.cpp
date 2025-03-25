@@ -1183,9 +1183,19 @@ CDRMRenderer::SBlitResult CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, boo
         waitOnSyncFD(att->fenceFD.get(), backend);
         att->fenceFD.reset();
     }
+    auto res = att->commandBuffer->reset();
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset command buffer: {}", vk::to_string(res)));
+        return {};
+    }
+    res = vkDevice->resetFences(1, &att->fence.get());
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset fence: {}", vk::to_string(res)));
+        return {};
+    }
 
     vk::CommandBufferBeginInfo beginInfo = {vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
-    auto                       res       = att->commandBuffer->begin(beginInfo);
+    res                                  = att->commandBuffer->begin(beginInfo);
     if (res != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to begin command buffer: {}", vk::to_string(res)));
         return {};
@@ -1230,16 +1240,6 @@ CDRMRenderer::SBlitResult CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, boo
         submitInfo.pWaitSemaphores    = &att->semaphore.get();
     }
 
-    res = att->commandBuffer->reset();
-    if (res != vk::Result::eSuccess) {
-        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset command buffer: {}", vk::to_string(res)));
-        return {};
-    }
-    res = vkDevice->resetFences(1, &att->fence.get());
-    if (res != vk::Result::eSuccess) {
-        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset fence: {}", vk::to_string(res)));
-        return {};
-    }
     res = vkQueue.submit(1, &submitInfo, att->fence.get());
     if (res != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to submit command buffer: {}", vk::to_string(res)));
