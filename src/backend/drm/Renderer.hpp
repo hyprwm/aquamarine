@@ -19,6 +19,9 @@
 #include <vector>
 #include <span>
 #include <vulkan/vulkan.hpp>
+#include <condition_variable>
+#include <queue>
+#include <hyprutils/os/FileDescriptor.hpp>
 
 namespace Aquamarine {
 
@@ -70,6 +73,32 @@ namespace Aquamarine {
             EGLContext context = nullptr;
             EGLSurface draw = nullptr, read = nullptr;
         } savedEGLState;
+    };
+
+    class CAsyncCpuMemCopier {
+      public:
+        CAsyncCpuMemCopier(Hyprutils::Memory::CWeakPointer<CBackend> backend_);
+        ~CAsyncCpuMemCopier();
+
+        void asyncMemcpy(uint8_t* dst, const uint8_t* src, size_t size, Hyprutils::OS::CFileDescriptor inFd, std::function<void()>);
+
+      private:
+        struct SCopyJob {
+            uint8_t*                       dst  = nullptr;
+            const uint8_t*                 src  = nullptr;
+            size_t                         size = 0;
+            Hyprutils::OS::CFileDescriptor inFD;
+            std::function<void()>          onCompletion;
+        };
+
+        void                                      backgroundTask();
+
+        Hyprutils::Memory::CWeakPointer<CBackend> backend;
+        std::mutex                                mutex;
+        std::condition_variable                   condvar;
+        std::queue<SCopyJob>                      queue;
+        bool                                      shuttingDown = false;
+        std::thread                               backgroundThread;
     };
 
     class CDRMRenderer {
@@ -145,7 +174,7 @@ namespace Aquamarine {
         std::vector<SGLFormat>                        formats;
 
       private:
-        CDRMRenderer() = default;
+        CDRMRenderer(Hyprutils::Memory::CWeakPointer<CBackend> backend_, int drmFD_) : drmFD(drmFD_), backend(backend_), asyncCpuMemCopier(backend_) {}
 
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
         bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
@@ -164,14 +193,16 @@ namespace Aquamarine {
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
 
-        std::span<uint8_t>                                    vkMapBufferToHost(Hyprutils::Memory::CSharedPointer<IBuffer> from, bool writing);
-        SBlitResult                                           copyVkStagingBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, bool writing, int waitFD);
-        vk::UniqueDevice                                      vkDevice;
-        vk::UniqueCommandPool                                 vkCmdPool;
-        vk::Queue                                             vkQueue;
-        vk::detail::DispatchLoaderDynamic                     vkDynamicDispatcher;
-        uint32_t                                              vkGpuMemTypeIdx  = UINT32_MAX;
-        uint32_t                                              vkHostMemTypeIdx = UINT32_MAX;
+        [[nodiscard]]
+        SBlitResult                       copyVkStagingBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, bool writing, int waitFD, bool forceSemaphore);
+        std::span<uint8_t>                vkMapBufferToHost(Hyprutils::Memory::CSharedPointer<IBuffer> from, bool writing);
+        vk::UniqueDevice                  vkDevice;
+        vk::UniqueCommandPool             vkCmdPool;
+        vk::Queue                         vkQueue;
+        vk::detail::DispatchLoaderDynamic vkDynamicDispatcher;
+        uint32_t                          vkGpuMemTypeIdx  = UINT32_MAX;
+        uint32_t                          vkHostMemTypeIdx = UINT32_MAX;
+        CAsyncCpuMemCopier                asyncCpuMemCopier;
 
         class CVulkanBufferAttachment : public IAttachment {
           public:
@@ -180,15 +211,15 @@ namespace Aquamarine {
                 ;
             }
 
-            vk::UniqueSemaphore     semaphore;
-            vk::UniqueDeviceMemory  gpuMem;
-            vk::UniqueBuffer        gpuBuf;
-            vk::UniqueDeviceMemory  hostVisibleMem;
-            vk::UniqueBuffer        hostVisibleBuf;
-            vk::UniqueFence         fence;
-            int                     fenceFd = -1;
-            vk::UniqueCommandBuffer commandBuffer;
-            std::span<uint8_t>      hostMapping;
+            vk::UniqueSemaphore            semaphore;
+            vk::UniqueDeviceMemory         gpuMem;
+            vk::UniqueBuffer               gpuBuf;
+            vk::UniqueDeviceMemory         hostVisibleMem;
+            vk::UniqueBuffer               hostVisibleBuf;
+            vk::UniqueFence                fence;
+            Hyprutils::OS::CFileDescriptor fenceFD;
+            vk::UniqueCommandBuffer        commandBuffer;
+            std::span<uint8_t>             hostMapping;
         };
 
         friend class CEglContextGuard;

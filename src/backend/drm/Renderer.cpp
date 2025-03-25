@@ -1,4 +1,5 @@
 #include "Renderer.hpp"
+#include <hyprutils/os/FileDescriptor.hpp>
 #include <sys/mman.h>
 #include <utility>
 #include <vulkan/vulkan.hpp>
@@ -623,9 +624,7 @@ void CDRMRenderer::initResources() {
 }
 
 SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GLES2) {
-    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
-    renderer->drmFD           = drmFD;
-    renderer->backend         = backend_;
+    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer(backend_, drmFD));
     gBackend                  = backend_;
 
     renderer->loadEGLAPI();
@@ -667,9 +666,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GL
 }
 
 SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, bool GLES2) {
-    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
-    renderer->drmFD           = allocator_->drmFD();
-    renderer->backend         = backend_;
+    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer(backend_, allocator_->drmFD()));
     gBackend                  = backend_;
 
     renderer->loadEGLAPI();
@@ -723,6 +720,75 @@ CEglContextGuard::~CEglContextGuard() {
 
     if (!eglMakeCurrent(dpy, savedEGLState.draw, savedEGLState.read, savedEGLState.context))
         renderer.backend->log(AQ_LOG_WARNING, "CDRMRenderer: restoreEGL eglMakeCurrent failed");
+}
+
+CAsyncCpuMemCopier::CAsyncCpuMemCopier(WP<CBackend> backend_) : backend(backend_) {
+    backgroundThread = std::thread([this] { backgroundTask(); });
+}
+
+CAsyncCpuMemCopier::~CAsyncCpuMemCopier() {
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        shuttingDown = true;
+    }
+    condvar.notify_one();
+    backgroundThread.join();
+}
+
+void CAsyncCpuMemCopier::asyncMemcpy(uint8_t* dst, const uint8_t* src, size_t size, Hyprutils::OS::CFileDescriptor inFD, std::function<void()> onCompletion) {
+    CAsyncCpuMemCopier::SCopyJob job = {
+        .dst          = dst,
+        .src          = src,
+        .size         = size,
+        .inFD         = std::move(inFD),
+        .onCompletion = std::move(onCompletion),
+    };
+    backend->log(AQ_LOG_DEBUG, std::format("asyncMemcpy: fd in {}", job.inFD.get()));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        queue.push(std::move(job));
+    }
+    condvar.notify_one();
+}
+
+void waitOnSyncFD(int fd, WP<CBackend> backend) {
+    if (fd < 0)
+        return;
+    pollfd pfd = {
+        .fd     = fd,
+        .events = POLLIN,
+    };
+
+    int ret = poll(&pfd, 1, -1);
+    if (ret < 0) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to wait on input sync_file fd {} with poll: errno {}", fd, errno));
+    }
+}
+
+void CAsyncCpuMemCopier::backgroundTask() {
+    std::unique_lock guard(mutex);
+    while (!shuttingDown) {
+        condvar.wait(guard);
+        if (shuttingDown) {
+            break;
+        }
+        if (queue.empty()) {
+            continue;
+        }
+        auto job = std::move(queue.front());
+        queue.pop();
+        mutex.unlock();
+
+        backend->log(AQ_LOG_DEBUG, std::format("backgroundTask: waiting on {}", job.inFD.get()));
+        waitOnSyncFD(job.inFD.get(), backend);
+        backend->log(AQ_LOG_DEBUG, std::format("backgroundTask: done waiting"));
+        std::memcpy(job.dst, job.src, job.size);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        backend->log(AQ_LOG_DEBUG, std::format("backgroundTask: done copying"));
+        job.onCompletion();
+
+        mutex.lock();
+    }
 }
 
 EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
@@ -1002,14 +1068,22 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
         return att->hostMapping;
     att = makeShared<CDRMRenderer::CVulkanBufferAttachment>();
 
-    auto semaphoreRes = vkDevice->createSemaphoreUnique({});
+    vk::StructureChain<vk::SemaphoreCreateInfo, vk::ExportSemaphoreCreateInfo> semaphoreCreateInfo{
+        {},
+        {vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd},
+    };
+    auto semaphoreRes = vkDevice->createSemaphoreUnique(semaphoreCreateInfo.get<vk::SemaphoreCreateInfo>());
     if (semaphoreRes.result != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create semaphore: {}", vk::to_string(semaphoreRes.result)));
         return {};
     }
     att->semaphore = std::move(semaphoreRes.value);
 
-    auto fenceRes = vkDevice->createFenceUnique({vk::FenceCreateFlagBits::eSignaled});
+    vk::StructureChain<vk::FenceCreateInfo, vk::ExportFenceCreateInfo> fenceCreateInfo{
+        {},
+        {vk::ExternalFenceHandleTypeFlagBits::eSyncFd},
+    };
+    auto fenceRes = vkDevice->createFenceUnique(fenceCreateInfo.get<vk::FenceCreateInfo>());
     if (fenceRes.result != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create fence: {}", vk::to_string(fenceRes.result)));
         return {};
@@ -1065,8 +1139,8 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create GPU buffer: {}", vk::to_string(gpuBufRes.result)));
         return {};
     }
-    auto gpuBuf = std::move(gpuBufRes.value);
-    auto res    = vkDevice->bindBufferMemory(gpuBuf.get(), att->gpuMem.get(), 0);
+    att->gpuBuf = std::move(gpuBufRes.value);
+    auto res    = vkDevice->bindBufferMemory(att->gpuBuf.get(), att->gpuMem.get(), 0);
     if (res != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to bind GPU buffer to memory: {}", vk::to_string(res)));
         return {};
@@ -1078,8 +1152,8 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create host visible buffer: {}", vk::to_string(gpuBufRes.result)));
         return {};
     }
-    auto hostBuf = std::move(hostBufRes.value);
-    res          = vkDevice->bindBufferMemory(hostBuf.get(), att->hostVisibleMem.get(), 0);
+    att->hostVisibleBuf = std::move(hostBufRes.value);
+    res                 = vkDevice->bindBufferMemory(att->hostVisibleBuf.get(), att->hostVisibleMem.get(), 0);
     if (res != vk::Result::eSuccess) {
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to bind host visible buffer to memory: {}", vk::to_string(res)));
         return {};
@@ -1092,21 +1166,22 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
     }
 
     att->hostMapping = std::span(static_cast<uint8_t*>(mapRes.value), static_cast<size_t>(memSize));
+    buf->attachments.add(att);
     backend->log(AQ_LOG_DEBUG, "vkMapBufferToHost: successfully created memory mapping");
     return att->hostMapping;
 }
 
-CDRMRenderer::SBlitResult CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, bool writing, int waitFD) {
+CDRMRenderer::SBlitResult CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, bool writing, int waitFD, bool forceSemaphore) {
+    backend->log(AQ_LOG_DEBUG, std::format("copyVkStagingBuffer: writing {} waitFD {}", writing, waitFD));
+
     auto att = buf->attachments.get<CDRMRenderer::CVulkanBufferAttachment>();
     if (!att)
         return {};
 
     // make sure we're done with any previous copy
-    vkDevice->waitForFences(1, &att->fence.get(), VK_TRUE, UINT64_MAX);
-    att->commandBuffer->reset();
-    if (att->fenceFd >= 0) {
-        close(att->fenceFd);
-        att->fenceFd = -1;
+    if (att->fenceFD.isValid()) {
+        waitOnSyncFD(att->fenceFD.get(), backend);
+        att->fenceFD.reset();
     }
 
     vk::CommandBufferBeginInfo beginInfo = {vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
@@ -1149,11 +1224,27 @@ CDRMRenderer::SBlitResult CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, boo
             close(vkWaitFD);
             return {};
         }
+    }
+    if (waitFD >= 0 || forceSemaphore) {
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores    = &att->semaphore.get();
     }
 
-    vkQueue.submit(1, &submitInfo, att->fence.get());
+    res = att->commandBuffer->reset();
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset command buffer: {}", vk::to_string(res)));
+        return {};
+    }
+    res = vkDevice->resetFences(1, &att->fence.get());
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset fence: {}", vk::to_string(res)));
+        return {};
+    }
+    res = vkQueue.submit(1, &submitInfo, att->fence.get());
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to submit command buffer: {}", vk::to_string(res)));
+        return {};
+    }
     vk::FenceGetFdInfoKHR fenceGetFdInfo = {att->fence.get(), vk::ExternalFenceHandleTypeFlagBits::eSyncFd};
     auto                  fenceFdRes     = vkDevice->getFenceFdKHR(fenceGetFdInfo, vkDynamicDispatcher);
     if (fenceFdRes.result != vk::Result::eSuccess) {
@@ -1164,8 +1255,8 @@ CDRMRenderer::SBlitResult CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, boo
     }
 
     if (fenceFdRes.value >= 0) {
-        att->fenceFd = fenceFdRes.value;
-        return {true, att->fenceFd};
+        att->fenceFD = Hyprutils::OS::CFileDescriptor(fenceFdRes.value);
+        return {true, att->fenceFD.get()};
     } else {
         // getFenceFdKHR is allowed to return -1 if the fence is already signalled
         return {true};
@@ -1187,22 +1278,31 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
         auto toMem   = vkMapBufferToHost(to, true);
         if (fromMem.data() && toMem.data()) {
             if (fromMem.size() == toMem.size()) {
-                auto copyRes = copyVkStagingBuffer(from, false, waitFD);
+                auto fromAtt = from->attachments.get<CVulkanBufferAttachment>();
+                if (!fromAtt)
+                    return {};
+                auto toAtt = to->attachments.get<CVulkanBufferAttachment>();
+                if (!toAtt)
+                    return {};
+                //auto copyRes = primaryRenderer->copyVkStagingBuffer(from, false, waitFD);
+                auto copyRes = copyVkStagingBuffer(from, false, waitFD, false);
                 if (!copyRes.success)
                     return {};
-                if (copyRes.syncFD && copyRes.syncFD >= 0) {
-                    pollfd pfd = {
-                        .fd     = waitFD,
-                        .events = POLLIN,
-                    };
-
-                    int ret = poll(&pfd, 1, -1);
-                    if (ret < 0) {
-                        backend->log(AQ_LOG_WARNING, "Vulkan blit: Failed to wait on sync_file with poll");
-                    }
+                // make sure toAtt->semaphore is available to signal
+                if (toAtt->fenceFD.isValid()) {
+                    waitOnSyncFD(toAtt->fenceFD.get(), backend);
+                    toAtt->fenceFD.reset();
                 }
-                std::memcpy(toMem.data(), fromMem.data(), toMem.size());
-                return copyVkStagingBuffer(to, true, -1);
+                // keep this alive until the end of the scope so the previous copy (if one exists) has time to finish
+                asyncCpuMemCopier.asyncMemcpy(toMem.data(), fromMem.data(), toMem.size(), fromAtt->fenceFD.duplicate(),
+                                              [&dev = vkDevice, &sem = toAtt->semaphore, backend = backend] {
+                                                  backend->log(AQ_LOG_DEBUG, "signalling semaphore");
+                                                  auto res = dev->signalSemaphore(sem.get());
+                                                  if (res != vk::Result::eSuccess) {
+                                                      backend->log(AQ_LOG_WARNING, std::format("Vulkan blit: failed to signal semaphore: {}", vk::to_string(res)));
+                                                  }
+                                              });
+                return copyVkStagingBuffer(to, true, -1, true);
             } else {
                 backend->log(AQ_LOG_WARNING, "Vulkan blit: host memory mapping sizes mismatched");
             }
