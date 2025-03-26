@@ -1218,8 +1218,6 @@ void CDRMRenderer::cpuWaitOnSync(int fd) {
 }
 
 void CDRMRenderer::finishAndCleanupVkBlit(SP<CVulkanBufferAttachment> att) {
-    if (att->copyingThread.joinable())
-        att->copyingThread.join();
     if (att->fenceFD.isValid()) {
         cpuWaitOnSync(att->fenceFD.get());
         att->fenceFD.reset();
@@ -1262,8 +1260,8 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
                 if (!copyRes.success)
                     return {};
 
-                auto semaphorePoint    = toAtt->timelineSemaphorePoint++;
-                fromAtt->copyingThread = std::thread([self = self.lock(), fromAtt, fromMem, toAtt, toMem, fromSyncFd, semaphorePoint] {
+                auto semaphorePoint = toAtt->timelineSemaphorePoint++;
+                fromAtt->submitCopyThreadTask([self = self.lock(), fromAtt, fromMem, toAtt, toMem, fromSyncFd, semaphorePoint] {
                     if (!cpuWaitOnSyncWithoutBackend(fromSyncFd.value_or(-1))) {
                         // if this fails, there's not really much we can do here as backend->log might not support being called from another thread
                         fprintf(stderr, "[AQ] Failed to wait on sync FD in background thread\n");
@@ -1506,4 +1504,41 @@ CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CW
                                                            EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex tex_, std::vector<uint8_t> intermediateBuf_) :
     eglImage(image), fbo(fbo_), rbo(rbo_), tex(tex_), intermediateBuf(intermediateBuf_), renderer(renderer_) {
     bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
+}
+
+CDRMRenderer::CVulkanBufferAttachment::CVulkanBufferAttachment() {
+    copyThread = std::thread([this] {
+        std::unique_lock lock(copyThreadMutex);
+        while (!copyThreadShuttingDown) {
+            if (!copyThreadTask) {
+                copyThreadCondVar.wait(lock);
+                continue;
+            }
+            auto task      = std::move(copyThreadTask);
+            copyThreadTask = nullptr;
+            lock.unlock();
+            task();
+            copyThreadCondVar.notify_all();
+            lock.lock();
+        }
+    });
+}
+
+CDRMRenderer::CVulkanBufferAttachment::~CVulkanBufferAttachment() {
+    {
+        std::unique_lock lock(copyThreadMutex);
+        copyThreadShuttingDown = true;
+    }
+    copyThreadCondVar.notify_all();
+    copyThread.join();
+}
+
+void CDRMRenderer::CVulkanBufferAttachment::submitCopyThreadTask(std::function<void()> task) {
+    {
+        std::unique_lock lock(copyThreadMutex);
+        while (copyThreadTask)
+            copyThreadCondVar.wait(lock);
+        copyThreadTask = task;
+    }
+    copyThreadCondVar.notify_all();
 }

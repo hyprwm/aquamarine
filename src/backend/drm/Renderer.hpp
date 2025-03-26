@@ -171,10 +171,10 @@ namespace Aquamarine {
 
         class CVulkanBufferAttachment : public IAttachment {
           public:
-            CVulkanBufferAttachment() {}
-            virtual ~CVulkanBufferAttachment() {
-                ;
-            }
+            CVulkanBufferAttachment();
+            virtual ~CVulkanBufferAttachment();
+
+            void                           submitCopyThreadTask(std::function<void()> task);
 
             vk::UniqueSemaphore            syncFdSemaphore;
             vk::UniqueSemaphore            timelineSemaphore;
@@ -187,7 +187,12 @@ namespace Aquamarine {
             Hyprutils::OS::CFileDescriptor fenceFD;
             vk::UniqueCommandBuffer        commandBuffer;
             std::span<uint8_t>             hostMapping;
-            std::thread                    copyingThread;
+
+            std::thread                    copyThread;
+            std::function<void()>          copyThreadTask;
+            std::mutex                     copyThreadMutex;
+            std::condition_variable        copyThreadCondVar;
+            bool                           copyThreadShuttingDown = false;
         };
 
         void                              finishAndCleanupVkBlit(Hyprutils::Memory::CSharedPointer<CVulkanBufferAttachment> att);
