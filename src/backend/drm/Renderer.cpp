@@ -1271,7 +1271,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::vkBlit(SP<IBuffer> from, SP<IBuffer> to,
     fromAtt->submitCopyThreadTask([self = self.lock(), fromAtt, fromMem, toAtt, toMem, fromSyncFd, semaphorePoint] {
         if (!cpuWaitOnSyncWithoutBackend(fromSyncFd.value_or(-1))) {
             // if this fails, there's not really much we can do here as backend->log might not support being called from another thread
-            fprintf(stderr, "[AQ] Failed to wait on sync FD in background thread\n");
+            fprintf(stderr, "[AQ] Failed to wait on sync FD in background thread: errno %d\n", errno);
         }
         std::memcpy(toMem.data(), fromMem.data(), toMem.size());
         // This is safe to call from a background thread because nothing else is using the semaphore concurrently
