@@ -1,7 +1,6 @@
 #include "Renderer.hpp"
 #include <drm.h>
 #include <hyprutils/os/FileDescriptor.hpp>
-#include <sys/mman.h>
 #include <utility>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
