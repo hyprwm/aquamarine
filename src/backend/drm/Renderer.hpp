@@ -195,6 +195,8 @@ namespace Aquamarine {
             bool                           copyThreadShuttingDown = false;
         };
 
+        SBlitResult                       vkBlit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to,
+                                                 Hyprutils::Memory::CSharedPointer<CDRMRenderer> primaryRenderer, int waitFD = -1);
         void                              finishAndCleanupVkBlit(Hyprutils::Memory::CSharedPointer<CVulkanBufferAttachment> att);
         std::span<uint8_t>                vkMapBufferToHost(Hyprutils::Memory::CSharedPointer<IBuffer> from, bool writing);
         SBlitResult                       copyVkStagingBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, bool writing, int waitFD, bool waitForTimelineSemaphore);

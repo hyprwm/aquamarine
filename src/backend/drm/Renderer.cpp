@@ -1051,7 +1051,11 @@ std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing
         backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to lseek fd: errno {}", errno));
         return {};
     }
-    auto                                                                  memSize         = static_cast<vk::DeviceSize>(seekRes);
+    if (seekRes < dma.offsets[0]) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: size returned from seek {} is less than offset {}", seekRes, dma.offsets[0]));
+        return {};
+    }
+    auto                                                                  memSize         = static_cast<vk::DeviceSize>(seekRes - dma.offsets[0]);
     vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportMemoryFdInfoKHR> gpuMemAllocInfo = {
         {memSize + dma.offsets[0], vkGpuMemTypeIdx},
         {vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, vkFd},
@@ -1227,6 +1231,59 @@ void CDRMRenderer::finishAndCleanupVkBlit(SP<CVulkanBufferAttachment> att) {
         backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset fence: {}", vk::to_string(res)));
 }
 
+CDRMRenderer::SBlitResult CDRMRenderer::vkBlit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
+    auto fromDma = from->dmabuf();
+    auto toDma   = to->dmabuf();
+    if (!primaryRenderer || fromDma.format != toDma.format || fromDma.planes > 1 || toDma.planes > 1)
+        return {};
+    auto fromMem = primaryRenderer->vkMapBufferToHost(from, false);
+    if (!fromMem.data()) {
+        backend->log(AQ_LOG_WARNING, "vkBlit: failed to map from buffer");
+        return {};
+    }
+    auto toMem = vkMapBufferToHost(to, true);
+    if (!toMem.data()) {
+        backend->log(AQ_LOG_WARNING, "vkBlit: failed to map to buffer");
+        return {};
+    }
+    if (fromMem.size() != toMem.size()) {
+        backend->log(AQ_LOG_WARNING, "vkBlit: memory mapped sizes are mismatched");
+        return {};
+    }
+    auto fromAtt = from->attachments.get<CVulkanBufferAttachment>();
+    auto toAtt   = to->attachments.get<CVulkanBufferAttachment>();
+    if (!fromAtt || !toAtt) {
+        backend->log(AQ_LOG_WARNING, "vkBlit: missing attachments after vkMapBufferToHost");
+        return {};
+    }
+    primaryRenderer->finishAndCleanupVkBlit(fromAtt);
+    finishAndCleanupVkBlit(toAtt);
+
+    auto copyRes = primaryRenderer->copyVkStagingBuffer(from, false, waitFD, false);
+    if (!copyRes.success)
+        return {};
+    auto fromSyncFd = copyRes.syncFD;
+    copyRes         = copyVkStagingBuffer(to, true, -1, true);
+    if (!copyRes.success)
+        return {};
+
+    auto semaphorePoint = toAtt->timelineSemaphorePoint++;
+    fromAtt->submitCopyThreadTask([self = self.lock(), fromAtt, fromMem, toAtt, toMem, fromSyncFd, semaphorePoint] {
+        if (!cpuWaitOnSyncWithoutBackend(fromSyncFd.value_or(-1))) {
+            // if this fails, there's not really much we can do here as backend->log might not support being called from another thread
+            fprintf(stderr, "[AQ] Failed to wait on sync FD in background thread\n");
+        }
+        std::memcpy(toMem.data(), fromMem.data(), toMem.size());
+        // This is safe to call from a background thread because nothing else is using the semaphore concurrently
+        // Concurrently using the device itself in this manner is fine
+        auto res = self->vkDevice->signalSemaphoreKHR({toAtt->timelineSemaphore.get(), semaphorePoint}, self->vkDynamicDispatcher);
+        if (res != vk::Result::eSuccess)
+            fprintf(stderr, "[AQ] Failed to signal semaphore in background thread\n");
+    });
+
+    return copyRes;
+}
+
 CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
     auto fromDma = from->dmabuf();
     auto toDma   = to->dmabuf();
@@ -1235,52 +1292,12 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
         return {};
     }
 
-    // TODO
-    primaryRenderer = self.lock();
-    //if (primaryRenderer && fromDma.format == toDma.format && from->attachments.has<CDRMRenderer::CVulkanBufferAttachment>() && to->attachments.has<CDRMRenderer::CVulkanBufferAttachment>()) {
-    if (primaryRenderer && fromDma.format == toDma.format) {
-        auto fromMem = primaryRenderer->vkMapBufferToHost(from, false);
-        auto toMem   = vkMapBufferToHost(to, true);
-        if (fromMem.data() && toMem.data()) {
-            if (fromMem.size() == toMem.size()) {
-                auto fromAtt = from->attachments.get<CVulkanBufferAttachment>();
-                if (!fromAtt)
-                    return {};
-                auto toAtt = to->attachments.get<CVulkanBufferAttachment>();
-                if (!toAtt)
-                    return {};
-                primaryRenderer->finishAndCleanupVkBlit(fromAtt);
-                finishAndCleanupVkBlit(toAtt);
-
-                auto copyRes = primaryRenderer->copyVkStagingBuffer(from, false, waitFD, false);
-                if (!copyRes.success)
-                    return {};
-                auto fromSyncFd = copyRes.syncFD;
-                copyRes         = copyVkStagingBuffer(to, true, -1, true);
-                if (!copyRes.success)
-                    return {};
-
-                auto semaphorePoint = toAtt->timelineSemaphorePoint++;
-                fromAtt->submitCopyThreadTask([self = self.lock(), fromAtt, fromMem, toAtt, toMem, fromSyncFd, semaphorePoint] {
-                    if (!cpuWaitOnSyncWithoutBackend(fromSyncFd.value_or(-1))) {
-                        // if this fails, there's not really much we can do here as backend->log might not support being called from another thread
-                        fprintf(stderr, "[AQ] Failed to wait on sync FD in background thread\n");
-                    }
-                    std::memcpy(toMem.data(), fromMem.data(), toMem.size());
-                    // This is safe to call from a background thread because nothing else is using the semaphore concurrently
-                    // Concurrently using the device itself in this manner is fine
-                    auto res = self->vkDevice->signalSemaphoreKHR({toAtt->timelineSemaphore.get(), semaphorePoint}, self->vkDynamicDispatcher);
-                    if (res != vk::Result::eSuccess)
-                        fprintf(stderr, "[AQ] Failed to signal semaphore in background thread\n");
-                });
-
-                return copyRes;
-            } else {
-                backend->log(AQ_LOG_WARNING, "Vulkan blit: host memory mapping sizes mismatched");
-            }
-        } else {
-            backend->log(AQ_LOG_WARNING, "Vulkan blit: failed to map buffer(s)");
-        }
+    if (primaryRenderer && from->attachments.has<CVulkanBufferAttachment>() && to->attachments.has<CVulkanBufferAttachment>()) {
+        auto res = vkBlit(from, to, primaryRenderer, waitFD);
+        if (res.success)
+            return res;
+        else
+            backend->log(AQ_LOG_WARNING, "blit: Vulkan blit failed despite attachments existing; falling back on normal blit");
     }
 
     CEglContextGuard eglContext(*this);
@@ -1313,7 +1330,13 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
             from->attachments.add(attachment);
 
             if (!fromTex.image && primaryRenderer) {
-                backend->log(AQ_LOG_DEBUG, "EGL (blit): Failed to create image from source buffer directly, allocating intermediate buffer");
+                backend->log(AQ_LOG_DEBUG, "EGL (blit): Failed to create image from source buffer directly, trying Vulkan blit");
+                auto vkRes = vkBlit(from, to, primaryRenderer, waitFD);
+                if (vkRes.success)
+                    return vkRes;
+                backend->log(AQ_LOG_DEBUG, "EGL (blit): Vulkan blit failed, allocating intermediate buffer");
+                from->attachments.removeByType<CVulkanBufferAttachment>();
+                to->attachments.removeByType<CVulkanBufferAttachment>();
                 static_assert(PIXEL_BUFFER_FORMAT == GL_RGBA); // If the pixel buffer format changes, the below size calculation probably needs to as well.
                 attachment->intermediateBuf.resize(fromDma.size.x * fromDma.size.y * 4);
                 intermediateBuf = attachment->intermediateBuf;
