@@ -17,7 +17,7 @@
 #include "Math.hpp"
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
-#include "aquamarine/backend/Backend.hpp"
+#include <aquamarine/backend/Backend.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 
 using namespace Aquamarine;

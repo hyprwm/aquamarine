@@ -1,14 +1,9 @@
 #pragma once
 
 #include <hyprutils/memory/SharedPtr.hpp>
-#define VULKAN_HPP_NO_EXCEPTIONS
-#define VULKAN_HPP_ASSERT_ON_RESULT(...)                                                                                                                                           \
-    do {                                                                                                                                                                           \
-    } while (0)
-
-#include "aquamarine/misc/Attachment.hpp"
 #include <hyprutils/memory/UniquePtr.hpp>
 #include <aquamarine/backend/DRM.hpp>
+#include <aquamarine/misc/Attachment.hpp>
 #include "FormatUtils.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -16,13 +11,16 @@
 #include <GLES2/gl2ext.h>
 #include <gbm.h>
 #include <optional>
-#include <tuple>
 #include <vector>
 #include <span>
-#include <vulkan/vulkan.hpp>
 #include <condition_variable>
-#include <queue>
 #include <hyprutils/os/FileDescriptor.hpp>
+
+#define VULKAN_HPP_NO_EXCEPTIONS
+#define VULKAN_HPP_ASSERT_ON_RESULT(...)                                                                                                                                           \
+    do {                                                                                                                                                                           \
+    } while (0)
+#include <vulkan/vulkan.hpp>
 
 namespace Aquamarine {
 
