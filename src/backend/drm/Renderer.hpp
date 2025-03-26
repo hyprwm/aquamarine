@@ -175,6 +175,7 @@ namespace Aquamarine {
             virtual ~CVulkanBufferAttachment();
 
             void                           submitCopyThreadTask(std::function<void()> task);
+            void                           waitForCopyTaskCompletion();
 
             vk::UniqueSemaphore            syncFdSemaphore;
             vk::UniqueSemaphore            timelineSemaphore;

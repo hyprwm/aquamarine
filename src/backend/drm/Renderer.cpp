@@ -1226,6 +1226,7 @@ void CDRMRenderer::finishAndCleanupVkBlit(SP<CVulkanBufferAttachment> att) {
         cpuWaitOnSync(att->fenceFD.get());
         att->fenceFD.reset();
     }
+    att->waitForCopyTaskCompletion();
     auto res = vkDevice->resetFences(1, &att->fence.get());
     if (res != vk::Result::eSuccess)
         backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset fence: {}", vk::to_string(res)));
@@ -1554,6 +1555,12 @@ CDRMRenderer::CVulkanBufferAttachment::~CVulkanBufferAttachment() {
     }
     copyThreadCondVar.notify_all();
     copyThread.join();
+}
+
+void CDRMRenderer::CVulkanBufferAttachment::waitForCopyTaskCompletion() {
+    std::unique_lock lock(copyThreadMutex);
+    while (copyThreadTask)
+        copyThreadCondVar.wait(lock);
 }
 
 void CDRMRenderer::CVulkanBufferAttachment::submitCopyThreadTask(std::function<void()> task) {
