@@ -1679,7 +1679,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
         SP<CDRMFB> drmFB;
 
-        if (backend->shouldBlit() || true) {
+        if (backend->shouldBlit()) {
             if (!backend->rendererState.renderer) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: No renderer attached to backend when required for blitting");
                 return false;
