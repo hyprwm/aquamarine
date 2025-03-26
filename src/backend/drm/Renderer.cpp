@@ -1258,7 +1258,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
                 if (!copyRes.success)
                     return {};
                 auto fromSyncFd = copyRes.syncFD;
-                copyRes         = self->copyVkStagingBuffer(to, true, -1, true);
+                copyRes         = copyVkStagingBuffer(to, true, -1, true);
                 if (!copyRes.success)
                     return {};
 
