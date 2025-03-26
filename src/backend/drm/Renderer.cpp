@@ -387,9 +387,8 @@ void CDRMRenderer::loadVulkanAPI() {
     if (res.result == vk::Result::eSuccess) {
         g_pVulkanInstance = std::move(res.value);
         backend->log(AQ_LOG_DEBUG, "Successfully created Vulkan instance");
-    } else {
+    } else
         backend->log(AQ_LOG_WARNING, std::format("Failed to create Vulkan instance: {}", vk::to_string(res.result)));
-    }
 }
 
 void CDRMRenderer::loadVulkanDevice() {
@@ -448,9 +447,9 @@ void CDRMRenderer::loadVulkanDevice() {
     uint32_t bestFamIdx            = UINT32_MAX;
     for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
         const auto& fam = queueFamilyProperties[i];
-        if (fam.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) {
+        if (fam.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute))
             bestFamIdx = i;
-        } else if (fam.queueFlags & vk::QueueFlagBits::eTransfer) {
+        else if (fam.queueFlags & vk::QueueFlagBits::eTransfer) {
             bestFamIdx = i;
             break;
         }
