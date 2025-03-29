@@ -95,7 +95,7 @@ namespace Aquamarine {
     class CWaylandKeyboard : public IKeyboard {
       public:
         CWaylandKeyboard(Hyprutils::Memory::CSharedPointer<CCWlKeyboard> keyboard_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_);
-        virtual ~CWaylandKeyboard();
+        virtual ~CWaylandKeyboard() = default;
 
         virtual const std::string&                       getName();
 
@@ -109,7 +109,7 @@ namespace Aquamarine {
     class CWaylandPointer : public IPointer {
       public:
         CWaylandPointer(Hyprutils::Memory::CSharedPointer<CCWlPointer> pointer_, Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend_);
-        virtual ~CWaylandPointer();
+        virtual ~CWaylandPointer() = default;
 
         virtual const std::string&                       getName();
 
