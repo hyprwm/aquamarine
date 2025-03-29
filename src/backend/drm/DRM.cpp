@@ -378,16 +378,18 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         if (!c->crtc || !c->output)
             continue;
 
+        auto&                   STATE = c->output->state->state();
+
         SDRMConnectorCommitData data = {
-            .mainFB   = nullptr,
-            .modeset  = true,
-            .blocking = true,
-            .flags    = 0,
-            .test     = false,
+            .mainFB      = nullptr,
+            .modeset     = true,
+            .blocking    = true,
+            .flags       = 0,
+            .test        = false,
+            .hdrMetadata = STATE.hdrMetadata,
         };
 
-        auto& STATE = c->output->state->state();
-        auto& MODE  = STATE.customMode ? STATE.customMode : STATE.mode;
+        auto& MODE = STATE.customMode ? STATE.customMode : STATE.mode;
 
         if (!MODE) {
             backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no mode, will send a reset state event later.");
