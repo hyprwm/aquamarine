@@ -16,6 +16,7 @@
   pkg-config,
   seatd,
   udev,
+  vulkan-loader,
   wayland,
   wayland-protocols,
   wayland-scanner,
@@ -62,6 +63,7 @@ in
       pixman
       seatd
       udev
+      vulkan-loader
       wayland
       wayland-protocols
       wayland-scanner
