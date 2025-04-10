@@ -5,6 +5,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <sys/mman.h>
+#include <sstream>
 #include "Shared.hpp"
 #include "aquamarine/output/Output.hpp"
 
@@ -223,20 +224,20 @@ void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CShare
 
 bool Aquamarine::CDRMAtomicRequest::commit(uint32_t flagssss) {
     static auto flagsToStr = [](uint32_t flags) {
-        std::string result;
+        std::ostringstream result;
         if (flags & DRM_MODE_ATOMIC_ALLOW_MODESET)
-            result += "ATOMIC_ALLOW_MODESET ";
+            result << "ATOMIC_ALLOW_MODESET ";
         if (flags & DRM_MODE_ATOMIC_NONBLOCK)
-            result += "ATOMIC_NONBLOCK ";
+            result << "ATOMIC_NONBLOCK ";
         if (flags & DRM_MODE_ATOMIC_TEST_ONLY)
-            result += "ATOMIC_TEST_ONLY ";
+            result << "ATOMIC_TEST_ONLY ";
         if (flags & DRM_MODE_PAGE_FLIP_EVENT)
-            result += "PAGE_FLIP_EVENT ";
+            result << "PAGE_FLIP_EVENT ";
         if (flags & DRM_MODE_PAGE_FLIP_ASYNC)
-            result += "PAGE_FLIP_ASYNC ";
+            result << "PAGE_FLIP_ASYNC ";
         if (flags & (~DRM_MODE_ATOMIC_FLAGS))
-            result += " + invalid...";
-        return result;
+            result << " + invalid...";
+        return result.str();
     };
 
     if (failed) {
