@@ -1,6 +1,6 @@
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*\.hpp'
-FormatStyle: file
+FormatStyle: 'file'
 Checks: >
   -*,
   bugprone-*,
