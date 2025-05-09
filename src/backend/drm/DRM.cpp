@@ -172,7 +172,7 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
     auto                            explicitGpus = getenv("AQ_DRM_DEVICES");
     if (explicitGpus) {
         backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit device list {}", explicitGpus));
-        Hyprutils::String::CVarList explicitDevices(explicitGpus, 0, ':', true);
+        Hyprutils::String::CVarList explicitDevices(explicitGpus, 0, ':', true, true);
 
         // Iterate over GPUs and canonicalize the paths
         for (auto& d : explicitDevices) {
