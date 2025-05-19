@@ -850,8 +850,6 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     glClearColor(0.F, 0.F, 0.F, 1.F);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glFlush();
-
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
@@ -964,8 +962,6 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
         }
     }
 
-    glFlush();
-
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (blit): rboImage 0x{:x}", (uintptr_t)rboImage)));
 
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
@@ -1032,9 +1028,6 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     GLCALL(glDisableVertexAttribArray(SHADER.texAttrib));
 
     GLCALL(glBindTexture(fromTex.target, 0));
-
-    // rendered, cleanup
-    glFlush();
 
     // get an explicit sync fd for the secondary gpu.
     // when we pass buffers between gpus we should always use explicit sync,
