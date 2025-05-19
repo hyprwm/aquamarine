@@ -4,7 +4,9 @@
 #include "FormatUtils.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
+#include <GLES3/gl3ext.h>
+#define __gl2_h_ // define guard for gl2ext.h
 #include <GLES2/gl2ext.h>
 #include <gbm.h>
 #include <optional>
@@ -86,8 +88,57 @@ namespace Aquamarine {
 
         struct {
             struct SShader {
+                ~SShader() {
+                    if (program == 0)
+                        return;
+
+                    if (shaderVao)
+                        glDeleteVertexArrays(1, &shaderVao);
+
+                    if (shaderVboPos)
+                        glDeleteBuffers(1, &shaderVboPos);
+
+                    if (shaderVboUv)
+                        glDeleteBuffers(1, &shaderVboUv);
+
+                    glDeleteProgram(program);
+                    program = 0;
+                }
+
                 GLuint program = 0;
                 GLint  proj = -1, tex = -1, posAttrib = -1, texAttrib = -1;
+                GLuint shaderVao = 0, shaderVboPos = 0, shaderVboUv = 0;
+
+                void   createVao() {
+                    const float fullVerts[] = {
+                        1, 0, // top right
+                        0, 0, // top left
+                        1, 1, // bottom right
+                        0, 1, // bottom left
+                    };
+
+                    glGenVertexArrays(1, &shaderVao);
+                    glBindVertexArray(shaderVao);
+
+                    if (posAttrib != -1) {
+                        glGenBuffers(1, &shaderVboPos);
+                        glBindBuffer(GL_ARRAY_BUFFER, shaderVboPos);
+                        glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
+                        glEnableVertexAttribArray(posAttrib);
+                        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+                    }
+
+                    if (texAttrib != -1) {
+                        glGenBuffers(1, &shaderVboUv);
+                        glBindBuffer(GL_ARRAY_BUFFER, shaderVboUv);
+                        glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
+                        glEnableVertexAttribArray(texAttrib);
+                        glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+                    }
+
+                    glBindVertexArray(0);
+                    glBindBuffer(GL_ARRAY_BUFFER, 0);
+                }
             } shader, shaderExt;
         } gl;
 
