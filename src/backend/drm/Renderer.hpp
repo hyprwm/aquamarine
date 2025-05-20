@@ -200,6 +200,8 @@ namespace Aquamarine {
         bool                                                  initDRMFormats();
         std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);
         bool                                                  hasModifiers = false;
+        void                                                  useProgram(GLuint prog);
+        GLuint                                                m_currentProgram = 0;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
 

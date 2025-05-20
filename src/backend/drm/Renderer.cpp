@@ -249,6 +249,13 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     return result;
 }
 
+void CDRMRenderer::useProgram(GLuint prog) {
+    if (m_currentProgram == prog)
+        return;
+
+    GLCALL(glUseProgram(prog));
+}
+
 bool CDRMRenderer::initDRMFormats() {
     std::vector<EGLint> formats;
 
@@ -1004,7 +1011,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     if (!intermediateBuf.empty())
         GLCALL(glTexImage2D(fromTex.target, 0, PIXEL_BUFFER_FORMAT, fromDma.size.x, fromDma.size.y, 0, PIXEL_BUFFER_FORMAT, GL_UNSIGNED_BYTE, intermediateBuf.data()));
 
-    GLCALL(glUseProgram(SHADER.program));
+    useProgram(SHADER.program);
     GLCALL(glDisable(GL_BLEND));
     GLCALL(glDisable(GL_SCISSOR_TEST));
 
