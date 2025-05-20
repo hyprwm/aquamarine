@@ -1,6 +1,9 @@
 #pragma once
 
+#include <hyprutils/memory/SharedPtr.hpp>
+#include <hyprutils/memory/UniquePtr.hpp>
 #include <aquamarine/backend/DRM.hpp>
+#include <aquamarine/misc/Attachment.hpp>
 #include "FormatUtils.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -8,9 +11,16 @@
 #include <GLES2/gl2ext.h>
 #include <gbm.h>
 #include <optional>
-#include <tuple>
 #include <vector>
 #include <span>
+#include <condition_variable>
+#include <hyprutils/os/FileDescriptor.hpp>
+
+#define VULKAN_HPP_NO_EXCEPTIONS
+#define VULKAN_HPP_ASSERT_ON_RESULT(...)                                                                                                                                           \
+    do {                                                                                                                                                                           \
+    } while (0)
+#include <vulkan/vulkan.hpp>
 
 namespace Aquamarine {
 
@@ -21,6 +31,8 @@ namespace Aquamarine {
         GLuint   texid  = 0;
         GLuint   target = GL_TEXTURE_2D;
     };
+
+    inline vk::UniqueInstance g_pVulkanInstance;
 
     class CDRMRendererBufferAttachment : public IAttachment {
       public:
@@ -135,14 +147,17 @@ namespace Aquamarine {
         std::vector<SGLFormat>                        formats;
 
       private:
-        CDRMRenderer() = default;
+        CDRMRenderer(Hyprutils::Memory::CWeakPointer<CBackend> backend_, int drmFD_) : drmFD(drmFD_), backend(backend_) {}
 
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
         bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
         void                                                  waitOnSync(int fd);
+        void                                                  cpuWaitOnSync(int fd);
         int                                                   recreateBlitSync();
 
         void                                                  loadEGLAPI();
+        void                                                  loadVulkanAPI();
+        void                                                  loadVulkanDevice();
         EGLDeviceEXT                                          eglDeviceFromDRMFD(int drmFD);
         void                                                  initContext(bool GLES2);
         void                                                  initResources();
@@ -151,6 +166,45 @@ namespace Aquamarine {
         bool                                                  hasModifiers = false;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
+
+        class CVulkanBufferAttachment : public IAttachment {
+          public:
+            CVulkanBufferAttachment();
+            virtual ~CVulkanBufferAttachment();
+
+            void                           submitCopyThreadTask(std::function<void()> task);
+            void                           waitForCopyTaskCompletion();
+
+            vk::UniqueSemaphore            syncFdSemaphore;
+            vk::UniqueSemaphore            timelineSemaphore;
+            uint64_t                       timelineSemaphorePoint = 0;
+            vk::UniqueDeviceMemory         gpuMem;
+            vk::UniqueBuffer               gpuBuf;
+            vk::UniqueDeviceMemory         hostVisibleMem;
+            vk::UniqueBuffer               hostVisibleBuf;
+            vk::UniqueFence                fence;
+            Hyprutils::OS::CFileDescriptor fenceFD;
+            vk::UniqueCommandBuffer        commandBuffer;
+            std::span<uint8_t>             hostMapping;
+
+            std::thread                    copyThread;
+            std::function<void()>          copyThreadTask;
+            std::mutex                     copyThreadMutex;
+            std::condition_variable        copyThreadCondVar;
+            bool                           copyThreadShuttingDown = false;
+        };
+
+        SBlitResult                       vkBlit(Hyprutils::Memory::CSharedPointer<IBuffer> from, Hyprutils::Memory::CSharedPointer<IBuffer> to,
+                                                 Hyprutils::Memory::CSharedPointer<CDRMRenderer> primaryRenderer, int waitFD = -1);
+        void                              finishAndCleanupVkBlit(Hyprutils::Memory::CSharedPointer<CVulkanBufferAttachment> att);
+        std::span<uint8_t>                vkMapBufferToHost(Hyprutils::Memory::CSharedPointer<IBuffer> from, bool writing);
+        SBlitResult                       copyVkStagingBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, bool writing, int waitFD, bool waitForTimelineSemaphore);
+        vk::UniqueDevice                  vkDevice;
+        vk::UniqueCommandPool             vkCmdPool;
+        vk::Queue                         vkQueue;
+        vk::detail::DispatchLoaderDynamic vkDynamicDispatcher;
+        uint32_t                          vkGpuMemTypeIdx  = UINT32_MAX;
+        uint32_t                          vkHostMemTypeIdx = UINT32_MAX;
 
         friend class CEglContextGuard;
     };

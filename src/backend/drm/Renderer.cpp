@@ -1,13 +1,23 @@
 #include "Renderer.hpp"
+#include <drm.h>
+#include <hyprutils/os/FileDescriptor.hpp>
+#include <utility>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_enums.hpp>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <algorithm>
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
+#include <poll.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include "Math.hpp"
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
+#include <aquamarine/backend/Backend.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 
 using namespace Aquamarine;
@@ -15,6 +25,7 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 #define WP CWeakPointer
+#define UP CUniquePointer
 
 // macros
 #define GLCALL(__CALL__)                                                                                                                                                           \
@@ -367,6 +378,123 @@ void CDRMRenderer::loadEGLAPI() {
     RASSERT(eglBindAPI(EGL_OPENGL_ES_API) != EGL_FALSE, "Couldn't bind to EGL's opengl ES API. This means your gpu driver f'd up. This is not a Hyprland or Aquamarine issue.");
 }
 
+void CDRMRenderer::loadVulkanAPI() {
+    if (g_pVulkanInstance)
+        return;
+
+    // TODO: fill in version and maybe have aq as the engine instead of the app
+    vk::ApplicationInfo    appInfo("Aquamarine", VK_MAKE_VERSION(1, 0, 0), "No Engine", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_1);
+    vk::InstanceCreateInfo createInfo({}, &appInfo);
+    auto                   res = vk::createInstanceUnique(createInfo);
+    if (res.result == vk::Result::eSuccess) {
+        g_pVulkanInstance = std::move(res.value);
+        backend->log(AQ_LOG_DEBUG, "Successfully created Vulkan instance");
+    } else
+        backend->log(AQ_LOG_WARNING, std::format("Failed to create Vulkan instance: {}", vk::to_string(res.result)));
+}
+
+void CDRMRenderer::loadVulkanDevice() {
+    if (!g_pVulkanInstance)
+        return;
+
+    struct stat drmStat;
+    if (fstat(drmFD, &drmStat) != 0) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to query DRM fstat: errno {}", errno));
+        return;
+    }
+    auto drmMajor = major(drmStat.st_rdev);
+    auto drmMinor = minor(drmStat.st_rdev);
+
+    auto physRes = g_pVulkanInstance->enumeratePhysicalDevices();
+    if (physRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to query Vulkan devices: {}", vk::to_string(physRes.result)));
+        return;
+    }
+
+    vk::PhysicalDevice physicalDevice;
+    for (const auto& device : physRes.value) {
+        vk::StructureChain<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceDrmPropertiesEXT> propChain;
+        device.getProperties2(&propChain.get<vk::PhysicalDeviceProperties2>());
+        const auto& drmProps = propChain.get<vk::PhysicalDeviceDrmPropertiesEXT>();
+        if (drmProps.hasPrimary && drmProps.primaryMajor == drmMajor && drmProps.primaryMinor == drmMinor) {
+            physicalDevice = device;
+            break;
+        }
+    }
+    if (!physicalDevice) {
+        backend->log(AQ_LOG_WARNING, "Didn't find Vulkan device");
+        return;
+    }
+
+    vk::PhysicalDeviceMemoryProperties memProps;
+    physicalDevice.getMemoryProperties(&memProps);
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+        auto flags = memProps.memoryTypes[i].propertyFlags;
+        if (vkGpuMemTypeIdx == UINT32_MAX && flags & vk::MemoryPropertyFlagBits::eDeviceLocal)
+            vkGpuMemTypeIdx = i;
+        if (flags & (vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent) &&
+            (vkHostMemTypeIdx == UINT32_MAX || (flags & vk::MemoryPropertyFlagBits::eHostCached)))
+            vkHostMemTypeIdx = i;
+    }
+    if (vkGpuMemTypeIdx == UINT32_MAX) {
+        backend->log(AQ_LOG_WARNING, "Vulkan device does not have device local memory");
+        return;
+    }
+    if (vkHostMemTypeIdx == UINT32_MAX) {
+        backend->log(AQ_LOG_WARNING, "Vulkan device does not support host visible memory");
+        return;
+    }
+
+    auto     queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+    uint32_t bestFamIdx            = UINT32_MAX;
+    for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
+        const auto& fam = queueFamilyProperties[i];
+        if (fam.queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute))
+            bestFamIdx = i;
+        else if (fam.queueFlags & vk::QueueFlagBits::eTransfer) {
+            bestFamIdx = i;
+            break;
+        }
+    }
+    if (bestFamIdx == UINT32_MAX) {
+        backend->log(AQ_LOG_WARNING, "Vulkan device does not have any transfer queue families");
+        return;
+    }
+
+    float                     queuePriority = 1.;
+    vk::DeviceQueueCreateInfo queueCreateInfo({}, bestFamIdx, 1, &queuePriority);
+    std::vector<const char*>  deviceExtensions = {
+        vk::KHRExternalMemoryFdExtensionName,    vk::EXTExternalMemoryDmaBufExtensionName, vk::KHRExternalFenceFdExtensionName,
+        vk::KHRExternalSemaphoreFdExtensionName, vk::KHRTimelineSemaphoreExtensionName,
+    };
+    vk::DeviceCreateInfo devCreateInfo({}, 1, &queueCreateInfo);
+    devCreateInfo.enabledExtensionCount   = deviceExtensions.size();
+    devCreateInfo.ppEnabledExtensionNames = deviceExtensions.data();
+
+    auto devRes = physicalDevice.createDeviceUnique(devCreateInfo);
+    if (devRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to create Vulkan device: {}", vk::to_string(physRes.result)));
+        return;
+    }
+    vkDevice = std::move(devRes.value);
+    backend->log(AQ_LOG_DEBUG, "Successfully created Vulkan device");
+
+    vkQueue = vkDevice->getQueue(bestFamIdx, 0);
+
+    vk::CommandPoolCreateInfo poolInfo = {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, // Optional, useful if you reuse command buffers
+                                          bestFamIdx};
+    auto                      poolRes  = vkDevice->createCommandPoolUnique(poolInfo);
+    if (poolRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("Failed to create Vulkan command poool: {}", vk::to_string(poolRes.result)));
+        return;
+    }
+    vkCmdPool = std::move(poolRes.value);
+
+    vk::detail::DynamicLoader dl;
+    PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
+    vkDynamicDispatcher                             = {g_pVulkanInstance.get(), vkGetInstanceProcAddr, vkDevice.get()};
+}
+
 void CDRMRenderer::initContext(bool GLES2) {
     RASSERT(egl.display != nullptr && egl.display != EGL_NO_DISPLAY, "CDRMRenderer: Can't create EGL context without display");
 
@@ -496,12 +624,11 @@ void CDRMRenderer::initResources() {
 }
 
 SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GLES2) {
-    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
-    renderer->drmFD           = drmFD;
-    renderer->backend         = backend_;
+    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer(backend_, drmFD));
     gBackend                  = backend_;
 
     renderer->loadEGLAPI();
+    renderer->loadVulkanAPI();
 
     if (!renderer->exts.EXT_platform_device) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer(drm): Can't create renderer, EGL doesn't support EXT_platform_device");
@@ -532,18 +659,18 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GL
     if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
 
+    renderer->loadVulkanDevice();
     renderer->initResources();
 
     return renderer;
 }
 
 SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, bool GLES2) {
-    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
-    renderer->drmFD           = allocator_->drmFD();
-    renderer->backend         = backend_;
+    SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer(backend_, allocator_->drmFD()));
     gBackend                  = backend_;
 
     renderer->loadEGLAPI();
+    renderer->loadVulkanAPI();
 
     if (!renderer->exts.KHR_platform_gbm) {
         backend_->log(AQ_LOG_ERROR, "CDRMRenderer(gbm): Can't create renderer, EGL doesn't support KHR_platform_gbm");
@@ -568,6 +695,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory:
     if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
 
+    renderer->loadVulkanDevice();
     renderer->initResources();
 
     return renderer;
@@ -860,13 +988,318 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     proc.eglDestroyImageKHR(egl.display, rboImage);
 }
 
-CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
-    CEglContextGuard eglContext(*this);
+std::span<uint8_t> CDRMRenderer::vkMapBufferToHost(SP<IBuffer> buf, bool writing) {
+    if (!vkDevice || vkHostMemTypeIdx == UINT32_MAX)
+        return {};
 
-    if (from->dmabuf().size != to->dmabuf().size) {
+    auto att = buf->attachments.get<CDRMRenderer::CVulkanBufferAttachment>();
+    if (att)
+        return att->hostMapping;
+    att = makeShared<CDRMRenderer::CVulkanBufferAttachment>();
+
+    vk::StructureChain<vk::SemaphoreCreateInfo, vk::ExportSemaphoreCreateInfo> syncFdSemaphoreCreateInfo{
+        {},
+        {vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd},
+    };
+    auto semaphoreRes = vkDevice->createSemaphoreUnique(syncFdSemaphoreCreateInfo.get<vk::SemaphoreCreateInfo>());
+    if (semaphoreRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create semaphore: {}", vk::to_string(semaphoreRes.result)));
+        return {};
+    }
+    att->syncFdSemaphore = std::move(semaphoreRes.value);
+
+    vk::StructureChain<vk::SemaphoreCreateInfo, vk::SemaphoreTypeCreateInfo> timelineSemaphoreCreateInfo{
+        {},
+        {vk::SemaphoreType::eTimeline, 0},
+    };
+    semaphoreRes = vkDevice->createSemaphoreUnique(timelineSemaphoreCreateInfo.get<vk::SemaphoreCreateInfo>());
+    if (semaphoreRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create semaphore: {}", vk::to_string(semaphoreRes.result)));
+        return {};
+    }
+    att->timelineSemaphore = std::move(semaphoreRes.value);
+
+    vk::StructureChain<vk::FenceCreateInfo, vk::ExportFenceCreateInfo> fenceCreateInfo{
+        {},
+        {vk::ExternalFenceHandleTypeFlagBits::eSyncFd},
+    };
+    auto fenceRes = vkDevice->createFenceUnique(fenceCreateInfo.get<vk::FenceCreateInfo>());
+    if (fenceRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create fence: {}", vk::to_string(fenceRes.result)));
+        return {};
+    }
+    att->fence = std::move(fenceRes.value);
+
+    vk::CommandBufferAllocateInfo allocInfo = {vkCmdPool.get(), vk::CommandBufferLevel::ePrimary, 1};
+    auto                          cmdBufRes = vkDevice->allocateCommandBuffersUnique(allocInfo);
+    if (cmdBufRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: Failed to create Vulkan command buffer: {}", vk::to_string(cmdBufRes.result)));
+        return {};
+    }
+    att->commandBuffer = std::move(cmdBufRes.value[0]);
+
+    auto dma  = buf->dmabuf();
+    auto vkFd = dup(dma.fds[0]);
+    if (vkFd < 0) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to dup fd: errno {}", errno));
+        return {};
+    }
+    auto seekRes = lseek(dma.fds[0], 0, SEEK_END);
+    if (seekRes < 0) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to lseek fd: errno {}", errno));
+        return {};
+    }
+    if (seekRes < dma.offsets[0]) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: size returned from seek {} is less than offset {}", seekRes, dma.offsets[0]));
+        return {};
+    }
+    auto                                                                  memSize         = static_cast<vk::DeviceSize>(seekRes - dma.offsets[0]);
+    vk::StructureChain<vk::MemoryAllocateInfo, vk::ImportMemoryFdInfoKHR> gpuMemAllocInfo = {
+        {memSize + dma.offsets[0], vkGpuMemTypeIdx},
+        {vk::ExternalMemoryHandleTypeFlagBits::eDmaBufEXT, vkFd},
+    };
+    auto allocRes = vkDevice->allocateMemoryUnique(gpuMemAllocInfo.get<vk::MemoryAllocateInfo>());
+    if (allocRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to allocate GPU memory: {}", vk::to_string(allocRes.result)));
+        close(vkFd);
+        return {};
+    }
+    att->gpuMem                             = std::move(allocRes.value);
+    vk::MemoryAllocateInfo hostMemAllocInfo = {memSize, vkHostMemTypeIdx};
+    allocRes                                = vkDevice->allocateMemoryUnique(hostMemAllocInfo);
+    if (allocRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to allocate host visible memory: {}", vk::to_string(allocRes.result)));
+        return {};
+    }
+    att->hostVisibleMem = std::move(allocRes.value);
+
+    auto gpuBufUsage  = vk::BufferUsageFlagBits::eTransferSrc;
+    auto hostBufUsage = vk::BufferUsageFlagBits::eTransferDst;
+    if (writing)
+        std::swap(gpuBufUsage, hostBufUsage);
+    vk::BufferCreateInfo gpuBufferInfo = {{}, memSize + dma.offsets[0], gpuBufUsage, vk::SharingMode::eExclusive};
+    auto                 gpuBufRes     = vkDevice->createBufferUnique(gpuBufferInfo);
+    if (gpuBufRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create GPU buffer: {}", vk::to_string(gpuBufRes.result)));
+        return {};
+    }
+    att->gpuBuf = std::move(gpuBufRes.value);
+    auto res    = vkDevice->bindBufferMemory(att->gpuBuf.get(), att->gpuMem.get(), 0);
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to bind GPU buffer to memory: {}", vk::to_string(res)));
+        return {};
+    }
+
+    vk::BufferCreateInfo hostBufferInfo = {{}, memSize, hostBufUsage, vk::SharingMode::eExclusive};
+    auto                 hostBufRes     = vkDevice->createBufferUnique(hostBufferInfo);
+    if (hostBufRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to create host visible buffer: {}", vk::to_string(gpuBufRes.result)));
+        return {};
+    }
+    att->hostVisibleBuf = std::move(hostBufRes.value);
+    res                 = vkDevice->bindBufferMemory(att->hostVisibleBuf.get(), att->hostVisibleMem.get(), 0);
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to bind host visible buffer to memory: {}", vk::to_string(res)));
+        return {};
+    }
+
+    auto mapRes = vkDevice->mapMemory(att->hostVisibleMem.get(), 0, memSize);
+    if (mapRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("vkMapBufferToHost: failed to map GPU memory: {}", vk::to_string(mapRes.result)));
+        return {};
+    }
+
+    att->hostMapping = std::span(static_cast<uint8_t*>(mapRes.value), static_cast<size_t>(memSize));
+    buf->attachments.add(att);
+    backend->log(AQ_LOG_DEBUG, "vkMapBufferToHost: successfully created memory mapping");
+    return att->hostMapping;
+}
+
+const vk::PipelineStageFlags PIPELINE_STAGE_ALL_COMMANDS = vk::PipelineStageFlagBits::eAllCommands;
+
+CDRMRenderer::SBlitResult    CDRMRenderer::copyVkStagingBuffer(SP<IBuffer> buf, bool writing, int waitFD, bool waitForTimelineSemaphore) {
+    auto att = buf->attachments.get<CDRMRenderer::CVulkanBufferAttachment>();
+    if (!att)
+        return {};
+
+    auto res = att->commandBuffer->reset();
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset command buffer: {}", vk::to_string(res)));
+        return {};
+    }
+
+    vk::CommandBufferBeginInfo beginInfo = {vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+    res                                  = att->commandBuffer->begin(beginInfo);
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to begin command buffer: {}", vk::to_string(res)));
+        return {};
+    }
+
+    vk::BufferCopy copyRegion = {
+        0,
+        0,
+        att->hostMapping.size(),
+    };
+    if (writing) {
+        copyRegion.dstOffset = buf->dmabuf().offsets[0];
+        att->commandBuffer->copyBuffer(att->hostVisibleBuf.get(), att->gpuBuf.get(), copyRegion);
+    } else {
+        copyRegion.srcOffset = buf->dmabuf().offsets[0];
+        att->commandBuffer->copyBuffer(att->gpuBuf.get(), att->hostVisibleBuf.get(), copyRegion);
+    }
+
+    res = att->commandBuffer->end();
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to end command buffer: {}", vk::to_string(res)));
+        return {};
+    }
+
+    vk::TimelineSemaphoreSubmitInfo timelineSubmitInfo;
+    vk::SubmitInfo                  submitInfo;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers    = &att->commandBuffer.get();
+    if (waitFD >= 0) {
+        auto vkWaitFD = dup(waitFD);
+        if (vkWaitFD < 0) {
+            backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to dup waitFD: errno {}", errno));
+            return {};
+        }
+        vk::ImportSemaphoreFdInfoKHR importInfo(att->syncFdSemaphore.get(), vk::SemaphoreImportFlagBits::eTemporary, vk::ExternalSemaphoreHandleTypeFlagBits::eSyncFd, vkWaitFD);
+        auto                         res = vkDevice->importSemaphoreFdKHR(importInfo, vkDynamicDispatcher);
+        if (res != vk::Result::eSuccess) {
+            backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed import waitFD to semaphore: {}", vk::to_string(res)));
+            close(vkWaitFD);
+            return {};
+        }
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores    = &att->syncFdSemaphore.get();
+        submitInfo.pWaitDstStageMask  = &PIPELINE_STAGE_ALL_COMMANDS;
+    } else if (waitForTimelineSemaphore) {
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores    = &att->timelineSemaphore.get();
+        submitInfo.pWaitDstStageMask  = &PIPELINE_STAGE_ALL_COMMANDS;
+        timelineSubmitInfo            = {1, &att->timelineSemaphorePoint};
+        submitInfo.pNext              = &timelineSubmitInfo;
+    }
+
+    res = vkQueue.submit(1, &submitInfo, att->fence.get());
+    if (res != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to submit command buffer: {}", vk::to_string(res)));
+        return {};
+    }
+
+    vk::FenceGetFdInfoKHR fenceGetFdInfo = {att->fence.get(), vk::ExternalFenceHandleTypeFlagBits::eSyncFd};
+    auto                  fenceFdRes     = vkDevice->getFenceFdKHR(fenceGetFdInfo, vkDynamicDispatcher);
+    if (fenceFdRes.result != vk::Result::eSuccess) {
+        backend->log(AQ_LOG_WARNING, std::format("Vulkan blit: failed to get fence sync FD: {}", vk::to_string(fenceFdRes.result)));
+        return {};
+    }
+    if (fenceFdRes.value < 0) {
+        // getFenceFdKHR is allowed to return -1 if the fence is already signaled
+        return {true};
+    }
+    att->fenceFD = Hyprutils::OS::CFileDescriptor(fenceFdRes.value);
+    return {true, fenceFdRes.value};
+}
+
+bool cpuWaitOnSyncWithoutBackend(int fd) {
+    if (fd < 0)
+        return true;
+
+    pollfd pfd = {
+        .fd     = fd,
+        .events = POLLIN,
+    };
+    int ret = poll(&pfd, 1, -1);
+    return ret >= 0;
+}
+
+void CDRMRenderer::cpuWaitOnSync(int fd) {
+    if (!cpuWaitOnSyncWithoutBackend(fd))
+        backend->log(AQ_LOG_WARNING, std::format("Failed to wait on input sync_file fd {} with poll: errno {}", fd, errno));
+}
+
+void CDRMRenderer::finishAndCleanupVkBlit(SP<CVulkanBufferAttachment> att) {
+    if (att->fenceFD.isValid()) {
+        cpuWaitOnSync(att->fenceFD.get());
+        att->fenceFD.reset();
+    }
+    att->waitForCopyTaskCompletion();
+    auto res = vkDevice->resetFences(1, &att->fence.get());
+    if (res != vk::Result::eSuccess)
+        backend->log(AQ_LOG_WARNING, std::format("copyVkStagingBuffer: failed to reset fence: {}", vk::to_string(res)));
+}
+
+CDRMRenderer::SBlitResult CDRMRenderer::vkBlit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
+    auto fromDma = from->dmabuf();
+    auto toDma   = to->dmabuf();
+    if (!primaryRenderer || fromDma.format != toDma.format || fromDma.planes > 1 || toDma.planes > 1)
+        return {};
+    auto fromMem = primaryRenderer->vkMapBufferToHost(from, false);
+    if (!fromMem.data()) {
+        backend->log(AQ_LOG_WARNING, "vkBlit: failed to map from buffer");
+        return {};
+    }
+    auto toMem = vkMapBufferToHost(to, true);
+    if (!toMem.data()) {
+        backend->log(AQ_LOG_WARNING, "vkBlit: failed to map to buffer");
+        return {};
+    }
+    if (fromMem.size() != toMem.size()) {
+        backend->log(AQ_LOG_WARNING, "vkBlit: memory mapped sizes are mismatched");
+        return {};
+    }
+    auto fromAtt = from->attachments.get<CVulkanBufferAttachment>();
+    auto toAtt   = to->attachments.get<CVulkanBufferAttachment>();
+    if (!fromAtt || !toAtt) {
+        backend->log(AQ_LOG_WARNING, "vkBlit: missing attachments after vkMapBufferToHost");
+        return {};
+    }
+    primaryRenderer->finishAndCleanupVkBlit(fromAtt);
+    finishAndCleanupVkBlit(toAtt);
+
+    auto copyRes = primaryRenderer->copyVkStagingBuffer(from, false, waitFD, false);
+    if (!copyRes.success)
+        return {};
+    auto fromSyncFd = copyRes.syncFD;
+    copyRes         = copyVkStagingBuffer(to, true, -1, true);
+    if (!copyRes.success)
+        return {};
+
+    auto semaphorePoint = toAtt->timelineSemaphorePoint++;
+    fromAtt->submitCopyThreadTask([self = self.lock(), fromAtt, fromMem, toAtt, toMem, fromSyncFd, semaphorePoint] {
+        if (!cpuWaitOnSyncWithoutBackend(fromSyncFd.value_or(-1))) {
+            // if this fails, there's not really much we can do here as backend->log might not support being called from another thread
+            fprintf(stderr, "[AQ] Failed to wait on sync FD in background thread: errno %d\n", errno);
+        }
+        std::memcpy(toMem.data(), fromMem.data(), toMem.size());
+        // This is safe to call from a background thread because nothing else is using the semaphore concurrently
+        // Concurrently using the device itself in this manner is fine
+        auto res = self->vkDevice->signalSemaphoreKHR({toAtt->timelineSemaphore.get(), semaphorePoint}, self->vkDynamicDispatcher);
+        if (res != vk::Result::eSuccess)
+            fprintf(stderr, "[AQ] Failed to signal semaphore in background thread\n");
+    });
+
+    return copyRes;
+}
+
+CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
+    auto fromDma = from->dmabuf();
+    auto toDma   = to->dmabuf();
+    if (fromDma.size != toDma.size) {
         backend->log(AQ_LOG_ERROR, "EGL (blit): buffer sizes mismatched");
         return {};
     }
+
+    if (primaryRenderer && from->attachments.has<CVulkanBufferAttachment>() && to->attachments.has<CVulkanBufferAttachment>()) {
+        auto res = vkBlit(from, to, primaryRenderer, waitFD);
+        if (res.success)
+            return res;
+        else
+            backend->log(AQ_LOG_WARNING, "blit: Vulkan blit failed despite attachments existing; falling back on normal blit");
+    }
+
+    CEglContextGuard eglContext(*this);
 
     if (waitFD >= 0) {
         // wait on a provided explicit fence
@@ -879,7 +1312,6 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     // Those buffers always come from different swapchains, so it's OK.
 
     SGLTex             fromTex;
-    auto               fromDma = from->dmabuf();
     std::span<uint8_t> intermediateBuf;
     {
         auto attachment = from->attachments.get<CDRMRendererBufferAttachment>();
@@ -897,7 +1329,13 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
             from->attachments.add(attachment);
 
             if (!fromTex.image && primaryRenderer) {
-                backend->log(AQ_LOG_DEBUG, "EGL (blit): Failed to create image from source buffer directly, allocating intermediate buffer");
+                backend->log(AQ_LOG_DEBUG, "EGL (blit): Failed to create image from source buffer directly, trying Vulkan blit");
+                auto vkRes = vkBlit(from, to, primaryRenderer, waitFD);
+                if (vkRes.success)
+                    return vkRes;
+                backend->log(AQ_LOG_DEBUG, "EGL (blit): Vulkan blit failed, allocating intermediate buffer");
+                from->attachments.removeByType<CVulkanBufferAttachment>();
+                to->attachments.removeByType<CVulkanBufferAttachment>();
                 static_assert(PIXEL_BUFFER_FORMAT == GL_RGBA); // If the pixel buffer format changes, the below size calculation probably needs to as well.
                 attachment->intermediateBuf.resize(fromDma.size.x * fromDma.size.y * 4);
                 intermediateBuf = attachment->intermediateBuf;
@@ -921,7 +1359,6 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
     EGLImageKHR rboImage = nullptr;
     GLuint      rboID = 0, fboID = 0;
-    auto        toDma = to->dmabuf();
 
     if (!verifyDestinationDMABUF(toDma)) {
         backend->log(AQ_LOG_ERROR, "EGL (blit): failed to blit: destination dmabuf unsupported");
@@ -1084,4 +1521,47 @@ CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CW
                                                            EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex tex_, std::vector<uint8_t> intermediateBuf_) :
     eglImage(image), fbo(fbo_), rbo(rbo_), tex(tex_), intermediateBuf(intermediateBuf_), renderer(renderer_) {
     bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
+}
+
+CDRMRenderer::CVulkanBufferAttachment::CVulkanBufferAttachment() {
+    copyThread = std::thread([this] {
+        std::unique_lock lock(copyThreadMutex);
+        while (!copyThreadShuttingDown) {
+            if (!copyThreadTask) {
+                copyThreadCondVar.wait(lock);
+                continue;
+            }
+            auto task      = std::move(copyThreadTask);
+            copyThreadTask = nullptr;
+            lock.unlock();
+            task();
+            copyThreadCondVar.notify_all();
+            lock.lock();
+        }
+    });
+}
+
+CDRMRenderer::CVulkanBufferAttachment::~CVulkanBufferAttachment() {
+    {
+        std::unique_lock lock(copyThreadMutex);
+        copyThreadShuttingDown = true;
+    }
+    copyThreadCondVar.notify_all();
+    copyThread.join();
+}
+
+void CDRMRenderer::CVulkanBufferAttachment::waitForCopyTaskCompletion() {
+    std::unique_lock lock(copyThreadMutex);
+    while (copyThreadTask)
+        copyThreadCondVar.wait(lock);
+}
+
+void CDRMRenderer::CVulkanBufferAttachment::submitCopyThreadTask(std::function<void()> task) {
+    {
+        std::unique_lock lock(copyThreadMutex);
+        while (copyThreadTask)
+            copyThreadCondVar.wait(lock);
+        copyThreadTask = task;
+    }
+    copyThreadCondVar.notify_all();
 }
