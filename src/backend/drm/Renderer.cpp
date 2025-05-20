@@ -374,7 +374,7 @@ void CDRMRenderer::loadEGLAPI() {
     RASSERT(eglBindAPI(EGL_OPENGL_ES_API) != EGL_FALSE, "Couldn't bind to EGL's opengl ES API. This means your gpu driver f'd up. This is not a Hyprland or Aquamarine issue.");
 }
 
-void CDRMRenderer::initContext(bool GLES2) {
+void CDRMRenderer::initContext() {
     RASSERT(egl.display != nullptr && egl.display != EGL_NO_DISPLAY, "CDRMRenderer: Can't create EGL context without display");
 
     EGLint major, minor;
@@ -409,27 +409,15 @@ void CDRMRenderer::initContext(bool GLES2) {
 
     auto attrsNoVer = attrs;
 
-    if (GLES2) {
-        attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
-        attrs.push_back(2);
-        attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
-        attrs.push_back(0);
-    } else {
-        attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
-        attrs.push_back(3);
-        attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
-        attrs.push_back(2);
-    }
+    attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
+    attrs.push_back(3);
+    attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
+    attrs.push_back(2);
 
     attrs.push_back(EGL_NONE);
 
     egl.context = eglCreateContext(egl.display, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attrs.data());
     if (egl.context == EGL_NO_CONTEXT) {
-        if (GLES2) {
-            backend->log(AQ_LOG_ERROR, "CDRMRenderer: Can't create renderer, eglCreateContext failed with GLES 2.0");
-            return;
-        }
-
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: eglCreateContext failed with GLES 3.2, retrying GLES 3.0");
 
         attrs = attrsNoVer;
@@ -467,7 +455,7 @@ void CDRMRenderer::initContext(bool GLES2) {
         free(drmName);
     }
 
-    backend->log(AQ_LOG_DEBUG, std::format("Creating {}CDRMRenderer on gpu {}", GLES2 ? "GLES2 " : "", gpuName));
+    backend->log(AQ_LOG_DEBUG, std::format("Creating CDRMRenderer on gpu {}", gpuName));
     backend->log(AQ_LOG_DEBUG, std::format("Using: {}", (char*)glGetString(GL_VERSION)));
     backend->log(AQ_LOG_DEBUG, std::format("Vendor: {}", (char*)glGetString(GL_VENDOR)));
     backend->log(AQ_LOG_DEBUG, std::format("Renderer: {}", (char*)glGetString(GL_RENDERER)));
@@ -504,7 +492,7 @@ void CDRMRenderer::initResources() {
     gl.shaderExt.createVao();
 }
 
-SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GLES2) {
+SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD) {
     SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
     renderer->drmFD           = drmFD;
     renderer->backend         = backend_;
@@ -537,7 +525,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GL
         return nullptr;
     }
 
-    renderer->initContext(GLES2);
+    renderer->initContext();
     if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
 
@@ -546,7 +534,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GL
     return renderer;
 }
 
-SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, bool GLES2) {
+SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_) {
     SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
     renderer->drmFD           = allocator_->drmFD();
     renderer->backend         = backend_;
@@ -573,7 +561,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory:
         return nullptr;
     }
 
-    renderer->initContext(GLES2);
+    renderer->initContext();
     if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
 

@@ -68,9 +68,9 @@ namespace Aquamarine {
       public:
         ~CDRMRenderer();
 
-        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend_, int drmFD, bool GLES2 = true);
+        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend_, int drmFD);
         static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CBackend>      backend_,
-                                                                       Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, bool GLES2 = true);
+                                                                       Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_);
 
         int                                                    drmFD = -1;
 
@@ -195,7 +195,7 @@ namespace Aquamarine {
 
         void                                                  loadEGLAPI();
         EGLDeviceEXT                                          eglDeviceFromDRMFD(int drmFD);
-        void                                                  initContext(bool GLES2);
+        void                                                  initContext();
         void                                                  initResources();
         bool                                                  initDRMFormats();
         std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);
