@@ -169,6 +169,54 @@ static bool drmDeviceHasName(const drmDevice* device, const std::string& name) {
 
 // -------------------
 
+CDRMRenderer::SShader::~SShader() {
+    if (program == 0)
+        return;
+
+    if (shaderVao)
+        glDeleteVertexArrays(1, &shaderVao);
+
+    if (shaderVboPos)
+        glDeleteBuffers(1, &shaderVboPos);
+
+    if (shaderVboUv)
+        glDeleteBuffers(1, &shaderVboUv);
+
+    glDeleteProgram(program);
+    program = 0;
+}
+
+void CDRMRenderer::SShader::createVao() {
+    const float fullVerts[] = {
+        1, 0, // top right
+        0, 0, // top left
+        1, 1, // bottom right
+        0, 1, // bottom left
+    };
+
+    glGenVertexArrays(1, &shaderVao);
+    glBindVertexArray(shaderVao);
+
+    if (posAttrib != -1) {
+        glGenBuffers(1, &shaderVboPos);
+        glBindBuffer(GL_ARRAY_BUFFER, shaderVboPos);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(posAttrib);
+        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    }
+
+    if (texAttrib != -1) {
+        glGenBuffers(1, &shaderVboUv);
+        glBindBuffer(GL_ARRAY_BUFFER, shaderVboUv);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(texAttrib);
+        glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    }
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
 EGLDeviceEXT CDRMRenderer::eglDeviceFromDRMFD(int drmFD) {
     EGLint nDevices = 0;
     if (!proc.eglQueryDevicesEXT(0, nullptr, &nDevices)) {
@@ -471,25 +519,25 @@ void CDRMRenderer::initResources() {
     if (!exts.EXT_image_dma_buf_import || !initDRMFormats())
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: initDRMFormats failed, dma-buf won't work");
 
-    gl.shader.program = createProgram(VERT_SRC, FRAG_SRC);
-    if (gl.shader.program == 0)
+    shader.program = createProgram(VERT_SRC, FRAG_SRC);
+    if (shader.program == 0)
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: texture shader failed");
 
-    gl.shader.proj      = glGetUniformLocation(gl.shader.program, "proj");
-    gl.shader.posAttrib = glGetAttribLocation(gl.shader.program, "pos");
-    gl.shader.texAttrib = glGetAttribLocation(gl.shader.program, "texcoord");
-    gl.shader.tex       = glGetUniformLocation(gl.shader.program, "tex");
-    gl.shader.createVao();
+    shader.proj      = glGetUniformLocation(shader.program, "proj");
+    shader.posAttrib = glGetAttribLocation(shader.program, "pos");
+    shader.texAttrib = glGetAttribLocation(shader.program, "texcoord");
+    shader.tex       = glGetUniformLocation(shader.program, "tex");
+    shader.createVao();
 
-    gl.shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
-    if (gl.shaderExt.program == 0)
+    shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
+    if (shaderExt.program == 0)
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: external texture shader failed");
 
-    gl.shaderExt.proj      = glGetUniformLocation(gl.shaderExt.program, "proj");
-    gl.shaderExt.posAttrib = glGetAttribLocation(gl.shaderExt.program, "pos");
-    gl.shaderExt.texAttrib = glGetAttribLocation(gl.shaderExt.program, "texcoord");
-    gl.shaderExt.tex       = glGetUniformLocation(gl.shaderExt.program, "tex");
-    gl.shaderExt.createVao();
+    shaderExt.proj      = glGetUniformLocation(shaderExt.program, "proj");
+    shaderExt.posAttrib = glGetAttribLocation(shaderExt.program, "pos");
+    shaderExt.texAttrib = glGetAttribLocation(shaderExt.program, "texcoord");
+    shaderExt.tex       = glGetUniformLocation(shaderExt.program, "tex");
+    shaderExt.createVao();
 }
 
 SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD) {
@@ -974,7 +1022,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     float monitorProj[9];
     matrixIdentity(base);
 
-    auto& SHADER = fromTex.target == GL_TEXTURE_2D ? gl.shader : gl.shaderExt;
+    auto& SHADER = fromTex.target == GL_TEXTURE_2D ? shader : shaderExt;
 
     // KMS uses flipped y, we have to do FLIPPED_180
     matrixTranslate(base, toDma.size.x / 2.0, toDma.size.y / 2.0);
