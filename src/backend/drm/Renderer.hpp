@@ -4,7 +4,9 @@
 #include "FormatUtils.hpp"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
+#include <GLES3/gl3ext.h>
+#define __gl2_h_ // define guard for gl2ext.h
 #include <GLES2/gl2ext.h>
 #include <gbm.h>
 #include <optional>
@@ -66,9 +68,9 @@ namespace Aquamarine {
       public:
         ~CDRMRenderer();
 
-        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend_, int drmFD, bool GLES2 = true);
+        static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend_, int drmFD);
         static Hyprutils::Memory::CSharedPointer<CDRMRenderer> attempt(Hyprutils::Memory::CSharedPointer<CBackend>      backend_,
-                                                                       Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, bool GLES2 = true);
+                                                                       Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_);
 
         int                                                    drmFD = -1;
 
@@ -84,12 +86,14 @@ namespace Aquamarine {
 
         void onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
 
-        struct {
-            struct SShader {
-                GLuint program = 0;
-                GLint  proj = -1, tex = -1, posAttrib = -1, texAttrib = -1;
-            } shader, shaderExt;
-        } gl;
+        struct SShader {
+            ~SShader();
+            void   createVao();
+
+            GLuint program = 0;
+            GLint  proj = -1, tex = -1, posAttrib = -1, texAttrib = -1;
+            GLuint shaderVao = 0, shaderVboPos = 0, shaderVboUv = 0;
+        } shader, shaderExt;
 
         struct {
             PFNEGLGETPLATFORMDISPLAYEXTPROC               eglGetPlatformDisplayEXT               = nullptr;
@@ -144,11 +148,13 @@ namespace Aquamarine {
 
         void                                                  loadEGLAPI();
         EGLDeviceEXT                                          eglDeviceFromDRMFD(int drmFD);
-        void                                                  initContext(bool GLES2);
+        void                                                  initContext();
         void                                                  initResources();
         bool                                                  initDRMFormats();
         std::optional<std::vector<std::pair<uint64_t, bool>>> getModsForFormat(EGLint format);
         bool                                                  hasModifiers = false;
+        void                                                  useProgram(GLuint prog);
+        GLuint                                                m_currentProgram = 0;
 
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
 

@@ -19,7 +19,7 @@ set(INCLUDE ${CMAKE_INSTALL_FULL_INCLUDEDIR})
 set(LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
 
 find_package(PkgConfig REQUIRED)
-find_package(OpenGL REQUIRED COMPONENTS "GLES2")
+find_package(OpenGL REQUIRED COMPONENTS "GLES3")
 find_package(hyprwayland-scanner 0.4.0 REQUIRED)
 pkg_check_modules(
   deps

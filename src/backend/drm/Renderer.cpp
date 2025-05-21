@@ -169,6 +169,54 @@ static bool drmDeviceHasName(const drmDevice* device, const std::string& name) {
 
 // -------------------
 
+CDRMRenderer::SShader::~SShader() {
+    if (program == 0)
+        return;
+
+    if (shaderVao)
+        glDeleteVertexArrays(1, &shaderVao);
+
+    if (shaderVboPos)
+        glDeleteBuffers(1, &shaderVboPos);
+
+    if (shaderVboUv)
+        glDeleteBuffers(1, &shaderVboUv);
+
+    glDeleteProgram(program);
+    program = 0;
+}
+
+void CDRMRenderer::SShader::createVao() {
+    const float fullVerts[] = {
+        1, 0, // top right
+        0, 0, // top left
+        1, 1, // bottom right
+        0, 1, // bottom left
+    };
+
+    glGenVertexArrays(1, &shaderVao);
+    glBindVertexArray(shaderVao);
+
+    if (posAttrib != -1) {
+        glGenBuffers(1, &shaderVboPos);
+        glBindBuffer(GL_ARRAY_BUFFER, shaderVboPos);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(posAttrib);
+        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    }
+
+    if (texAttrib != -1) {
+        glGenBuffers(1, &shaderVboUv);
+        glBindBuffer(GL_ARRAY_BUFFER, shaderVboUv);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(texAttrib);
+        glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    }
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
 EGLDeviceEXT CDRMRenderer::eglDeviceFromDRMFD(int drmFD) {
     EGLint nDevices = 0;
     if (!proc.eglQueryDevicesEXT(0, nullptr, &nDevices)) {
@@ -247,6 +295,13 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
         result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
 
     return result;
+}
+
+void CDRMRenderer::useProgram(GLuint prog) {
+    if (m_currentProgram == prog)
+        return;
+
+    GLCALL(glUseProgram(prog));
 }
 
 bool CDRMRenderer::initDRMFormats() {
@@ -367,7 +422,7 @@ void CDRMRenderer::loadEGLAPI() {
     RASSERT(eglBindAPI(EGL_OPENGL_ES_API) != EGL_FALSE, "Couldn't bind to EGL's opengl ES API. This means your gpu driver f'd up. This is not a Hyprland or Aquamarine issue.");
 }
 
-void CDRMRenderer::initContext(bool GLES2) {
+void CDRMRenderer::initContext() {
     RASSERT(egl.display != nullptr && egl.display != EGL_NO_DISPLAY, "CDRMRenderer: Can't create EGL context without display");
 
     EGLint major, minor;
@@ -402,27 +457,15 @@ void CDRMRenderer::initContext(bool GLES2) {
 
     auto attrsNoVer = attrs;
 
-    if (GLES2) {
-        attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
-        attrs.push_back(2);
-        attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
-        attrs.push_back(0);
-    } else {
-        attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
-        attrs.push_back(3);
-        attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
-        attrs.push_back(2);
-    }
+    attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
+    attrs.push_back(3);
+    attrs.push_back(EGL_CONTEXT_MINOR_VERSION);
+    attrs.push_back(2);
 
     attrs.push_back(EGL_NONE);
 
     egl.context = eglCreateContext(egl.display, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attrs.data());
     if (egl.context == EGL_NO_CONTEXT) {
-        if (GLES2) {
-            backend->log(AQ_LOG_ERROR, "CDRMRenderer: Can't create renderer, eglCreateContext failed with GLES 2.0");
-            return;
-        }
-
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: eglCreateContext failed with GLES 3.2, retrying GLES 3.0");
 
         attrs = attrsNoVer;
@@ -460,7 +503,7 @@ void CDRMRenderer::initContext(bool GLES2) {
         free(drmName);
     }
 
-    backend->log(AQ_LOG_DEBUG, std::format("Creating {}CDRMRenderer on gpu {}", GLES2 ? "GLES2 " : "", gpuName));
+    backend->log(AQ_LOG_DEBUG, std::format("Creating CDRMRenderer on gpu {}", gpuName));
     backend->log(AQ_LOG_DEBUG, std::format("Using: {}", (char*)glGetString(GL_VERSION)));
     backend->log(AQ_LOG_DEBUG, std::format("Vendor: {}", (char*)glGetString(GL_VENDOR)));
     backend->log(AQ_LOG_DEBUG, std::format("Renderer: {}", (char*)glGetString(GL_RENDERER)));
@@ -476,26 +519,28 @@ void CDRMRenderer::initResources() {
     if (!exts.EXT_image_dma_buf_import || !initDRMFormats())
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: initDRMFormats failed, dma-buf won't work");
 
-    gl.shader.program = createProgram(VERT_SRC, FRAG_SRC);
-    if (gl.shader.program == 0)
+    shader.program = createProgram(VERT_SRC, FRAG_SRC);
+    if (shader.program == 0)
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: texture shader failed");
 
-    gl.shader.proj      = glGetUniformLocation(gl.shader.program, "proj");
-    gl.shader.posAttrib = glGetAttribLocation(gl.shader.program, "pos");
-    gl.shader.texAttrib = glGetAttribLocation(gl.shader.program, "texcoord");
-    gl.shader.tex       = glGetUniformLocation(gl.shader.program, "tex");
+    shader.proj      = glGetUniformLocation(shader.program, "proj");
+    shader.posAttrib = glGetAttribLocation(shader.program, "pos");
+    shader.texAttrib = glGetAttribLocation(shader.program, "texcoord");
+    shader.tex       = glGetUniformLocation(shader.program, "tex");
+    shader.createVao();
 
-    gl.shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
-    if (gl.shaderExt.program == 0)
+    shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
+    if (shaderExt.program == 0)
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: external texture shader failed");
 
-    gl.shaderExt.proj      = glGetUniformLocation(gl.shaderExt.program, "proj");
-    gl.shaderExt.posAttrib = glGetAttribLocation(gl.shaderExt.program, "pos");
-    gl.shaderExt.texAttrib = glGetAttribLocation(gl.shaderExt.program, "texcoord");
-    gl.shaderExt.tex       = glGetUniformLocation(gl.shaderExt.program, "tex");
+    shaderExt.proj      = glGetUniformLocation(shaderExt.program, "proj");
+    shaderExt.posAttrib = glGetAttribLocation(shaderExt.program, "pos");
+    shaderExt.texAttrib = glGetAttribLocation(shaderExt.program, "texcoord");
+    shaderExt.tex       = glGetUniformLocation(shaderExt.program, "tex");
+    shaderExt.createVao();
 }
 
-SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GLES2) {
+SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD) {
     SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
     renderer->drmFD           = drmFD;
     renderer->backend         = backend_;
@@ -528,7 +573,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GL
         return nullptr;
     }
 
-    renderer->initContext(GLES2);
+    renderer->initContext();
     if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
 
@@ -537,7 +582,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, int drmFD, bool GL
     return renderer;
 }
 
-SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_, bool GLES2) {
+SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory::CSharedPointer<CGBMAllocator> allocator_) {
     SP<CDRMRenderer> renderer = SP<CDRMRenderer>(new CDRMRenderer());
     renderer->drmFD           = allocator_->drmFD();
     renderer->backend         = backend_;
@@ -564,7 +609,7 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory:
         return nullptr;
     }
 
-    renderer->initContext(GLES2);
+    renderer->initContext();
     if (renderer->egl.context == nullptr || renderer->egl.context == EGL_NO_CONTEXT)
         return nullptr;
 
@@ -734,13 +779,6 @@ void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuf
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
 }
-
-inline const float fullVerts[] = {
-    1, 0, // top right
-    0, 0, // top left
-    1, 1, // bottom right
-    0, 1, // bottom left
-};
 
 void CDRMRenderer::waitOnSync(int fd) {
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (waitOnSync): attempting to wait on fd {}", fd)));
@@ -984,7 +1022,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     float monitorProj[9];
     matrixIdentity(base);
 
-    auto& SHADER = fromTex.target == GL_TEXTURE_2D ? gl.shader : gl.shaderExt;
+    auto& SHADER = fromTex.target == GL_TEXTURE_2D ? shader : shaderExt;
 
     // KMS uses flipped y, we have to do FLIPPED_180
     matrixTranslate(base, toDma.size.x / 2.0, toDma.size.y / 2.0);
@@ -1009,7 +1047,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     if (!intermediateBuf.empty())
         GLCALL(glTexImage2D(fromTex.target, 0, PIXEL_BUFFER_FORMAT, fromDma.size.x, fromDma.size.y, 0, PIXEL_BUFFER_FORMAT, GL_UNSIGNED_BYTE, intermediateBuf.data()));
 
-    GLCALL(glUseProgram(SHADER.program));
+    useProgram(SHADER.program);
     GLCALL(glDisable(GL_BLEND));
     GLCALL(glDisable(GL_SCISSOR_TEST));
 
@@ -1017,18 +1055,11 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     GLCALL(glUniformMatrix3fv(SHADER.proj, 1, GL_FALSE, glMtx));
 
     GLCALL(glUniform1i(SHADER.tex, 0));
-
-    GLCALL(glVertexAttribPointer(SHADER.posAttrib, 2, GL_FLOAT, GL_FALSE, 0, fullVerts));
-    GLCALL(glVertexAttribPointer(SHADER.texAttrib, 2, GL_FLOAT, GL_FALSE, 0, fullVerts));
-
-    GLCALL(glEnableVertexAttribArray(SHADER.posAttrib));
-    GLCALL(glEnableVertexAttribArray(SHADER.texAttrib));
+    GLCALL(glBindVertexArray(SHADER.shaderVao));
 
     GLCALL(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
 
-    GLCALL(glDisableVertexAttribArray(SHADER.posAttrib));
-    GLCALL(glDisableVertexAttribArray(SHADER.texAttrib));
-
+    GLCALL(glBindVertexArray(0));
     GLCALL(glBindTexture(fromTex.target, 0));
 
     // get an explicit sync fd for the secondary gpu.
