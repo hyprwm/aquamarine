@@ -708,9 +708,9 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
 }
 
 SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
-    SGLTex     tex;
+    SGLTex      tex;
 
-    const auto dma = buffa->dmabuf();
+    const auto& dma = buffa->dmabuf();
 
     tex.image = createEGLImage(dma);
     if (tex.image == EGL_NO_IMAGE_KHR) {
@@ -751,7 +751,7 @@ void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuf
         buf->attachments.add(att);
     }
 
-    auto dma = buf->dmabuf();
+    const auto& dma = buf->dmabuf();
     if (!att->eglImage) {
         att->eglImage = createEGLImage(dma);
         if (att->eglImage == EGL_NO_IMAGE_KHR) {
@@ -859,7 +859,7 @@ int CDRMRenderer::recreateBlitSync() {
 
 void CDRMRenderer::clearBuffer(IBuffer* buf) {
     CEglContextGuard eglContext(*this);
-    auto             dmabuf = buf->dmabuf();
+    const auto&      dmabuf = buf->dmabuf();
     GLuint           rboID = 0, fboID = 0;
 
     if (!dmabuf.success) {
@@ -917,7 +917,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     // Those buffers always come from different swapchains, so it's OK.
 
     SGLTex             fromTex;
-    auto               fromDma = from->dmabuf();
+    const auto&        fromDma = from->dmabuf();
     std::span<uint8_t> intermediateBuf;
     {
         auto attachment = from->attachments.get<CDRMRendererBufferAttachment>();
@@ -959,7 +959,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
     EGLImageKHR rboImage = nullptr;
     GLuint      rboID = 0, fboID = 0;
-    auto        toDma = to->dmabuf();
+    const auto& toDma = to->dmabuf();
 
     if (!verifyDestinationDMABUF(toDma)) {
         backend->log(AQ_LOG_ERROR, "EGL (blit): failed to blit: destination dmabuf unsupported");
