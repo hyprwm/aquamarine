@@ -27,14 +27,14 @@ namespace Aquamarine {
     class CDRMRendererBufferAttachment : public IAttachment {
       public:
         CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
-                                     GLuint rbo_, SGLTex tex, std::vector<uint8_t> intermediateBuf_);
+                                     GLuint rbo_, SGLTex&& tex, std::vector<uint8_t> intermediateBuf_);
         virtual ~CDRMRendererBufferAttachment() {
             ;
         }
 
         EGLImageKHR                                   eglImage = nullptr;
         GLuint                                        fbo = 0, rbo = 0;
-        SGLTex                                        tex;
+        Hyprutils::Memory::CUniquePointer<SGLTex>     tex;
         Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
         std::vector<uint8_t>                          intermediateBuf;
 
