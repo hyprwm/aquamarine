@@ -209,12 +209,12 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
-            Hyprutils::Signal::CSignal frame;
-            Hyprutils::Signal::CSignal needsFrame;
-            Hyprutils::Signal::CSignal present;
-            Hyprutils::Signal::CSignal commit;
-            Hyprutils::Signal::CSignal state;
+            Hyprutils::Signal::CSignalT<>              destroy;
+            Hyprutils::Signal::CSignalT<>              frame;
+            Hyprutils::Signal::CSignalT<>              needsFrame;
+            Hyprutils::Signal::CSignalT<SPresentEvent> present;
+            Hyprutils::Signal::CSignalT<>              commit;
+            Hyprutils::Signal::CSignalT<SStateEvent>   state;
         } events;
     };
 }

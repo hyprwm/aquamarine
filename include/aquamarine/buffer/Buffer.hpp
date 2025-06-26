@@ -66,8 +66,8 @@ namespace Aquamarine {
         CAttachmentManager                             attachments;
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
-            Hyprutils::Signal::CSignal backendRelease;
+            Hyprutils::Signal::CSignalT<> destroy;
+            Hyprutils::Signal::CSignalT<> backendRelease;
         } events;
 
       private:

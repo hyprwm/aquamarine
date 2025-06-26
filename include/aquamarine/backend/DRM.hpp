@@ -53,7 +53,7 @@ namespace Aquamarine {
         bool                                                     active = true;
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
+            Hyprutils::Signal::CSignalT<> destroy;
         } events;
 
       private:

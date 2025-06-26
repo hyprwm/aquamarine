@@ -12,6 +12,15 @@
 #include "Session.hpp"
 
 namespace Aquamarine {
+    class IOutput;
+    class IPointer;
+    class IKeyboard;
+    class ITouch;
+    class ISwitch;
+    class ITablet;
+    class ITabletTool;
+    class ITabletPad;
+
     enum eBackendType : uint32_t {
         AQ_BACKEND_WAYLAND = 0,
         AQ_BACKEND_DRM,
@@ -123,16 +132,21 @@ namespace Aquamarine {
         void onNewGpu(std::string path);
 
         struct {
-            Hyprutils::Signal::CSignal newOutput;
-            Hyprutils::Signal::CSignal newPointer;
-            Hyprutils::Signal::CSignal newKeyboard;
-            Hyprutils::Signal::CSignal newTouch;
-            Hyprutils::Signal::CSignal newSwitch;
-            Hyprutils::Signal::CSignal newTablet;
-            Hyprutils::Signal::CSignal newTabletTool;
-            Hyprutils::Signal::CSignal newTabletPad;
+          private:
+            template <typename T>
+            using SP = Hyprutils::Memory::CSharedPointer<T>;
 
-            Hyprutils::Signal::CSignal pollFDsChanged;
+          public:
+            Hyprutils::Signal::CSignalT<SP<IOutput>>     newOutput;
+            Hyprutils::Signal::CSignalT<SP<IPointer>>    newPointer;
+            Hyprutils::Signal::CSignalT<SP<IKeyboard>>   newKeyboard;
+            Hyprutils::Signal::CSignalT<SP<ITouch>>      newTouch;
+            Hyprutils::Signal::CSignalT<SP<ISwitch>>     newSwitch;
+            Hyprutils::Signal::CSignalT<SP<ITablet>>     newTablet;
+            Hyprutils::Signal::CSignalT<SP<ITabletTool>> newTabletTool;
+            Hyprutils::Signal::CSignalT<SP<ITabletPad>>  newTabletPad;
+
+            Hyprutils::Signal::CSignalT<>                pollFDsChanged;
         } events;
 
         Hyprutils::Memory::CSharedPointer<IAllocator> primaryAllocator;

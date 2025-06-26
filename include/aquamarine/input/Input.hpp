@@ -28,9 +28,9 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
-            Hyprutils::Signal::CSignal key;
-            Hyprutils::Signal::CSignal modifiers;
+            Hyprutils::Signal::CSignalT<>                destroy;
+            Hyprutils::Signal::CSignalT<SKeyEvent>       key;
+            Hyprutils::Signal::CSignalT<SModifiersEvent> modifiers;
         } events;
     };
 
@@ -128,23 +128,23 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
-            Hyprutils::Signal::CSignal move;
-            Hyprutils::Signal::CSignal warp;
-            Hyprutils::Signal::CSignal button;
-            Hyprutils::Signal::CSignal axis;
-            Hyprutils::Signal::CSignal frame;
+            Hyprutils::Signal::CSignalT<>                  destroy;
+            Hyprutils::Signal::CSignalT<SMoveEvent>        move;
+            Hyprutils::Signal::CSignalT<SWarpEvent>        warp;
+            Hyprutils::Signal::CSignalT<SButtonEvent>      button;
+            Hyprutils::Signal::CSignalT<SAxisEvent>        axis;
+            Hyprutils::Signal::CSignalT<>                  frame;
 
-            Hyprutils::Signal::CSignal swipeBegin;
-            Hyprutils::Signal::CSignal swipeUpdate;
-            Hyprutils::Signal::CSignal swipeEnd;
+            Hyprutils::Signal::CSignalT<SSwipeBeginEvent>  swipeBegin;
+            Hyprutils::Signal::CSignalT<SSwipeUpdateEvent> swipeUpdate;
+            Hyprutils::Signal::CSignalT<SSwipeEndEvent>    swipeEnd;
 
-            Hyprutils::Signal::CSignal pinchBegin;
-            Hyprutils::Signal::CSignal pinchUpdate;
-            Hyprutils::Signal::CSignal pinchEnd;
+            Hyprutils::Signal::CSignalT<SPinchBeginEvent>  pinchBegin;
+            Hyprutils::Signal::CSignalT<SPinchUpdateEvent> pinchUpdate;
+            Hyprutils::Signal::CSignalT<SPinchEndEvent>    pinchEnd;
 
-            Hyprutils::Signal::CSignal holdBegin;
-            Hyprutils::Signal::CSignal holdEnd;
+            Hyprutils::Signal::CSignalT<SHoldBeginEvent>   holdBegin;
+            Hyprutils::Signal::CSignalT<SHoldEndEvent>     holdEnd;
         } events;
     };
 
@@ -182,12 +182,12 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
-            Hyprutils::Signal::CSignal move;
-            Hyprutils::Signal::CSignal down;
-            Hyprutils::Signal::CSignal up;
-            Hyprutils::Signal::CSignal cancel;
-            Hyprutils::Signal::CSignal frame;
+            Hyprutils::Signal::CSignalT<>             destroy;
+            Hyprutils::Signal::CSignalT<SMotionEvent> move;
+            Hyprutils::Signal::CSignalT<SDownEvent>   down;
+            Hyprutils::Signal::CSignalT<SUpEvent>     up;
+            Hyprutils::Signal::CSignalT<SCancelEvent> cancel;
+            Hyprutils::Signal::CSignalT<>             frame;
         } events;
     };
 
@@ -213,8 +213,8 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
-            Hyprutils::Signal::CSignal fire;
+            Hyprutils::Signal::CSignalT<>           destroy;
+            Hyprutils::Signal::CSignalT<SFireEvent> fire;
         } events;
     };
 
@@ -277,11 +277,11 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal axis;
-            Hyprutils::Signal::CSignal proximity;
-            Hyprutils::Signal::CSignal tip;
-            Hyprutils::Signal::CSignal button;
-            Hyprutils::Signal::CSignal destroy;
+            Hyprutils::Signal::CSignalT<SAxisEvent>      axis;
+            Hyprutils::Signal::CSignalT<SProximityEvent> proximity;
+            Hyprutils::Signal::CSignalT<STipEvent>       tip;
+            Hyprutils::Signal::CSignalT<SButtonEvent>    button;
+            Hyprutils::Signal::CSignalT<>                destroy;
         } events;
     };
 
@@ -321,7 +321,7 @@ namespace Aquamarine {
         uint32_t capabilities = 0; // enum eTabletToolCapabilities
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
+            Hyprutils::Signal::CSignalT<> destroy;
         } events;
     };
 
@@ -379,11 +379,11 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal destroy;
-            Hyprutils::Signal::CSignal button;
-            Hyprutils::Signal::CSignal ring;
-            Hyprutils::Signal::CSignal strip;
-            Hyprutils::Signal::CSignal attach;
+            Hyprutils::Signal::CSignalT<>             destroy;
+            Hyprutils::Signal::CSignalT<SButtonEvent> button;
+            Hyprutils::Signal::CSignalT<SRingEvent>   ring;
+            Hyprutils::Signal::CSignalT<SStripEvent>  strip;
+            Hyprutils::Signal::CSignalT<>             attach;
         } events;
     };
 }
