@@ -40,7 +40,7 @@ using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
 Aquamarine::CDRMBackend::CDRMBackend(SP<CBackend> backend_) : backend(backend_) {
-    listeners.sessionActivate = backend->session->events.changeActive.registerListener([this](std::any d) {
+    listeners.sessionActivate = backend->session->events.changeActive.listen([this] {
         if (backend->session->active) {
             // session got activated, we need to restore
             restoreAfterVT();
@@ -736,8 +736,7 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
 
     drmFreeVersion(drmVer);
 
-    listeners.gpuChange = gpu->events.change.registerListener([this](std::any d) {
-        auto E = std::any_cast<CSessionDevice::SChangeEvent>(d);
+    listeners.gpuChange = gpu->events.change.listen([this](const CSessionDevice::SChangeEvent& E) {
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
             recheckOutputs();
@@ -747,7 +746,7 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
         }
     });
 
-    listeners.gpuRemove = gpu->events.remove.registerListener([this](std::any d) {
+    listeners.gpuRemove = gpu->events.remove.listen([this] {
         std::erase_if(backend->implementations, [this](const auto& impl) { return impl->drmFD() == this->drmFD(); });
         backend->events.pollFDsChanged.emit();
     });
@@ -2073,7 +2072,7 @@ void Aquamarine::CDRMFB::import() {
 
     closeHandles();
 
-    listeners.destroyBuffer = buffer->events.destroy.registerListener([this](std::any d) {
+    listeners.destroyBuffer = buffer->events.destroy.listen([this] {
         drop();
         dead      = true;
         id        = 0;

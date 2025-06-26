@@ -60,28 +60,24 @@ int main(int argc, char** argv, char** envp) {
 
     auto aqBackend = Aquamarine::CBackend::create(implementations, options);
 
-    newOutputListener = aqBackend->events.newOutput.registerListener([](std::any data) {
-        output = std::any_cast<SP<Aquamarine::IOutput>>(data);
+    newOutputListener = aqBackend->events.newOutput.listen([](const SP<Aquamarine::IOutput> newOutput) {
+        output = newOutput;
 
         std::cout << "[Client] Got a new output named " << output->name << "\n";
 
-        outputFrameListener = output->events.frame.registerListener([](std::any data) { onFrame(); });
-        outputStateListener = output->events.state.registerListener([](std::any data) { onState(std::any_cast<Aquamarine::IOutput::SStateEvent>(data)); });
+        outputFrameListener = output->events.frame.listen([] { onFrame(); });
+        outputStateListener = output->events.state.listen([](const Aquamarine::IOutput::SStateEvent& event) { onState(event); });
     });
 
-    newMouseListener = aqBackend->events.newPointer.registerListener([] (std::any pointer) {
-        auto p = std::any_cast<SP<Aquamarine::IPointer>>(pointer);
-        mouseMotionListener = p->events.warp.registerListener([] (std::any data) {
-            auto e = std::any_cast<Aquamarine::IPointer::SWarpEvent>(data);
-            std::cout << "[Client] Mouse warped to " << std::format("{}", e.absolute) << "\n";
+    newMouseListener = aqBackend->events.newPointer.listen([](const SP<Aquamarine::IPointer>& pointer) {
+        mouseMotionListener = pointer->events.warp.listen([](const Aquamarine::IPointer::SWarpEvent& event) {
+            std::cout << "[Client] Mouse warped to " << std::format("{}", event.absolute) << "\n";
         });
     });
 
-    newKeyboardListener = aqBackend->events.newKeyboard.registerListener([] (std::any keeb) {
-        auto k = std::any_cast<SP<Aquamarine::IKeyboard>>(keeb);
-        keyboardKeyListener = k->events.key.registerListener([] (std::any data) {
-            auto e = std::any_cast<Aquamarine::IKeyboard::SKeyEvent>(data);
-            std::cout << "[Client] Key " << std::format("{}", e.key) << " state: " << e.pressed << " \n";
+    newKeyboardListener = aqBackend->events.newKeyboard.listen([](const SP<Aquamarine::IKeyboard>& keyboard) {
+        keyboardKeyListener = keyboard->events.key.listen([](const Aquamarine::IKeyboard::SKeyEvent& event) {
+            std::cout << "[Client] Key " << std::format("{}", event.key) << " state: " << event.pressed << " \n";
         });
     });
 

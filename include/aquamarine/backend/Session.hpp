@@ -49,8 +49,8 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal change;
-            Hyprutils::Signal::CSignal remove;
+            Hyprutils::Signal::CSignalT<SChangeEvent> change;
+            Hyprutils::Signal::CSignalT<>             remove;
         } events;
 
       private:
@@ -224,9 +224,9 @@ namespace Aquamarine {
         };
 
         struct {
-            Hyprutils::Signal::CSignal changeActive;
-            Hyprutils::Signal::CSignal addDrmCard;
-            Hyprutils::Signal::CSignal destroy;
+            Hyprutils::Signal::CSignalT<>                 changeActive;
+            Hyprutils::Signal::CSignalT<SAddDrmCardEvent> addDrmCard;
+            Hyprutils::Signal::CSignalT<>                 destroy;
         } events;
 
       private:

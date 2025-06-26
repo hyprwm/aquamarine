@@ -1114,6 +1114,7 @@ bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
 
 CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
                                                            EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex&& tex_, std::vector<uint8_t> intermediateBuf_) :
-    eglImage(image), fbo(fbo_), rbo(rbo_), tex(makeUnique<SGLTex>(std::move(tex_))), intermediateBuf(intermediateBuf_), renderer(renderer_) {
-    bufferDestroy = buffer->events.destroy.registerListener([this](std::any d) { renderer->onBufferAttachmentDrop(this); });
+    eglImage(image),
+    fbo(fbo_), rbo(rbo_), tex(makeUnique<SGLTex>(std::move(tex_))), intermediateBuf(intermediateBuf_), renderer(renderer_) {
+    bufferDestroy = buffer->events.destroy.listen([this] { renderer->onBufferAttachmentDrop(this); });
 }
