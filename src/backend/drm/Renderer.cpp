@@ -80,10 +80,15 @@ static GLuint createProgram(const std::string& vert, const std::string& frag) {
 }
 
 inline const std::string VERT_SRC = R"#(
+#version 300 es
+precision highp float;
+
 uniform mat3 proj;
-attribute vec2 pos;
-attribute vec2 texcoord;
-varying vec2 v_texcoord;
+
+in vec2 pos;
+in vec2 texcoord;
+
+out vec2 v_texcoord;
 
 void main() {
     gl_Position = vec4(proj * vec3(pos, 1.0), 1.0);
@@ -91,22 +96,30 @@ void main() {
 })#";
 
 inline const std::string FRAG_SRC = R"#(
+#version 300 es
 precision highp float;
-varying vec2 v_texcoord; // is in 0-1
+
+in vec2 v_texcoord;
+out vec4 fragColor;
+
 uniform sampler2D tex;
 
 void main() {
-    gl_FragColor = texture2D(tex, v_texcoord);
+    fragColor = texture(tex, v_texcoord);
 })#";
 
 inline const std::string FRAG_SRC_EXT = R"#(
-#extension GL_OES_EGL_image_external : require
+#version 300 es
+#extension GL_OES_EGL_image_external_essl3 : require
 precision highp float;
-varying vec2 v_texcoord; // is in 0-1
+
+in vec2 v_texcoord;
+out vec4 fragColor;
+
 uniform samplerExternalOES texture0;
 
 void main() {
-    gl_FragColor = texture2D(texture0, v_texcoord);
+    fragColor = texture(texture0, v_texcoord);
 })#";
 
 // ------------------- egl stuff
@@ -1114,7 +1127,6 @@ bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
 
 CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
                                                            EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex&& tex_, std::vector<uint8_t> intermediateBuf_) :
-    eglImage(image),
-    fbo(fbo_), rbo(rbo_), tex(makeUnique<SGLTex>(std::move(tex_))), intermediateBuf(intermediateBuf_), renderer(renderer_) {
+    eglImage(image), fbo(fbo_), rbo(rbo_), tex(makeUnique<SGLTex>(std::move(tex_))), intermediateBuf(intermediateBuf_), renderer(renderer_) {
     bufferDestroy = buffer->events.destroy.listen([this] { renderer->onBufferAttachmentDrop(this); });
 }
