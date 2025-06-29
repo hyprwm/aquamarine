@@ -9,10 +9,13 @@
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
 #include <aquamarine/allocator/GBM.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
+using namespace Hyprutils::OS;
+
 #define SP CSharedPointer
 #define WP CWeakPointer
 
@@ -215,7 +218,7 @@ void CDRMRenderer::SShader::createVao() {
         glBindBuffer(GL_ARRAY_BUFFER, shaderVboPos);
         glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
         glEnableVertexAttribArray(posAttrib);
-        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     }
 
     if (texAttrib != -1) {
@@ -223,7 +226,7 @@ void CDRMRenderer::SShader::createVao() {
         glBindBuffer(GL_ARRAY_BUFFER, shaderVboUv);
         glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
         glEnableVertexAttribArray(texAttrib);
-        glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     }
 
     glBindVertexArray(0);
@@ -304,7 +307,7 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     }
 
     // if the driver doesn't mark linear as external, add it. It's allowed unless the driver says otherwise. (e.g. nvidia)
-    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
+    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.empty())
         result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
 
     return result;
@@ -325,7 +328,7 @@ bool CDRMRenderer::initDRMFormats() {
     formats.resize(len);
     proc.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len);
 
-    if (formats.size() == 0) {
+    if (formats.empty()) {
         backend->log(AQ_LOG_ERROR, "EGL: Failed to get formats");
         return false;
     }
@@ -346,7 +349,7 @@ bool CDRMRenderer::initDRMFormats() {
             mods = *ret;
         }
 
-        hasModifiers = hasModifiers || mods.size() > 0;
+        hasModifiers = hasModifiers || !mods.empty();
 
         // EGL can always do implicit modifiers.
         mods.emplace_back(DRM_FORMAT_MOD_INVALID, true);
@@ -919,7 +922,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
         return {};
     }
 
-    if (waitFD >= 0) {
+    if (waitFD >= 0 && !CFileDescriptor::isReadable(waitFD)) {
         // wait on a provided explicit fence
         waitOnSync(waitFD);
     }
@@ -1050,7 +1053,11 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     float glMtx[9];
     matrixMultiply(glMtx, monitorProj, mtx);
 
-    GLCALL(glViewport(0, 0, toDma.size.x, toDma.size.y));
+    static Vector2D lastViewportSize = {-1, -1};
+    if (lastViewportSize != toDma.size) {
+        GLCALL(glViewport(0, 0, toDma.size.x, toDma.size.y));
+        lastViewportSize = toDma.size;
+    }
 
     GLCALL(glActiveTexture(GL_TEXTURE0));
     GLCALL(glBindTexture(fromTex->target, fromTex->texid));
