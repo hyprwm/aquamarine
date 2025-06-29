@@ -9,10 +9,13 @@
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
 #include <aquamarine/allocator/GBM.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
+using namespace Hyprutils::OS;
+
 #define SP CSharedPointer
 #define WP CWeakPointer
 
@@ -80,10 +83,15 @@ static GLuint createProgram(const std::string& vert, const std::string& frag) {
 }
 
 inline const std::string VERT_SRC = R"#(
+#version 300 es
+precision highp float;
+
 uniform mat3 proj;
-attribute vec2 pos;
-attribute vec2 texcoord;
-varying vec2 v_texcoord;
+
+in vec2 pos;
+in vec2 texcoord;
+
+out vec2 v_texcoord;
 
 void main() {
     gl_Position = vec4(proj * vec3(pos, 1.0), 1.0);
@@ -91,22 +99,30 @@ void main() {
 })#";
 
 inline const std::string FRAG_SRC = R"#(
+#version 300 es
 precision highp float;
-varying vec2 v_texcoord; // is in 0-1
+
+in vec2 v_texcoord;
+out vec4 fragColor;
+
 uniform sampler2D tex;
 
 void main() {
-    gl_FragColor = texture2D(tex, v_texcoord);
+    fragColor = texture(tex, v_texcoord);
 })#";
 
 inline const std::string FRAG_SRC_EXT = R"#(
-#extension GL_OES_EGL_image_external : require
+#version 300 es
+#extension GL_OES_EGL_image_external_essl3 : require
 precision highp float;
-varying vec2 v_texcoord; // is in 0-1
+
+in vec2 v_texcoord;
+out vec4 fragColor;
+
 uniform samplerExternalOES texture0;
 
 void main() {
-    gl_FragColor = texture2D(texture0, v_texcoord);
+    fragColor = texture(texture0, v_texcoord);
 })#";
 
 // ------------------- egl stuff
@@ -202,7 +218,7 @@ void CDRMRenderer::SShader::createVao() {
         glBindBuffer(GL_ARRAY_BUFFER, shaderVboPos);
         glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
         glEnableVertexAttribArray(posAttrib);
-        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     }
 
     if (texAttrib != -1) {
@@ -210,7 +226,7 @@ void CDRMRenderer::SShader::createVao() {
         glBindBuffer(GL_ARRAY_BUFFER, shaderVboUv);
         glBufferData(GL_ARRAY_BUFFER, sizeof(fullVerts), fullVerts, GL_STATIC_DRAW);
         glEnableVertexAttribArray(texAttrib);
-        glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     }
 
     glBindVertexArray(0);
@@ -291,7 +307,7 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     }
 
     // if the driver doesn't mark linear as external, add it. It's allowed unless the driver says otherwise. (e.g. nvidia)
-    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.size() == 0)
+    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.empty())
         result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
 
     return result;
@@ -312,7 +328,7 @@ bool CDRMRenderer::initDRMFormats() {
     formats.resize(len);
     proc.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len);
 
-    if (formats.size() == 0) {
+    if (formats.empty()) {
         backend->log(AQ_LOG_ERROR, "EGL: Failed to get formats");
         return false;
     }
@@ -333,7 +349,7 @@ bool CDRMRenderer::initDRMFormats() {
             mods = *ret;
         }
 
-        hasModifiers = hasModifiers || mods.size() > 0;
+        hasModifiers = hasModifiers || !mods.empty();
 
         // EGL can always do implicit modifiers.
         mods.emplace_back(DRM_FORMAT_MOD_INVALID, true);
@@ -707,8 +723,8 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
     return image;
 }
 
-SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
-    SGLTex      tex;
+CGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
+    CGLTex      tex;
 
     const auto& dma = buffa->dmabuf();
 
@@ -732,11 +748,11 @@ SGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
 
     GLCALL(glGenTextures(1, &tex.texid));
 
-    GLCALL(glBindTexture(tex.target, tex.texid));
-    GLCALL(glTexParameteri(tex.target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-    GLCALL(glTexParameteri(tex.target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GLCALL(tex.bind());
+    GLCALL(tex.setTexParameter(GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GLCALL(tex.setTexParameter(GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
     GLCALL(proc.glEGLImageTargetTexture2DOES(tex.target, tex.image));
-    GLCALL(glBindTexture(tex.target, 0));
+    GLCALL(tex.unbind());
 
     return tex;
 }
@@ -747,7 +763,7 @@ void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuf
     CEglContextGuard eglContext(*this);
     auto             att = buf->attachments.get<CDRMRendererBufferAttachment>();
     if (!att) {
-        att = makeShared<CDRMRendererBufferAttachment>(self, buf, nullptr, 0, 0, SGLTex{}, std::vector<uint8_t>());
+        att = makeShared<CDRMRendererBufferAttachment>(self, buf, nullptr, 0, 0, CGLTex{}, std::vector<uint8_t>());
         buf->attachments.add(att);
     }
 
@@ -906,7 +922,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
         return {};
     }
 
-    if (waitFD >= 0) {
+    if (waitFD >= 0 && !CFileDescriptor::isReadable(waitFD)) {
         // wait on a provided explicit fence
         waitOnSync(waitFD);
     }
@@ -916,7 +932,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     // both from and to have the same AQ_ATTACHMENT_DRM_RENDERER_DATA.
     // Those buffers always come from different swapchains, so it's OK.
 
-    WP<SGLTex>         fromTex;
+    WP<CGLTex>         fromTex;
     const auto&        fromDma = from->dmabuf();
     std::span<uint8_t> intermediateBuf;
     {
@@ -999,7 +1015,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
                 return {};
             }
 
-            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, SGLTex{}, std::vector<uint8_t>()));
+            to->attachments.add(makeShared<CDRMRendererBufferAttachment>(self, to, rboImage, fboID, rboID, CGLTex{}, std::vector<uint8_t>()));
         }
     }
 
@@ -1037,13 +1053,16 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     float glMtx[9];
     matrixMultiply(glMtx, monitorProj, mtx);
 
-    GLCALL(glViewport(0, 0, toDma.size.x, toDma.size.y));
+    static Vector2D lastViewportSize = {-1, -1};
+    if (lastViewportSize != toDma.size) {
+        GLCALL(glViewport(0, 0, toDma.size.x, toDma.size.y));
+        lastViewportSize = toDma.size;
+    }
 
     GLCALL(glActiveTexture(GL_TEXTURE0));
-    GLCALL(glBindTexture(fromTex->target, fromTex->texid));
-
-    GLCALL(glTexParameteri(fromTex->target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-    GLCALL(glTexParameteri(fromTex->target, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GLCALL(fromTex->bind());
+    GLCALL(fromTex->setTexParameter(GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GLCALL(fromTex->setTexParameter(GL_TEXTURE_MIN_FILTER, GL_NEAREST));
 
     if (!intermediateBuf.empty())
         GLCALL(glTexImage2D(fromTex->target, 0, PIXEL_BUFFER_FORMAT, fromDma.size.x, fromDma.size.y, 0, PIXEL_BUFFER_FORMAT, GL_UNSIGNED_BYTE, intermediateBuf.data()));
@@ -1061,7 +1080,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     GLCALL(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
 
     GLCALL(glBindVertexArray(0));
-    GLCALL(glBindTexture(fromTex->target, 0));
+    GLCALL(fromTex->unbind());
 
     // get an explicit sync fd for the secondary gpu.
     // when we pass buffers between gpus we should always use explicit sync,
@@ -1112,9 +1131,43 @@ bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
     return false;
 }
 
+constexpr std::optional<size_t> CGLTex::getCacheStateIndex(GLenum pname) {
+    switch (pname) {
+        case GL_TEXTURE_WRAP_S: return TEXTURE_PAR_WRAP_S;
+        case GL_TEXTURE_WRAP_T: return TEXTURE_PAR_WRAP_T;
+        case GL_TEXTURE_MAG_FILTER: return TEXTURE_PAR_MAG_FILTER;
+        case GL_TEXTURE_MIN_FILTER: return TEXTURE_PAR_MIN_FILTER;
+        default: return std::nullopt;
+    }
+}
+
+void CGLTex::bind() {
+    glBindTexture(target, texid);
+}
+
+void CGLTex::unbind() {
+    glBindTexture(target, 0);
+}
+
+void CGLTex::setTexParameter(GLenum pname, GLint param) {
+    const auto cacheIndex = getCacheStateIndex(pname);
+
+    if (!cacheIndex) {
+        glTexParameteri(target, pname, param);
+        return;
+    }
+
+    const auto idx = cacheIndex.value();
+
+    if (m_cachedStates[idx] == param)
+        return;
+
+    m_cachedStates[idx] = param;
+    glTexParameteri(target, pname, param);
+}
+
 CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
-                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, SGLTex&& tex_, std::vector<uint8_t> intermediateBuf_) :
-    eglImage(image),
-    fbo(fbo_), rbo(rbo_), tex(makeUnique<SGLTex>(std::move(tex_))), intermediateBuf(intermediateBuf_), renderer(renderer_) {
+                                                           EGLImageKHR image, GLuint fbo_, GLuint rbo_, CGLTex&& tex_, std::vector<uint8_t> intermediateBuf_) :
+    eglImage(image), fbo(fbo_), rbo(rbo_), tex(makeUnique<CGLTex>(std::move(tex_))), intermediateBuf(intermediateBuf_), renderer(renderer_) {
     bufferDestroy = buffer->events.destroy.listen([this] { renderer->onBufferAttachmentDrop(this); });
 }
