@@ -18,23 +18,40 @@ namespace Aquamarine {
 
     class CGBMAllocator;
 
-    struct SGLTex {
+    class CGLTex {
+      public:
+        CGLTex() = default;
+        void     bind();
+        void     unbind();
+        void     setTexParameter(GLenum pname, GLint param);
         EGLImage image  = nullptr;
         GLuint   texid  = 0;
         GLuint   target = GL_TEXTURE_2D;
+
+      private:
+        enum eTextureParam : uint8_t {
+            TEXTURE_PAR_WRAP_S = 0,
+            TEXTURE_PAR_WRAP_T,
+            TEXTURE_PAR_MAG_FILTER,
+            TEXTURE_PAR_MIN_FILTER,
+            TEXTURE_PAR_LAST,
+        };
+
+        inline constexpr std::optional<size_t>             getCacheStateIndex(GLenum pname);
+        std::array<std::optional<GLint>, TEXTURE_PAR_LAST> m_cachedStates;
     };
 
     class CDRMRendererBufferAttachment : public IAttachment {
       public:
         CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
-                                     GLuint rbo_, SGLTex&& tex, std::vector<uint8_t> intermediateBuf_);
+                                     GLuint rbo_, CGLTex&& tex, std::vector<uint8_t> intermediateBuf_);
         virtual ~CDRMRendererBufferAttachment() {
             ;
         }
 
         EGLImageKHR                                   eglImage = nullptr;
         GLuint                                        fbo = 0, rbo = 0;
-        Hyprutils::Memory::CUniquePointer<SGLTex>     tex;
+        Hyprutils::Memory::CUniquePointer<CGLTex>     tex;
         Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
         std::vector<uint8_t>                          intermediateBuf;
 
@@ -132,7 +149,7 @@ namespace Aquamarine {
             int        lastBlitSyncFD = -1;
         } egl;
 
-        SGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
+        CGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
         void                                          readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
