@@ -99,16 +99,17 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
-    conn = connector;
+    conn                         = connector;
     drmModeModeInfo* currentMode = connector->getCurrentMode();
-    bool modeDiffers = true;
+    bool             modeDiffers = true;
     if (currentMode) {
         modeDiffers = memcmp(currentMode, &data.modeInfo, sizeof(drmModeModeInfo)) != 0;
         free(currentMode);
     }
 
-    if (modeDiffers) addConnectorModeset(connector, data);
-    
+    if (modeDiffers)
+        addConnectorModeset(connector, data);
+
     addConnectorCursor(connector, data);
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
