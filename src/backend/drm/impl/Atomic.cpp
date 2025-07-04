@@ -463,7 +463,22 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 }
 
 bool Aquamarine::CDRMAtomicImpl::reset() {
-    return true;
+    CDRMAtomicRequest request(backend);
+
+    for (auto const& crtc : backend->crtcs) {
+        request.add(crtc->id, crtc->props.mode_id, 0);
+        request.add(crtc->id, crtc->props.active, 0);
+    }
+
+    for (auto const& conn : backend->connectors) {
+        request.add(conn->id, conn->props.crtc_id, 0);
+    }
+
+    for (auto const& plane : backend->planes) {
+        request.planeProps(plane, nullptr, 0, {});
+    }
+
+    return request.commit(DRM_MODE_ATOMIC_ALLOW_MODESET);
 }
 
 bool Aquamarine::CDRMAtomicImpl::moveCursor(SP<SDRMConnector> connector, bool skipSchedule) {
