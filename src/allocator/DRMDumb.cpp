@@ -18,7 +18,8 @@ using namespace Hyprutils::Memory;
 #define WP CWeakPointer
 
 Aquamarine::CDRMDumbBuffer::CDRMDumbBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CDRMDumbAllocator> allocator_,
-                                           Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) : allocator(allocator_) {
+                                           Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
+    allocator(allocator_) {
     attrs.format = params.format;
 
     if (int ret = drmModeCreateDumbBuffer(allocator->drmFD(), params.size.x, params.size.y, 32, 0, &handle, &stride, &bufferLen); ret < 0) {

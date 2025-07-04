@@ -70,13 +70,15 @@ int main(int argc, char** argv, char** envp) {
     });
 
     newMouseListener = aqBackend->events.newPointer.listen([](const SP<Aquamarine::IPointer>& pointer) {
-        mouseMotionListener = pointer->events.warp.listen(
-            [](const Aquamarine::IPointer::SWarpEvent& event) { std::cout << "[Client] Mouse warped to " << std::format("{}", event.absolute) << "\n"; });
+        mouseMotionListener = pointer->events.warp.listen([](const Aquamarine::IPointer::SWarpEvent& event) {
+            std::cout << "[Client] Mouse warped to " << std::format("{}", event.absolute) << "\n";
+        });
     });
 
     newKeyboardListener = aqBackend->events.newKeyboard.listen([](const SP<Aquamarine::IKeyboard>& keyboard) {
-        keyboardKeyListener = keyboard->events.key.listen(
-            [](const Aquamarine::IKeyboard::SKeyEvent& event) { std::cout << "[Client] Key " << std::format("{}", event.key) << " state: " << event.pressed << " \n"; });
+        keyboardKeyListener = keyboard->events.key.listen([](const Aquamarine::IKeyboard::SKeyEvent& event) {
+            std::cout << "[Client] Key " << std::format("{}", event.key) << " state: " << event.pressed << " \n";
+        });
     });
 
     if (!aqBackend || !aqBackend->start()) {

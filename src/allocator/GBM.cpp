@@ -62,7 +62,8 @@ static SDRMFormat guessFormatFrom(std::vector<SDRMFormat> formats, bool cursor, 
 }
 
 Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hyprutils::Memory::CWeakPointer<CGBMAllocator> allocator_,
-                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) : allocator(allocator_) {
+                                   Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain) :
+    allocator(allocator_) {
     if (!allocator)
         return;
 

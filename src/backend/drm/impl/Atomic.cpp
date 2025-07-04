@@ -99,17 +99,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
-    conn                         = connector;
-    drmModeModeInfo* currentMode = connector->getCurrentMode();
-    bool             modeDiffers = true;
-    if (currentMode) {
-        modeDiffers = memcmp(currentMode, &data.modeInfo, sizeof(drmModeModeInfo)) != 0;
-        free(currentMode);
-    }
+    conn = connector;
 
-    if (modeDiffers)
-        addConnectorModeset(connector, data);
-
+    addConnectorModeset(connector, data);
     addConnectorCursor(connector, data);
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
@@ -463,7 +455,22 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 }
 
 bool Aquamarine::CDRMAtomicImpl::reset() {
-    return true;
+    CDRMAtomicRequest request(backend);
+
+    for (auto const& crtc : backend->crtcs) {
+        request.add(crtc->id, crtc->props.mode_id, 0);
+        request.add(crtc->id, crtc->props.active, 0);
+    }
+
+    for (auto const& conn : backend->connectors) {
+        request.add(conn->id, conn->props.crtc_id, 0);
+    }
+
+    for (auto const& plane : backend->planes) {
+        request.planeProps(plane, nullptr, 0, {});
+    }
+
+    return request.commit(DRM_MODE_ATOMIC_ALLOW_MODESET);
 }
 
 bool Aquamarine::CDRMAtomicImpl::moveCursor(SP<SDRMConnector> connector, bool skipSchedule) {
