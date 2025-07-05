@@ -66,7 +66,7 @@ SP<IBuffer> Aquamarine::CSwapchain::next(int* age) {
     lastAcquired = (lastAcquired + 1) % options.length;
 
     if (age)
-        *age = 1;
+        *age = options.length; // we always just rotate
 
     return buffers.at(lastAcquired);
 }
