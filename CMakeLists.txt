@@ -109,6 +109,7 @@ protocolwayland()
 
 protocolnew("stable/xdg-shell" "xdg-shell" false)
 protocolnew("stable/linux-dmabuf" "linux-dmabuf-v1" false)
+protocolnew("unstable/xdg-decoration" "xdg-decoration-unstable-v1" false)
 
 # Generate hwdata info
 pkg_get_variable(HWDATA_DIR hwdata pkgdatadir)

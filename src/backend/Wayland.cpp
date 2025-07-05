@@ -4,6 +4,7 @@
 #include <xdg-shell.hpp>
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
+#include "aquamarine/backend/Backend.hpp"
 #include <cstring>
 #include <xf86drm.h>
 #include <gbm.h>
@@ -117,6 +118,10 @@ bool Aquamarine::CWaylandBackend::start() {
                 backend->log(AQ_LOG_ERROR, "Wayland backend cannot start: zwp_linux_dmabuf_v1 init failed");
                 waylandState.dmabufFailed = true;
             }
+        } else if (NAME == "zxdg_decoration_manager_v1") {
+            TRACE(backend->log(AQ_LOG_TRACE, std::format("  > binding to global: {} (version {}) with id {}", name, 1, id)));
+            waylandState.decorationManager =
+                makeShared<CCZxdgDecorationManagerV1>((wl_proxy*)wl_registry_bind((wl_registry*)waylandState.registry->resource(), id, &zxdg_decoration_manager_v1_interface, 1));
         }
     });
     waylandState.registry->setGlobalRemove([this](CCWlRegistry* r, uint32_t id) { backend->log(AQ_LOG_DEBUG, std::format("Global {} removed", id)); });
@@ -176,6 +181,10 @@ bool Aquamarine::CWaylandBackend::dispatchEvents() {
             f();
         }
         idleCallbacks.clear();
+    }
+
+    for (auto& o : this->outputs) {
+        o->scheduleFrame(IOutput::AQ_SCHEDULE_NEEDS_FRAME);
     }
 
     return true;
@@ -499,6 +508,13 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
     waylandState.xdgToplevel->sendSetTitle(std::format("aquamarine - {}", name).c_str());
     waylandState.xdgToplevel->sendSetAppId("aquamarine");
 
+    // Request server-side decorations if decoration manager is available
+    if (backend->waylandState.decorationManager) {
+        waylandState.decoration = makeShared<CCZxdgToplevelDecorationV1>(backend->waylandState.decorationManager->sendGetToplevelDecoration(waylandState.xdgToplevel->resource()));
+        waylandState.decoration->sendSetMode(ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    } else {
+        backend->backend->log(AQ_LOG_WARNING, "Wayland compositor does not support server side decorations, the aquamarine window will appear with no title bar");
+    }
     auto inputRegion = makeShared<CCWlRegion>(backend->waylandState.compositor->sendCreateRegion());
     inputRegion->sendAdd(0, 0, INT32_MAX, INT32_MAX);
 
@@ -635,7 +651,7 @@ SP<CWaylandBuffer> Aquamarine::CWaylandOutput::wlBufferFromBuffer(SP<IBuffer> bu
 void Aquamarine::CWaylandOutput::sendFrameAndSetCallback() {
     events.frame.emit();
     frameScheduled = false;
-    if (waylandState.frameCallback || !readyForFrameCallback)
+    if (waylandState.frameCallback || readyForFrameCallback)
         return;
 
     waylandState.frameCallback = makeShared<CCWlCallback>(waylandState.surface->sendFrame());

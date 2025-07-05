@@ -9,6 +9,7 @@
 #include <wayland.hpp>
 #include <xdg-shell.hpp>
 #include <linux-dmabuf-v1.hpp>
+#include <xdg-decoration-unstable-v1.hpp>
 #include <tuple>
 
 namespace Aquamarine {
@@ -86,6 +87,7 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<CCXdgSurface>  xdgSurface;
             Hyprutils::Memory::CSharedPointer<CCXdgToplevel> xdgToplevel;
             Hyprutils::Memory::CSharedPointer<CCWlCallback>  frameCallback;
+            Hyprutils::Memory::CSharedPointer<CCZxdgToplevelDecorationV1> decoration;
         } waylandState;
 
         friend class CWaylandBackend;
@@ -175,6 +177,7 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<CCWlCompositor>             compositor;
             Hyprutils::Memory::CSharedPointer<CCZwpLinuxDmabufV1>         dmabuf;
             Hyprutils::Memory::CSharedPointer<CCZwpLinuxDmabufFeedbackV1> dmabufFeedback;
+            Hyprutils::Memory::CSharedPointer<CCZxdgDecorationManagerV1> decorationManager;
 
             // control
             bool dmabufFailed = false;
