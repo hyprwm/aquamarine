@@ -565,7 +565,7 @@ bool Aquamarine::CWaylandOutput::commit() {
         return true;
     }
 
-    if (!swapchain->reconfigure(SSwapchainOptions{.length = 2, .size = pixelSize, .format = format})) {
+    if (!swapchain->reconfigure(SSwapchainOptions{.length = swapchain->currentOptions().length, .size = pixelSize, .format = format})) {
         backend->backend->log(AQ_LOG_ERROR, std::format("Output {}: pending state rejected: swapchain failed reconfiguring", name));
         return false;
     }
