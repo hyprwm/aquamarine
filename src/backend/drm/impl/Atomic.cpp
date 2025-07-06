@@ -110,9 +110,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         if (modeDiffers)
             addConnectorModeset(connector, data);
-    } else {
+    } else 
         addConnectorModeset(connector, data);
-    }
+    
     addConnectorCursor(connector, data);
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
