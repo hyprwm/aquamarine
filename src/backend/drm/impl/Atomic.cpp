@@ -100,8 +100,19 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
     conn = connector;
+    if (enable) {
+        drmModeModeInfo* currentMode = connector->getCurrentMode();
+        bool             modeDiffers = true;
+        if (currentMode) {
+            modeDiffers = memcmp(currentMode, &data.modeInfo, sizeof(drmModeModeInfo)) != 0;
+            free(currentMode);
+        }
 
-    addConnectorModeset(connector, data);
+        if (modeDiffers)
+            addConnectorModeset(connector, data);
+    } else 
+        addConnectorModeset(connector, data);
+    
     addConnectorCursor(connector, data);
 
     add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
@@ -181,7 +192,7 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled && data.mainFB;
 
-    add(connector->crtc->id, connector->crtc->props.mode_id, data.atomic.modeBlob);
+    add(connector->crtc->id, connector->crtc->props.mode_id, enable ? data.atomic.modeBlob : 0);
     data.atomic.blobbed = true;
 
     if (!enable)

@@ -895,7 +895,6 @@ void Aquamarine::CDRMBackend::scanLeases() {
 }
 
 bool Aquamarine::CDRMBackend::start() {
-    impl->reset();
     return true;
 }
 
