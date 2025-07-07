@@ -19,7 +19,7 @@ struct prop_info {
 };
 
 static const struct prop_info connector_info[] = {
-#define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorProps, name) / sizeof(uint32_t))
+#define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorProps, bits.name) / sizeof(uint32_t))
     {.name = "CRTC_ID", .index = INDEX(crtc_id)},
     {.name = "Colorspace", .index = INDEX(Colorspace)},
     {.name = "DPMS", .index = INDEX(dpms)},
@@ -37,7 +37,7 @@ static const struct prop_info connector_info[] = {
 };
 
 static const struct prop_info colorspace_info[] = {
-#define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorColorspace, name) / sizeof(uint32_t))
+#define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorColorspace, bits.name) / sizeof(uint32_t))
     {.name = "BT2020_RGB", .index = INDEX(BT2020_RGB)},
     {.name = "BT2020_YCC", .index = INDEX(BT2020_YCC)},
     {.name = "Default", .index = INDEX(Default)},
@@ -45,7 +45,7 @@ static const struct prop_info colorspace_info[] = {
 };
 
 static const struct prop_info crtc_info[] = {
-#define INDEX(name) (offsetof(SDRMCRTC::UDRMCRTCProps, name) / sizeof(uint32_t))
+#define INDEX(name) (offsetof(SDRMCRTC::UDRMCRTCProps, bits.name) / sizeof(uint32_t))
     {.name = "ACTIVE", .index = INDEX(active)},           {.name = "CTM", .index = INDEX(ctm)},
     {.name = "DEGAMMA_LUT", .index = INDEX(degamma_lut)}, {.name = "DEGAMMA_LUT_SIZE", .index = INDEX(degamma_lut_size)},
     {.name = "GAMMA_LUT", .index = INDEX(gamma_lut)},     {.name = "GAMMA_LUT_SIZE", .index = INDEX(gamma_lut_size)},
@@ -55,7 +55,7 @@ static const struct prop_info crtc_info[] = {
 };
 
 static const struct prop_info plane_info[] = {
-#define INDEX(name) (offsetof(SDRMPlane::UDRMPlaneProps, name) / sizeof(uint32_t))
+#define INDEX(name) (offsetof(SDRMPlane::UDRMPlaneProps, bits.name) / sizeof(uint32_t))
     {.name = "CRTC_H", .index = INDEX(crtc_h)},
     {.name = "CRTC_ID", .index = INDEX(crtc_id)},
     {.name = "CRTC_W", .index = INDEX(crtc_w)},

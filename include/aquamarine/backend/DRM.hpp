@@ -139,7 +139,7 @@ namespace Aquamarine {
                 uint32_t hotspot_x;
                 uint32_t hotspot_y;
                 uint32_t in_fence_fd;
-            };
+            } bits;
             uint32_t props[17] = {0};
         };
         UDRMPlaneProps props;
@@ -181,7 +181,7 @@ namespace Aquamarine {
                 uint32_t active;
                 uint32_t mode_id;
                 uint32_t out_fence_ptr;
-            };
+            } bits;
             uint32_t props[9] = {0};
         };
         UDRMCRTCProps props;
@@ -326,7 +326,7 @@ namespace Aquamarine {
                 // atomic-modesetting only
 
                 uint32_t crtc_id;
-            };
+            } bits;
             uint32_t props[13] = {0};
         };
         UDRMConnectorProps props;
@@ -336,7 +336,7 @@ namespace Aquamarine {
                 uint32_t Default;
                 uint32_t BT2020_RGB;
                 uint32_t BT2020_YCC;
-            };
+            } bits;
             uint32_t props[3] = {0};
         };
         UDRMConnectorColorspace colorspace;
