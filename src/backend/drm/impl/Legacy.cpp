@@ -40,7 +40,7 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
         connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: Modesetting CRTC {}", connector->crtc->id));
 
         uint32_t dpms = enable ? DRM_MODE_DPMS_ON : DRM_MODE_DPMS_OFF;
-        if (drmModeConnectorSetProperty(connector->backend->gpu->fd, connector->id, connector->props.bits.dpms, dpms)) {
+        if (drmModeConnectorSetProperty(connector->backend->gpu->fd, connector->id, connector->props.values.dpms, dpms)) {
             connector->backend->backend->log(AQ_LOG_ERROR, "legacy drm: Failed to set dpms");
             return false;
         }
@@ -71,9 +71,9 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
             return false;
         }
 
-        if (connector->crtc->props.bits.vrr_enabled) {
+        if (connector->crtc->props.values.vrr_enabled) {
             if (auto ret =
-                    drmModeObjectSetProperty(backend->gpu->fd, connector->crtc->id, DRM_MODE_OBJECT_CRTC, connector->crtc->props.bits.vrr_enabled, (uint64_t)STATE.adaptiveSync);
+                    drmModeObjectSetProperty(backend->gpu->fd, connector->crtc->id, DRM_MODE_OBJECT_CRTC, connector->crtc->props.values.vrr_enabled, (uint64_t)STATE.adaptiveSync);
                 ret) {
                 connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModeObjectSetProperty: vrr -> {} failed: {}", STATE.adaptiveSync, strerror(-ret)));
                 return false;
