@@ -132,21 +132,16 @@ namespace Aquamarine {
         void onNewGpu(std::string path);
 
         struct {
-          private:
-            template <typename T>
-            using SP = Hyprutils::Memory::CSharedPointer<T>;
+            Hyprutils::Signal::CSignalT<Hyprutils::Memory::CSharedPointer<IOutput>>     newOutput;
+            Hyprutils::Signal::CSignalT<Hyprutils::Memory::CSharedPointer<IPointer>>    newPointer;
+            Hyprutils::Signal::CSignalT<Hyprutils::Memory::CSharedPointer<IKeyboard>>   newKeyboard;
+            Hyprutils::Signal::CSignalT<Hyprutils::Memory::CSharedPointer<ITouch>>      newTouch;
+            Hyprutils::Signal::CSignalT<Hyprutils::Memory::CSharedPointer<ISwitch>>     newSwitch;
+            Hyprutils::Signal::CSignalT<Hyprutils::Memory::CSharedPointer<ITablet>>     newTablet;
+            Hyprutils::Signal::CSignalT<Hyprutils::Memory::CSharedPointer<ITabletTool>> newTabletTool;
+            Hyprutils::Signal::CSignalT<Hyprutils::Memory::CSharedPointer<ITabletPad>>  newTabletPad;
 
-          public:
-            Hyprutils::Signal::CSignalT<SP<IOutput>>     newOutput;
-            Hyprutils::Signal::CSignalT<SP<IPointer>>    newPointer;
-            Hyprutils::Signal::CSignalT<SP<IKeyboard>>   newKeyboard;
-            Hyprutils::Signal::CSignalT<SP<ITouch>>      newTouch;
-            Hyprutils::Signal::CSignalT<SP<ISwitch>>     newSwitch;
-            Hyprutils::Signal::CSignalT<SP<ITablet>>     newTablet;
-            Hyprutils::Signal::CSignalT<SP<ITabletTool>> newTabletTool;
-            Hyprutils::Signal::CSignalT<SP<ITabletPad>>  newTabletPad;
-
-            Hyprutils::Signal::CSignalT<>                pollFDsChanged;
+            Hyprutils::Signal::CSignalT<>                                               pollFDsChanged;
         } events;
 
         Hyprutils::Memory::CSharedPointer<IAllocator> primaryAllocator;
