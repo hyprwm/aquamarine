@@ -111,6 +111,16 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         if (modeDiffers)
             addConnectorModeset(connector, data);
+
+        // Setup HDR
+        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(1))
+            add(connector->id, connector->props.values.max_bpc, getMaxBPC(data.mainFB->buffer->dmabuf().format));
+
+        if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB)
+            add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
+
+        if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
+            add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
     } else
         addConnectorModeset(connector, data);
 
@@ -193,23 +203,14 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled && data.mainFB;
 
-    add(connector->crtc->id, connector->crtc->props.values.mode_id, enable ? data.atomic.modeBlob : 0);
     data.atomic.blobbed = true;
 
-    if (!enable)
-        return;
-
-    if (connector->props.values.link_status)
-        add(connector->id, connector->props.values.link_status, DRM_MODE_LINK_STATUS_GOOD);
-
-    if (connector->props.values.max_bpc && connector->maxBpcBounds.at(1))
-        add(connector->id, connector->props.values.max_bpc, getMaxBPC(data.mainFB->buffer->dmabuf().format));
-
-    if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB)
-        add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
-
-    if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
-        add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
+    if (enable) {
+        add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
+        if (connector->props.values.link_status)
+            add(connector->id, connector->props.values.link_status, DRM_MODE_LINK_STATUS_GOOD);
+    } else
+        add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
 }
 
 void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
