@@ -1084,7 +1084,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     if (!getDRMPlaneProps(backend->gpu->fd, id, &props))
         return false;
 
-    if (!getDRMProp(backend->gpu->fd, id, props.type, &type))
+    if (!getDRMProp(backend->gpu->fd, id, props.values.type, &type))
         return false;
 
     initialID = id;
@@ -1102,11 +1102,11 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Format {}", fourccToName(plane->formats[i]))));
     }
 
-    if (props.in_formats && backend->drmProps.supportsAddFb2Modifiers) {
+    if (props.values.in_formats && backend->drmProps.supportsAddFb2Modifiers) {
         backend->backend->log(AQ_LOG_DEBUG, "drm: Plane: checking for modifiers");
 
         uint64_t blobID = 0;
-        if (!getDRMProp(backend->gpu->fd, id, props.in_formats, &blobID)) {
+        if (!getDRMProp(backend->gpu->fd, id, props.values.in_formats, &blobID)) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Plane: No blob id");
             return false;
         }
@@ -1154,10 +1154,10 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 
 SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* connector) {
     uint32_t crtcID = 0;
-    if (props.crtc_id) {
+    if (props.values.crtc_id) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Using crtc_id for finding crtc"));
         uint64_t value = 0;
-        if (!getDRMProp(backend->gpu->fd, id, props.crtc_id, &value)) {
+        if (!getDRMProp(backend->gpu->fd, id, props.values.crtc_id, &value)) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Failed to get CRTC_ID");
             return nullptr;
         }
@@ -1196,8 +1196,8 @@ bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
 
     if (!getDRMConnectorProps(backend->gpu->fd, id, &props))
         return false;
-    if (props.Colorspace)
-        getDRMConnectorColorspace(backend->gpu->fd, props.Colorspace, &colorspace);
+    if (props.values.Colorspace)
+        getDRMConnectorColorspace(backend->gpu->fd, props.values.Colorspace, &colorspace);
 
     auto name = drmModeGetConnectorTypeName(connector->connector_type);
     if (!name)
@@ -1238,9 +1238,9 @@ drmModeModeInfo* Aquamarine::SDRMConnector::getCurrentMode() {
     if (!crtc)
         return nullptr;
 
-    if (crtc->props.mode_id) {
+    if (crtc->props.values.mode_id) {
         size_t size = 0;
-        return (drmModeModeInfo*)getDRMPropBlob(backend->gpu->fd, crtc->id, crtc->props.mode_id, &size);
+        return (drmModeModeInfo*)getDRMPropBlob(backend->gpu->fd, crtc->id, crtc->props.values.mode_id, &size);
     }
 
     auto drmCrtc = drmModeGetCrtc(backend->gpu->fd, crtc->id);
@@ -1350,23 +1350,25 @@ void Aquamarine::SDRMConnector::recheckCRTCProps() {
         return;
 
     uint64_t prop      = 0;
-    canDoVrr           = props.vrr_capable && crtc->props.vrr_enabled && getDRMProp(backend->gpu->fd, id, props.vrr_capable, &prop) && prop;
+    canDoVrr           = props.values.vrr_capable && crtc->props.values.vrr_enabled && getDRMProp(backend->gpu->fd, id, props.values.vrr_capable, &prop) && prop;
     output->vrrCapable = canDoVrr;
 
     backend->backend->log(AQ_LOG_DEBUG,
                           std::format("drm: connector {} crtc is {} of vrr: props.vrr_capable -> {}, crtc->props.vrr_enabled -> {}", szName, (canDoVrr ? "capable" : "incapable"),
-                                      props.vrr_capable, crtc->props.vrr_enabled));
+                                      props.values.vrr_capable, crtc->props.values.vrr_enabled));
 
-    output->supportsExplicit = backend->drmProps.supportsTimelines && crtc->props.out_fence_ptr && crtc->primary->props.in_fence_fd;
+    output->supportsExplicit = backend->drmProps.supportsTimelines && crtc->props.values.out_fence_ptr && crtc->primary->props.values.in_fence_fd;
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Explicit sync {}", output->supportsExplicit ? "supported" : "unsupported"));
 
-    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} CTM", szName, (crtc->props.ctm ? "supports" : "doesn't support")));
+    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} CTM", szName, (crtc->props.values.ctm ? "supports" : "doesn't support")));
+
+    backend->backend->log(
+        AQ_LOG_DEBUG,
+        std::format("drm: connector {} crtc {} HDR ({})", szName, (props.values.hdr_output_metadata ? "supports" : "doesn't support"), props.values.hdr_output_metadata));
 
     backend->backend->log(AQ_LOG_DEBUG,
-                          std::format("drm: connector {} crtc {} HDR ({})", szName, (props.hdr_output_metadata ? "supports" : "doesn't support"), props.hdr_output_metadata));
-
-    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} Colorspace ({})", szName, (props.Colorspace ? "supports" : "doesn't support"), props.Colorspace));
+                          std::format("drm: connector {} crtc {} Colorspace ({})", szName, (props.values.Colorspace ? "supports" : "doesn't support"), props.values.Colorspace));
 }
 
 void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
@@ -1434,7 +1436,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     }
 
     uint64_t prop = 0;
-    if (getDRMProp(backend->gpu->fd, id, props.non_desktop, &prop)) {
+    if (getDRMProp(backend->gpu->fd, id, props.values.non_desktop, &prop)) {
         if (prop == 1)
             backend->backend->log(AQ_LOG_DEBUG, "drm: Non-desktop connector");
         output->nonDesktop = prop;
@@ -1442,11 +1444,11 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
     maxBpcBounds.fill(0);
 
-    if (props.max_bpc && !introspectDRMPropRange(backend->gpu->fd, props.max_bpc, maxBpcBounds.data(), &maxBpcBounds[1]))
+    if (props.values.max_bpc && !introspectDRMPropRange(backend->gpu->fd, props.values.max_bpc, maxBpcBounds.data(), &maxBpcBounds[1]))
         backend->backend->log(AQ_LOG_ERROR, "drm: Failed to check max_bpc");
 
     size_t               edidLen  = 0;
-    uint8_t*             edidData = (uint8_t*)getDRMPropBlob(backend->gpu->fd, id, props.edid, &edidLen);
+    uint8_t*             edidData = (uint8_t*)getDRMPropBlob(backend->gpu->fd, id, props.values.edid, &edidLen);
 
     std::vector<uint8_t> edid{edidData, edidData + edidLen};
     auto                 parsedEDID = parseEDID(edid);
@@ -1955,7 +1957,7 @@ size_t Aquamarine::CDRMOutput::getGammaSize() {
     }
 
     uint64_t size = 0;
-    if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.gamma_lut_size, &size)) {
+    if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.values.gamma_lut_size, &size)) {
         backend->log(AQ_LOG_ERROR, "Couldn't get the gamma_size prop");
         return 0;
     }
@@ -1970,7 +1972,7 @@ size_t Aquamarine::CDRMOutput::getDeGammaSize() {
     }
 
     uint64_t size = 0;
-    if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.degamma_lut_size, &size)) {
+    if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.values.degamma_lut_size, &size)) {
         backend->log(AQ_LOG_ERROR, "Couldn't get the degamma_size prop");
         return 0;
     }
@@ -2209,7 +2211,7 @@ void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CShar
     uint16_t hsync_end   = hsync_start + timing.h_sync;
     uint16_t vsync_end   = vsync_start + timing.v_sync;
 
-    modeInfo = (drmModeModeInfo){
+    modeInfo = drmModeModeInfo{
         .clock       = (uint32_t)std::round(timing.act_pixel_freq * 1000),
         .hdisplay    = (uint16_t)MODE->pixelSize.x,
         .hsync_start = hsync_start,

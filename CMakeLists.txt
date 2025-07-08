@@ -45,7 +45,8 @@ add_compile_options(
   -Wextra
   -Wno-unused-parameter
   -Wno-unused-value
-  -Wno-missing-field-initializers)
+  -Wno-missing-field-initializers
+  -Wpedantic)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)

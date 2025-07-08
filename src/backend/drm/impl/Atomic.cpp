@@ -50,27 +50,27 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
     if (!fb || !crtc) {
         // Disable the plane
         TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: disabling plane {}", plane->id)));
-        add(plane->id, plane->props.fb_id, 0);
-        add(plane->id, plane->props.crtc_id, 0);
-        add(plane->id, plane->props.crtc_x, (uint64_t)pos.x);
-        add(plane->id, plane->props.crtc_y, (uint64_t)pos.y);
+        add(plane->id, plane->props.values.fb_id, 0);
+        add(plane->id, plane->props.values.crtc_id, 0);
+        add(plane->id, plane->props.values.crtc_x, (uint64_t)pos.x);
+        add(plane->id, plane->props.values.crtc_y, (uint64_t)pos.y);
         return;
     }
 
-    TRACE(
-        backend->log(AQ_LOG_TRACE,
-                     std::format("atomic planeProps: prop blobs: src_x {}, src_y {}, src_w {}, src_h {}, crtc_w {}, crtc_h {}, fb_id {}, crtc_id {}", plane->props.src_x,
-                                 plane->props.src_y, plane->props.src_w, plane->props.src_h, plane->props.crtc_w, plane->props.crtc_h, plane->props.fb_id, plane->props.crtc_id)));
+    TRACE(backend->log(AQ_LOG_TRACE,
+                       std::format("atomic planeProps: prop blobs: src_x {}, src_y {}, src_w {}, src_h {}, crtc_w {}, crtc_h {}, fb_id {}, crtc_id {}", plane->props.values.src_x,
+                                   plane->props.values.src_y, plane->props.values.src_w, plane->props.values.src_h, plane->props.values.crtc_w, plane->props.values.crtc_h,
+                                   plane->props.values.fb_id, plane->props.values.crtc_id)));
 
     // src_ are 16.16 fixed point (lol)
-    add(plane->id, plane->props.src_x, 0);
-    add(plane->id, plane->props.src_y, 0);
-    add(plane->id, plane->props.src_w, ((uint64_t)fb->buffer->size.x) << 16);
-    add(plane->id, plane->props.src_h, ((uint64_t)fb->buffer->size.y) << 16);
-    add(plane->id, plane->props.crtc_w, (uint32_t)fb->buffer->size.x);
-    add(plane->id, plane->props.crtc_h, (uint32_t)fb->buffer->size.y);
-    add(plane->id, plane->props.fb_id, fb->id);
-    add(plane->id, plane->props.crtc_id, crtc);
+    add(plane->id, plane->props.values.src_x, 0);
+    add(plane->id, plane->props.values.src_y, 0);
+    add(plane->id, plane->props.values.src_w, ((uint64_t)fb->buffer->size.x) << 16);
+    add(plane->id, plane->props.values.src_h, ((uint64_t)fb->buffer->size.y) << 16);
+    add(plane->id, plane->props.values.crtc_w, (uint32_t)fb->buffer->size.x);
+    add(plane->id, plane->props.values.crtc_h, (uint32_t)fb->buffer->size.y);
+    add(plane->id, plane->props.values.fb_id, fb->id);
+    add(plane->id, plane->props.values.crtc_id, crtc);
     planePropsPos(plane, pos);
 }
 
@@ -79,10 +79,10 @@ void Aquamarine::CDRMAtomicRequest::planePropsPos(Hyprutils::Memory::CSharedPoin
     if (failed)
         return;
 
-    TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: pos blobs: crtc_x {}, crtc_y {}", plane->props.crtc_x, plane->props.crtc_y)));
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: pos blobs: crtc_x {}, crtc_y {}", plane->props.values.crtc_x, plane->props.values.crtc_y)));
 
-    add(plane->id, plane->props.crtc_x, (uint64_t)pos.x);
-    add(plane->id, plane->props.crtc_y, (uint64_t)pos.y);
+    add(plane->id, plane->props.values.crtc_x, (uint64_t)pos.x);
+    add(plane->id, plane->props.values.crtc_y, (uint64_t)pos.y);
 }
 
 void Aquamarine::CDRMAtomicRequest::setConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
@@ -94,8 +94,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     const bool  enable = STATE.enabled && data.mainFB;
 
     TRACE(backend->log(AQ_LOG_TRACE,
-                       std::format("atomic addConnector blobs: mode_id {}, active {}, crtc_id {}, link_status {}, content_type {}", connector->crtc->props.mode_id,
-                                   connector->crtc->props.active, connector->props.crtc_id, connector->props.link_status, connector->props.content_type)));
+                       std::format("atomic addConnector blobs: mode_id {}, active {}, crtc_id {}, link_status {}, content_type {}", connector->crtc->props.values.mode_id,
+                                   connector->crtc->props.values.active, connector->props.values.crtc_id, connector->props.values.link_status,
+                                   connector->props.values.content_type)));
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
@@ -110,41 +111,41 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         if (modeDiffers)
             addConnectorModeset(connector, data);
-    } else 
+    } else
         addConnectorModeset(connector, data);
-    
+
     addConnectorCursor(connector, data);
 
-    add(connector->id, connector->props.crtc_id, enable ? connector->crtc->id : 0);
+    add(connector->id, connector->props.values.crtc_id, enable ? connector->crtc->id : 0);
 
-    if (enable && connector->props.content_type)
-        add(connector->id, connector->props.content_type, STATE.contentType);
+    if (enable && connector->props.values.content_type)
+        add(connector->id, connector->props.values.content_type, STATE.contentType);
 
-    add(connector->crtc->id, connector->crtc->props.active, enable);
+    add(connector->crtc->id, connector->crtc->props.values.active, enable);
 
     if (enable) {
         if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
-            add(connector->crtc->id, connector->crtc->props.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
+            add(connector->crtc->id, connector->crtc->props.values.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
-        if (connector->crtc->props.gamma_lut && data.atomic.gammad)
-            add(connector->crtc->id, connector->crtc->props.gamma_lut, data.atomic.gammaLut);
+        if (connector->crtc->props.values.gamma_lut && data.atomic.gammad)
+            add(connector->crtc->id, connector->crtc->props.values.gamma_lut, data.atomic.gammaLut);
 
-        if (connector->crtc->props.degamma_lut && data.atomic.degammad)
-            add(connector->crtc->id, connector->crtc->props.degamma_lut, data.atomic.degammaLut);
+        if (connector->crtc->props.values.degamma_lut && data.atomic.degammad)
+            add(connector->crtc->id, connector->crtc->props.values.degamma_lut, data.atomic.degammaLut);
 
-        if (connector->crtc->props.ctm && data.atomic.ctmd)
-            add(connector->crtc->id, connector->crtc->props.ctm, data.atomic.ctmBlob);
+        if (connector->crtc->props.values.ctm && data.atomic.ctmd)
+            add(connector->crtc->id, connector->crtc->props.values.ctm, data.atomic.ctmBlob);
 
-        if (connector->crtc->props.vrr_enabled)
-            add(connector->crtc->id, connector->crtc->props.vrr_enabled, (uint64_t)STATE.adaptiveSync);
+        if (connector->crtc->props.values.vrr_enabled)
+            add(connector->crtc->id, connector->crtc->props.values.vrr_enabled, (uint64_t)STATE.adaptiveSync);
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {});
 
         if (connector->output->supportsExplicit && STATE.explicitInFence >= 0)
-            add(connector->crtc->primary->id, connector->crtc->primary->props.in_fence_fd, STATE.explicitInFence);
+            add(connector->crtc->primary->id, connector->crtc->primary->props.values.in_fence_fd, STATE.explicitInFence);
 
-        if (connector->crtc->primary->props.fb_damage_clips)
-            add(connector->crtc->primary->id, connector->crtc->primary->props.fb_damage_clips, data.atomic.fbDamage);
+        if (connector->crtc->primary->props.values.fb_damage_clips)
+            add(connector->crtc->primary->id, connector->crtc->primary->props.values.fb_damage_clips, data.atomic.fbDamage);
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
     }
@@ -192,23 +193,23 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled && data.mainFB;
 
-    add(connector->crtc->id, connector->crtc->props.mode_id, enable ? data.atomic.modeBlob : 0);
+    add(connector->crtc->id, connector->crtc->props.values.mode_id, enable ? data.atomic.modeBlob : 0);
     data.atomic.blobbed = true;
 
     if (!enable)
         return;
 
-    if (connector->props.link_status)
-        add(connector->id, connector->props.link_status, DRM_MODE_LINK_STATUS_GOOD);
+    if (connector->props.values.link_status)
+        add(connector->id, connector->props.values.link_status, DRM_MODE_LINK_STATUS_GOOD);
 
-    if (connector->props.max_bpc && connector->maxBpcBounds.at(1))
-        add(connector->id, connector->props.max_bpc, getMaxBPC(data.mainFB->buffer->dmabuf().format));
+    if (connector->props.values.max_bpc && connector->maxBpcBounds.at(1))
+        add(connector->id, connector->props.values.max_bpc, getMaxBPC(data.mainFB->buffer->dmabuf().format));
 
-    if (connector->props.Colorspace && connector->colorspace.BT2020_RGB)
-        add(connector->id, connector->props.Colorspace, STATE.wideColorGamut ? connector->colorspace.BT2020_RGB : connector->colorspace.Default);
+    if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB)
+        add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
 
-    if (connector->props.hdr_output_metadata && data.atomic.hdrd)
-        add(connector->id, connector->props.hdr_output_metadata, data.atomic.hdrBlob);
+    if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
+        add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
 }
 
 void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
@@ -365,13 +366,13 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
     };
 
     if (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT)
-        data.atomic.gammad = prepareGammaBlob(connector->crtc->props.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut);
+        data.atomic.gammad = prepareGammaBlob(connector->crtc->props.values.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut);
 
     if (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT)
-        data.atomic.degammad = prepareGammaBlob(connector->crtc->props.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
+        data.atomic.degammad = prepareGammaBlob(connector->crtc->props.values.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
 
     if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM) && data.ctm.has_value()) {
-        if (!connector->crtc->props.ctm)
+        if (!connector->crtc->props.values.ctm)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit ctm: no ctm prop support");
         else {
             static auto doubleToS3132Fixed = [](const double val) -> uint64_t {
@@ -395,7 +396,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
     }
 
     if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_HDR) && data.hdrMetadata.has_value()) {
-        if (!connector->props.hdr_output_metadata)
+        if (!connector->props.values.hdr_output_metadata)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit hdr metadata: no HDR_OUTPUT_METADATA prop support");
         else {
             if (!data.hdrMetadata->hdmi_metadata_type1.eotf) {
@@ -421,7 +422,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         }
     }
 
-    if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_DAMAGE) && connector->crtc->primary->props.fb_damage_clips && MODE) {
+    if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_DAMAGE) && connector->crtc->primary->props.values.fb_damage_clips && MODE) {
         if (STATE.damage.empty())
             data.atomic.fbDamage = 0;
         else {
@@ -469,12 +470,12 @@ bool Aquamarine::CDRMAtomicImpl::reset() {
     CDRMAtomicRequest request(backend);
 
     for (auto const& crtc : backend->crtcs) {
-        request.add(crtc->id, crtc->props.mode_id, 0);
-        request.add(crtc->id, crtc->props.active, 0);
+        request.add(crtc->id, crtc->props.values.mode_id, 0);
+        request.add(crtc->id, crtc->props.values.active, 0);
     }
 
     for (auto const& conn : backend->connectors) {
-        request.add(conn->id, conn->props.crtc_id, 0);
+        request.add(conn->id, conn->props.values.crtc_id, 0);
     }
 
     for (auto const& plane : backend->planes) {
