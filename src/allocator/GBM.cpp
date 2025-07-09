@@ -140,7 +140,9 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         return;
     }
 
-    if (MULTIGPU) {
+    static const auto forceLinearBlit = envEnabled("AQ_FORCE_LINEAR_BLIT");
+    auto const        oldMods         = explicitModifiers; // used in FORCE_LINEAR_BLIT case.
+    if (MULTIGPU && !forceLinearBlit) {
         // Try to use the linear format if available for cross-GPU compatibility.
         // However, Nvidia doesn't support linear, so this is a best-effort basis.
         for (auto const& f : FORMATS) {
@@ -150,6 +152,14 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
                 break;
             }
         }
+    } else if (MULTIGPU && forceLinearBlit) {
+        // FIXME: Nvidia cannot render to linear buffers. What do?
+        // it seems it can import them, but not create? or is it nvidia <-> nvidia thats the trouble?
+        // without this blitting on laptops intel/amd <-> nvidia makes eglCreateImageKHR error and
+        // fallback to slow cpu copying.
+
+        allocator->backend->log(AQ_LOG_DEBUG, "GBM: Buffer is marked as multigpu, forcing linear");
+        explicitModifiers = {DRM_FORMAT_MOD_LINEAR};
     }
 
     uint32_t flags = GBM_BO_USE_RENDERING;
@@ -187,6 +197,23 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
             } else
                 allocator->backend->log(AQ_LOG_ERROR, "GBM: Allocating with modifiers failed, falling back to implicit");
             bo = gbm_bo_create(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, flags);
+        }
+    }
+
+    if (MULTIGPU && forceLinearBlit) {
+        // FIXME: most likely nvidia main gpu on multigpu
+        if (!bo) {
+            if (oldMods.empty())
+                bo = gbm_bo_create(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, GBM_BO_USE_RENDERING);
+            else
+                bo = gbm_bo_create_with_modifiers(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, oldMods.data(), oldMods.size());
+
+            if (!bo) {
+                allocator->backend->log(AQ_LOG_ERROR, "GBM: Failed to allocate a GBM buffer: bo null");
+                return;
+            }
+
+            modifier = gbm_bo_get_modifier(bo);
         }
     }
 
