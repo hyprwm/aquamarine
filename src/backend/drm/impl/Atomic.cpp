@@ -14,6 +14,41 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
+// HW capabilites aren't checked. Should be handled by the drivers (and highly unlikely to get a format outside of bpc range)
+// https://drmdb.emersion.fr/properties/3233857728/max%20bpc
+static uint8_t getMaxBPC(uint32_t drmFormat) {
+    switch (drmFormat) {
+        case DRM_FORMAT_XRGB8888:
+        case DRM_FORMAT_XBGR8888:
+        case DRM_FORMAT_RGBX8888:
+        case DRM_FORMAT_BGRX8888:
+
+        case DRM_FORMAT_ARGB8888:
+        case DRM_FORMAT_ABGR8888:
+        case DRM_FORMAT_RGBA8888:
+        case DRM_FORMAT_BGRA8888: return 8;
+
+        case DRM_FORMAT_XRGB2101010:
+        case DRM_FORMAT_XBGR2101010:
+        case DRM_FORMAT_RGBX1010102:
+        case DRM_FORMAT_BGRX1010102:
+
+        case DRM_FORMAT_ARGB2101010:
+        case DRM_FORMAT_ABGR2101010:
+        case DRM_FORMAT_RGBA1010102:
+        case DRM_FORMAT_BGRA1010102: return 10;
+
+        case DRM_FORMAT_XRGB16161616:
+        case DRM_FORMAT_XBGR16161616:
+
+        case DRM_FORMAT_ARGB16161616:
+        case DRM_FORMAT_ABGR16161616: return 16;
+
+        // FIXME? handle non-rgb formats and some weird stuff like DRM_FORMAT_AXBXGXRX106106106106
+        default: return 8;
+    }
+}
+
 Aquamarine::CDRMAtomicRequest::CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) : backend(backend_), req(drmModeAtomicAlloc()) {
     if (!req)
         failed = true;
@@ -111,6 +146,16 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         if (modeDiffers)
             addConnectorModeset(connector, data);
+
+        // Setup HDR
+        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(1))
+            add(connector->id, connector->props.values.max_bpc, getMaxBPC(data.mainFB->buffer->dmabuf().format));
+
+        if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB)
+            add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
+
+        if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
+            add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
     } else
         addConnectorModeset(connector, data);
 
@@ -151,40 +196,6 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     }
 }
 
-// HW capabilites aren't checked. Should be handled by the drivers (and highly unlikely to get a format outside of bpc range)
-// https://drmdb.emersion.fr/properties/3233857728/max%20bpc
-static uint8_t getMaxBPC(uint32_t drmFormat) {
-    switch (drmFormat) {
-        case DRM_FORMAT_XRGB8888:
-        case DRM_FORMAT_XBGR8888:
-        case DRM_FORMAT_RGBX8888:
-        case DRM_FORMAT_BGRX8888:
-
-        case DRM_FORMAT_ARGB8888:
-        case DRM_FORMAT_ABGR8888:
-        case DRM_FORMAT_RGBA8888:
-        case DRM_FORMAT_BGRA8888: return 8;
-
-        case DRM_FORMAT_XRGB2101010:
-        case DRM_FORMAT_XBGR2101010:
-        case DRM_FORMAT_RGBX1010102:
-        case DRM_FORMAT_BGRX1010102:
-
-        case DRM_FORMAT_ARGB2101010:
-        case DRM_FORMAT_ABGR2101010:
-        case DRM_FORMAT_RGBA1010102:
-        case DRM_FORMAT_BGRA1010102: return 10;
-
-        case DRM_FORMAT_XRGB16161616:
-        case DRM_FORMAT_XBGR16161616:
-
-        case DRM_FORMAT_ARGB16161616:
-        case DRM_FORMAT_ABGR16161616: return 16;
-
-        // FIXME? handle non-rgb formats and some weird stuff like DRM_FORMAT_AXBXGXRX106106106106
-        default: return 8;
-    }
-}
 
 void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     if (!data.modeset)
@@ -193,23 +204,14 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled && data.mainFB;
 
-    add(connector->crtc->id, connector->crtc->props.values.mode_id, enable ? data.atomic.modeBlob : 0);
     data.atomic.blobbed = true;
 
-    if (!enable)
-        return;
-
-    if (connector->props.values.link_status)
-        add(connector->id, connector->props.values.link_status, DRM_MODE_LINK_STATUS_GOOD);
-
-    if (connector->props.values.max_bpc && connector->maxBpcBounds.at(1))
-        add(connector->id, connector->props.values.max_bpc, getMaxBPC(data.mainFB->buffer->dmabuf().format));
-
-    if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB)
-        add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
-
-    if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
-        add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
+    if (enable) {
+        add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
+        if (connector->props.values.link_status)
+            add(connector->id, connector->props.values.link_status, DRM_MODE_LINK_STATUS_GOOD);
+    } else
+        add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
 }
 
 void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
