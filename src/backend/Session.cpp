@@ -1,4 +1,5 @@
 #include <aquamarine/backend/Backend.hpp>
+#include <fcntl.h>
 
 extern "C" {
 #include <libseat.h>
@@ -141,6 +142,9 @@ Aquamarine::CSessionDevice::~CSessionDevice() {
             session->backend->log(AQ_LOG_ERROR, std::format("libseat: Couldn't close device at {}", path));
     if (fd >= 0)
         close(fd);
+
+    if (renderNodeFd)
+        close(renderNodeFd);
 }
 
 bool Aquamarine::CSessionDevice::supportsKMS() {
@@ -155,6 +159,57 @@ bool Aquamarine::CSessionDevice::supportsKMS() {
         session->backend->log(AQ_LOG_DEBUG, std::format("libseat: Device {} does not support kms", path));
 
     return kms;
+}
+
+void Aquamarine::CSessionDevice::resolveMatchingRenderNode(struct udev_device* cardDevice) {
+    if (!cardDevice)
+        return;
+
+    auto pciParent = udev_device_get_parent_with_subsystem_devtype(cardDevice, "pci", nullptr);
+    if (!pciParent)
+        return;
+
+    const char* pciSyspath = udev_device_get_syspath(pciParent);
+    if (!pciSyspath)
+        return;
+
+    struct udev_enumerate* enumerate = udev_enumerate_new(session->udevHandle);
+    if (!enumerate)
+        return;
+
+    udev_enumerate_add_match_subsystem(enumerate, "drm");
+    udev_enumerate_scan_devices(enumerate);
+
+    struct udev_list_entry* devices = udev_enumerate_get_list_entry(enumerate);
+    struct udev_list_entry* entry   = nullptr;
+
+    udev_list_entry_foreach(entry, devices) {
+        const char*         path = udev_list_entry_get_name(entry);
+        struct udev_device* dev  = udev_device_new_from_syspath(session->udevHandle, path);
+        if (!dev)
+            continue;
+
+        const char* devnode = udev_device_get_devnode(dev);
+        const char* devtype = udev_device_get_devtype(dev);
+
+        if (!devnode || !devtype || strcmp(devtype, "drm_minor") != 0 || !strstr(devnode, "renderD")) {
+            udev_device_unref(dev);
+            continue;
+        }
+
+        struct udev_device* devParent = udev_device_get_parent_with_subsystem_devtype(dev, "pci", nullptr);
+        if (devParent && strcmp(udev_device_get_syspath(devParent), pciSyspath) == 0) {
+            renderNodeFd = open(devnode, O_RDWR | O_CLOEXEC);
+            if (renderNodeFd < 0)
+                session->backend->log(AQ_LOG_WARNING, std::format("drm: Failed to open matching render node {}", devnode));
+            udev_device_unref(dev);
+            break;
+        }
+
+        udev_device_unref(dev);
+    }
+
+    udev_enumerate_unref(enumerate);
 }
 
 SP<CSessionDevice> Aquamarine::CSessionDevice::openIfKMS(SP<CSession> session_, const std::string& path_) {

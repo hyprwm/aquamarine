@@ -150,6 +150,8 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
             continue;
         }
 
+        sessionDevice->resolveMatchingRenderNode(device);
+
         udev_device_unref(device);
 
         if (isBootVGA)
@@ -904,6 +906,10 @@ std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CDRMBackend:
 
 int Aquamarine::CDRMBackend::drmFD() {
     return gpu->fd;
+}
+
+int Aquamarine::CDRMBackend::drmRenderNodeFD() {
+    return gpu->renderNodeFd;
 }
 
 static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void* data) {
