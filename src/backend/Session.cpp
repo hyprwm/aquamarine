@@ -161,24 +161,24 @@ bool Aquamarine::CSessionDevice::supportsKMS() {
     return kms;
 }
 
-void Aquamarine::CSessionDevice::resolveMatchingRenderNode(struct udev_device* cardDevice) {
+void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevice) {
     if (!cardDevice)
         return;
 
-    auto                   pciParent  = udev_device_get_parent_with_subsystem_devtype(cardDevice, "pci", nullptr);
-    const auto*            pciSyspath = pciParent ? udev_device_get_syspath(pciParent) : nullptr;
+    auto        pciParent  = udev_device_get_parent_with_subsystem_devtype(cardDevice, "pci", nullptr);
+    const auto* pciSyspath = pciParent ? udev_device_get_syspath(pciParent) : nullptr;
 
-    struct udev_enumerate* enumerate = udev_enumerate_new(session->udevHandle);
+    auto*       enumerate = udev_enumerate_new(session->udevHandle);
     if (!enumerate)
         return;
 
     udev_enumerate_add_match_subsystem(enumerate, "drm");
     udev_enumerate_scan_devices(enumerate);
 
-    struct udev_list_entry* devices = udev_enumerate_get_list_entry(enumerate);
-    struct udev_list_entry* entry   = nullptr;
+    auto*            devices = udev_enumerate_get_list_entry(enumerate);
+    udev_list_entry* entry   = nullptr;
 
-    bool                    matched = false;
+    bool             matched = false;
 
     udev_list_entry_foreach(entry, devices) {
         const auto* path = udev_list_entry_get_name(entry);

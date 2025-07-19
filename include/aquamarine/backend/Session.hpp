@@ -29,7 +29,7 @@ namespace Aquamarine {
         static Hyprutils::Memory::CSharedPointer<CSessionDevice> openIfKMS(Hyprutils::Memory::CSharedPointer<CSession> session_, const std::string& path_);
 
         bool                                                     supportsKMS();
-        void                                                     resolveMatchingRenderNode(struct udev_device* cardDevice);
+        void                                                     resolveMatchingRenderNode(udev_device* cardDevice);
 
         int                                                      fd           = -1;
         int                                                      renderNodeFd = -1;
