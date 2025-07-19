@@ -408,8 +408,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
         return;
     }
 
-    auto hlDevice    = ((CLibinputDevice*)data)->self.lock();
-    bool destroyTool = false;
+    auto hlDevice = ((CLibinputDevice*)data)->self.lock();
 
     switch (eventType) {
         case LIBINPUT_EVENT_DEVICE_ADDED:
@@ -648,7 +647,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             break;
         }
 
-            // --------- tbalet
+            // --------- tablet
 
         case LIBINPUT_EVENT_TABLET_PAD_BUTTON: {
             auto tpe = libinput_event_get_tablet_pad_event(e);
@@ -700,75 +699,23 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
                 .in       = libinput_event_tablet_tool_get_proximity_state(tte) == LIBINPUT_TABLET_TOOL_PROXIMITY_STATE_IN,
             });
 
-            destroyTool = !libinput_tablet_tool_is_unique(libinput_event_tablet_tool_get_tool(tte)) &&
-                libinput_event_tablet_tool_get_proximity_state(tte) == LIBINPUT_TABLET_TOOL_PROXIMITY_STATE_OUT;
+            if (libinput_event_tablet_tool_get_proximity_state(tte) == LIBINPUT_TABLET_TOOL_PROXIMITY_STATE_IN)
+                handleLibinputTabletToolAxis(e);
 
-            if (libinput_event_tablet_tool_get_proximity_state(tte) == LIBINPUT_TABLET_TOOL_PROXIMITY_STATE_OUT) {
+            if (!libinput_tablet_tool_is_unique(libinput_event_tablet_tool_get_tool(tte)) &&
+                libinput_event_tablet_tool_get_proximity_state(tte) == LIBINPUT_TABLET_TOOL_PROXIMITY_STATE_OUT)
                 std::erase(hlDevice->tabletTools, tool);
-                break;
-            }
-
-            // If this is proximity in, also process axis.
-            [[fallthrough]];
+            break;
         }
         case LIBINPUT_EVENT_TABLET_TOOL_AXIS: {
-            auto                tte  = libinput_event_get_tablet_tool_event(e);
-            auto                tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
-
-            ITablet::SAxisEvent event = {
-                .tool   = tool,
-                .timeMs = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
-            };
-
-            if (libinput_event_tablet_tool_x_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_X;
-                event.absolute.x = libinput_event_tablet_tool_get_x_transformed(tte, 1);
-                event.delta.x    = libinput_event_tablet_tool_get_dx(tte);
-            }
-            if (libinput_event_tablet_tool_y_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_Y;
-                event.absolute.y = libinput_event_tablet_tool_get_y_transformed(tte, 1);
-                event.delta.y    = libinput_event_tablet_tool_get_dy(tte);
-            }
-            if (libinput_event_tablet_tool_pressure_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_PRESSURE;
-                event.pressure = libinput_event_tablet_tool_get_pressure(tte);
-            }
-            if (libinput_event_tablet_tool_distance_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_DISTANCE;
-                event.distance = libinput_event_tablet_tool_get_distance(tte);
-            }
-            if (libinput_event_tablet_tool_tilt_x_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_TILT_X;
-                event.tilt.x = libinput_event_tablet_tool_get_tilt_x(tte);
-            }
-            if (libinput_event_tablet_tool_tilt_y_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_TILT_Y;
-                event.tilt.y = libinput_event_tablet_tool_get_tilt_y(tte);
-            }
-            if (libinput_event_tablet_tool_rotation_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_ROTATION;
-                event.rotation = libinput_event_tablet_tool_get_rotation(tte);
-            }
-            if (libinput_event_tablet_tool_slider_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_SLIDER;
-                event.slider = libinput_event_tablet_tool_get_slider_position(tte);
-            }
-            if (libinput_event_tablet_tool_wheel_has_changed(tte)) {
-                event.updatedAxes |= AQ_TABLET_TOOL_AXIS_WHEEL;
-                event.wheelDelta = libinput_event_tablet_tool_get_wheel_delta(tte);
-            }
-
-            hlDevice->tablet->events.axis.emit(event);
-
-            if (destroyTool)
-                std::erase(hlDevice->tabletTools, tool);
-
+            handleLibinputTabletToolAxis(e);
             break;
         }
         case LIBINPUT_EVENT_TABLET_TOOL_TIP: {
             auto tte  = libinput_event_get_tablet_tool_event(e);
             auto tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
+
+            handleLibinputTabletToolAxis(e);
 
             hlDevice->tablet->events.tip.emit(ITablet::STipEvent{
                 .tool     = tool,
@@ -782,6 +729,8 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             auto tte  = libinput_event_get_tablet_tool_event(e);
             auto tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
 
+            handleLibinputTabletToolAxis(e);
+
             hlDevice->tablet->events.button.emit(ITablet::SButtonEvent{
                 .tool   = tool,
                 .timeMs = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
@@ -793,6 +742,61 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
 
         default: break;
     }
+}
+
+void Aquamarine::CSession::handleLibinputTabletToolAxis(libinput_event* e) {
+    auto                device   = libinput_event_get_device(e);
+    auto                data     = libinput_device_get_user_data(device);
+    auto                hlDevice = ((CLibinputDevice*)data)->self.lock();
+
+    auto                tte  = libinput_event_get_tablet_tool_event(e);
+    auto                tool = hlDevice->toolFrom(libinput_event_tablet_tool_get_tool(tte));
+
+    ITablet::SAxisEvent event = {
+        .tool   = tool,
+        .timeMs = (uint32_t)(libinput_event_tablet_tool_get_time_usec(tte) / 1000),
+    };
+
+    if (libinput_event_tablet_tool_x_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_X;
+        event.absolute.x = libinput_event_tablet_tool_get_x_transformed(tte, 1);
+        event.delta.x    = libinput_event_tablet_tool_get_dx(tte);
+    }
+    if (libinput_event_tablet_tool_y_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_Y;
+        event.absolute.y = libinput_event_tablet_tool_get_y_transformed(tte, 1);
+        event.delta.y    = libinput_event_tablet_tool_get_dy(tte);
+    }
+    if (libinput_event_tablet_tool_pressure_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_PRESSURE;
+        event.pressure = libinput_event_tablet_tool_get_pressure(tte);
+    }
+    if (libinput_event_tablet_tool_distance_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_DISTANCE;
+        event.distance = libinput_event_tablet_tool_get_distance(tte);
+    }
+    if (libinput_event_tablet_tool_tilt_x_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_TILT_X;
+        event.tilt.x = libinput_event_tablet_tool_get_tilt_x(tte);
+    }
+    if (libinput_event_tablet_tool_tilt_y_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_TILT_Y;
+        event.tilt.y = libinput_event_tablet_tool_get_tilt_y(tte);
+    }
+    if (libinput_event_tablet_tool_rotation_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_ROTATION;
+        event.rotation = libinput_event_tablet_tool_get_rotation(tte);
+    }
+    if (libinput_event_tablet_tool_slider_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_SLIDER;
+        event.slider = libinput_event_tablet_tool_get_slider_position(tte);
+    }
+    if (libinput_event_tablet_tool_wheel_has_changed(tte)) {
+        event.updatedAxes |= AQ_TABLET_TOOL_AXIS_WHEEL;
+        event.wheelDelta = libinput_event_tablet_tool_get_wheel_delta(tte);
+    }
+
+    hlDevice->tablet->events.axis.emit(event);
 }
 
 Aquamarine::CLibinputDevice::CLibinputDevice(libinput_device* device_, Hyprutils::Memory::CWeakPointer<CSession> session_) : device(device_), session(session_) {
