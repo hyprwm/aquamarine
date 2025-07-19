@@ -80,6 +80,7 @@ namespace Aquamarine {
         virtual bool                                                       start()                                    = 0;
         virtual std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>    pollFDs()                                  = 0;
         virtual int                                                        drmFD()                                    = 0;
+        virtual int                                                        drmRenderNodeFD()                          = 0;
         virtual bool                                                       dispatchEvents()                           = 0;
         virtual uint32_t                                                   capabilities()                             = 0;
         virtual void                                                       onReady()                                  = 0;
@@ -112,6 +113,9 @@ namespace Aquamarine {
 
         /* Get the primary DRM FD */
         int drmFD();
+
+        /* Get the primary DRM RenderNode */
+        int drmRenderNodeFD();
 
         /* Get the render formats the primary backend supports */
         std::vector<SDRMFormat> getPrimaryRenderFormats();

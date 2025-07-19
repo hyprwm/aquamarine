@@ -210,6 +210,17 @@ int Aquamarine::CBackend::drmFD() {
     return -1;
 }
 
+int Aquamarine::CBackend::drmRenderNodeFD() {
+    for (auto const& i : implementations) {
+        int fd = i->drmRenderNodeFD();
+        if (fd < 0)
+            continue;
+
+        return fd;
+    }
+    return -1;
+}
+
 bool Aquamarine::CBackend::hasSession() {
     return session;
 }

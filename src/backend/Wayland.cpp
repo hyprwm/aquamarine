@@ -139,6 +139,11 @@ int Aquamarine::CWaylandBackend::drmFD() {
     return drmState.fd;
 }
 
+int Aquamarine::CWaylandBackend::drmRenderNodeFD() {
+    // creation already attempts to use the rendernode, so just return same fd as drmFD().
+    return drmState.fd;
+}
+
 bool Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
     auto o  = outputs.emplace_back(SP<CWaylandOutput>(new CWaylandOutput(szName.empty() ? std::format("WAYLAND-{}", ++lastOutputID) : szName, self)));
     o->self = o;
