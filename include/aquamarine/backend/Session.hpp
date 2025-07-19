@@ -237,6 +237,7 @@ namespace Aquamarine {
         void                                                    dispatchLibinputEvents();
         void                                                    dispatchLibseatEvents();
         void                                                    handleLibinputEvent(libinput_event* e);
+        void                                                    handleLibinputTabletToolAxis(libinput_event* e);
 
         friend class CSessionDevice;
         friend class CLibinputDevice;
