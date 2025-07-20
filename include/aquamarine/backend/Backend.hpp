@@ -80,7 +80,6 @@ namespace Aquamarine {
         virtual bool                                                       start()                                    = 0;
         virtual std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>    pollFDs()                                  = 0;
         virtual int                                                        drmFD()                                    = 0;
-        virtual int                                                        drmRenderNodeFD()                          = 0;
         virtual bool                                                       dispatchEvents()                           = 0;
         virtual uint32_t                                                   capabilities()                             = 0;
         virtual void                                                       onReady()                                  = 0;
@@ -89,8 +88,9 @@ namespace Aquamarine {
         virtual bool                                                       createOutput(const std::string& name = "") = 0; // "" means auto
         virtual Hyprutils::Memory::CSharedPointer<IAllocator>              preferredAllocator()                       = 0;
         virtual std::vector<SDRMFormat>                                    getRenderableFormats(); // empty = use getRenderFormats
-        virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators() = 0;
-        virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary()    = 0;
+        virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators()   = 0;
+        virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary()      = 0;
+        virtual int                                                        drmRenderNodeFD() = 0;
     };
 
     class CBackend {
@@ -113,9 +113,6 @@ namespace Aquamarine {
 
         /* Get the primary DRM FD */
         int drmFD();
-
-        /* Get the primary DRM RenderNode */
-        int drmRenderNodeFD();
 
         /* Get the render formats the primary backend supports */
         std::vector<SDRMFormat> getPrimaryRenderFormats();
@@ -151,6 +148,9 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<IAllocator> primaryAllocator;
         bool                                          ready = false;
         Hyprutils::Memory::CSharedPointer<CSession>   session;
+
+        /* Get the primary DRM RenderNode */
+        int drmRenderNodeFD();
 
       private:
         CBackend();

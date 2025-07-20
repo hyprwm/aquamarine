@@ -127,7 +127,6 @@ namespace Aquamarine {
         virtual bool                                                       start();
         virtual std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>    pollFDs();
         virtual int                                                        drmFD();
-        virtual int                                                        drmRenderNodeFD();
         virtual bool                                                       dispatchEvents();
         virtual uint32_t                                                   capabilities();
         virtual bool                                                       setCursor(Hyprutils::Memory::CSharedPointer<IBuffer> buffer, const Hyprutils::Math::Vector2D& hotspot);
@@ -140,6 +139,7 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary();
 
         Hyprutils::Memory::CWeakPointer<CWaylandBackend>                   self;
+        virtual int                                                        drmRenderNodeFD();
 
       private:
         CWaylandBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
