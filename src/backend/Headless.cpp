@@ -102,6 +102,10 @@ int Aquamarine::CHeadlessBackend::drmFD() {
     return -1;
 }
 
+int Aquamarine::CHeadlessBackend::drmRenderNodeFD() {
+    return -1;
+}
+
 bool Aquamarine::CHeadlessBackend::dispatchEvents() {
     return true;
 }

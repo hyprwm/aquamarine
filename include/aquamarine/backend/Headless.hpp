@@ -52,6 +52,7 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary();
 
         Hyprutils::Memory::CWeakPointer<CHeadlessBackend>                  self;
+        virtual int                                                        drmRenderNodeFD();
 
       private:
         CHeadlessBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend_);

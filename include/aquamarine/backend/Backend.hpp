@@ -88,8 +88,9 @@ namespace Aquamarine {
         virtual bool                                                       createOutput(const std::string& name = "") = 0; // "" means auto
         virtual Hyprutils::Memory::CSharedPointer<IAllocator>              preferredAllocator()                       = 0;
         virtual std::vector<SDRMFormat>                                    getRenderableFormats(); // empty = use getRenderFormats
-        virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators() = 0;
-        virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary()    = 0;
+        virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators()   = 0;
+        virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary()      = 0;
+        virtual int                                                        drmRenderNodeFD() = 0;
     };
 
     class CBackend {
@@ -147,6 +148,9 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<IAllocator> primaryAllocator;
         bool                                          ready = false;
         Hyprutils::Memory::CSharedPointer<CSession>   session;
+
+        /* Get the primary DRM RenderNode */
+        int drmRenderNodeFD();
 
       private:
         CBackend();

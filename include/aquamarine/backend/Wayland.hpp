@@ -139,6 +139,7 @@ namespace Aquamarine {
         virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary();
 
         Hyprutils::Memory::CWeakPointer<CWaylandBackend>                   self;
+        virtual int                                                        drmRenderNodeFD();
 
       private:
         CWaylandBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);

@@ -379,6 +379,7 @@ namespace Aquamarine {
 
         std::vector<FIdleCallback>                                         idleCallbacks;
         std::string                                                        gpuName;
+        virtual int                                                        drmRenderNodeFD();
 
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
