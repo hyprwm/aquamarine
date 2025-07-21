@@ -6,6 +6,7 @@
 
 namespace Aquamarine {
     bool envEnabled(const std::string& env);
+    bool envExplicitlyDisabled(const std::string& env);
     bool isTrace();
 };
 
