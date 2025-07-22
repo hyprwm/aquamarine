@@ -140,7 +140,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         return;
     }
 
-    static const auto forceLinearBlit = envEnabled("AQ_FORCE_LINEAR_BLIT");
+    static const auto forceLinearBlit = !envExplicitlyDisabled("AQ_FORCE_LINEAR_BLIT");
     auto const        oldMods         = explicitModifiers; // used in FORCE_LINEAR_BLIT case.
     if (MULTIGPU && !forceLinearBlit) {
         // Try to use the linear format if available for cross-GPU compatibility.
