@@ -187,11 +187,13 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
         return;
     }
 
-    drmModeModeInfo* currentMode = connector->getCurrentMode();
-    bool             modeDiffers = true;
-    if (currentMode) {
-        modeDiffers = memcmp(currentMode, &data.modeInfo, sizeof(drmModeModeInfo)) != 0;
-        free(currentMode);
+    bool modeDiffers = true;
+    if (envEnabled("AQ_FAST_MODESET")) {
+        drmModeModeInfo* currentMode = connector->getCurrentMode();
+        if (currentMode) {
+            modeDiffers = memcmp(currentMode, &data.modeInfo, sizeof(drmModeModeInfo)) != 0;
+            free(currentMode);
+        }
     }
 
     if (modeDiffers) {

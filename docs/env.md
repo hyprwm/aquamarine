@@ -8,6 +8,7 @@ Unless specified otherwise, a variable is enabled if and only if it's set to `1`
 `AQ_NO_ATOMIC` -> Disables drm atomic modesetting
 `AQ_MGPU_NO_EXPLICIT` -> Disables explicit syncing on mgpu buffers
 `AQ_NO_MODIFIERS` -> Disables modifiers for DRM buffers
+`AQ_FAST_MODESET` -> Skips modeset if mode is unchanged
 
 ### Debugging
 
