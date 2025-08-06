@@ -19,6 +19,12 @@ cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE:STRING=Release -DCMAKE_INSTALL_PRE
 cmake --build ./build --config Release --target all -j`nproc 2>/dev/null || getconf _NPROCESSORS_CONF`
 ```
 
+Install with:
+
+```sh
+cmake --install ./build
+```
+
 ## TODOs
 
  - [x] Wayland backend
