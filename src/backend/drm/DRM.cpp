@@ -602,7 +602,7 @@ bool Aquamarine::CDRMBackend::initMgpu() {
         return false;
     }
 
-    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), newAllocator);
+    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
 
     if (!rendererState.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
@@ -979,7 +979,7 @@ void Aquamarine::CDRMBackend::onReady() {
         if (!a)
             backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
         else {
-            auto r = CDRMRenderer::attempt(backend.lock(), a);
+            auto r = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
             if (!r)
                 backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
             else {
