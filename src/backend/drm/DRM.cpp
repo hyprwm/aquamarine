@@ -590,7 +590,7 @@ bool Aquamarine::CDRMBackend::shouldBlit() {
 bool Aquamarine::CDRMBackend::initMgpu() {
     SP<CGBMAllocator> newAllocator;
     if (primary || backend->primaryAllocator->type() != AQ_ALLOCATOR_TYPE_GBM) {
-        newAllocator            = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
+        newAllocator            = CGBMAllocator::create(backend->reopenDRMNode(gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd), backend);
         rendererState.allocator = newAllocator;
     } else {
         newAllocator            = ((CGBMAllocator*)backend->primaryAllocator.get())->self.lock();
@@ -602,7 +602,7 @@ bool Aquamarine::CDRMBackend::initMgpu() {
         return false;
     }
 
-    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
+    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), newAllocator);
 
     if (!rendererState.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
@@ -975,11 +975,11 @@ void Aquamarine::CDRMBackend::onReady() {
     // init a drm renderer to gather gl formats.
     // if we are secondary, initMgpu will have done that
     if (!primary) {
-        auto a = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
+        auto a = CGBMAllocator::create(backend->reopenDRMNode(gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd), backend);
         if (!a)
             backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
         else {
-            auto r = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
+            auto r = CDRMRenderer::attempt(backend.lock(), a);
             if (!r)
                 backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
             else {
