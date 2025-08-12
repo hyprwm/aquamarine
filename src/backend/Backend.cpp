@@ -141,8 +141,9 @@ bool Aquamarine::CBackend::start() {
 
     // TODO: obviously change this when (if) we add different allocators.
     for (auto const& b : implementations) {
-        if (b->drmFD() >= 0) {
-            auto fd = reopenDRMNode(b->drmFD());
+        auto const& f = b->drmRenderNodeFD() >= 0 ? b->drmRenderNodeFD() : b->drmFD();
+        if (f >= 0) {
+            auto fd = reopenDRMNode(f);
             if (fd < 0) {
                 // this is critical, we cannot create an allocator properly
                 log(AQ_LOG_CRITICAL, "Failed to create an allocator (reopenDRMNode failed)");
