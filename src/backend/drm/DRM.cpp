@@ -249,7 +249,7 @@ SP<CDRMBackend> Aquamarine::CDRMBackend::fromGpu(std::string path, SP<CBackend> 
 
     drmBackend->grabFormats();
 
-    drmBackend->dumbAllocator = CDRMDumbAllocator::create(gpu->fd, backend);
+    drmBackend->dumbAllocator = CDRMDumbAllocator::create(drmBackend->backend->reopenDRMNode(gpu->fd), backend);
 
     // so that session can handle udev change/remove events for this gpu
     backend->session->sessionDevices.push_back(gpu);
@@ -333,7 +333,7 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
             newPrimary = drmBackend;
         }
 
-        drmBackend->dumbAllocator = CDRMDumbAllocator::create(gpu->fd, backend);
+        drmBackend->dumbAllocator = CDRMDumbAllocator::create(drmBackend->backend->reopenDRMNode(gpu->fd), backend);
 
         backends.emplace_back(drmBackend);
 
