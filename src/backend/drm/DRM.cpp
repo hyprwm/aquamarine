@@ -249,7 +249,7 @@ SP<CDRMBackend> Aquamarine::CDRMBackend::fromGpu(std::string path, SP<CBackend> 
 
     drmBackend->grabFormats();
 
-    drmBackend->dumbAllocator = CDRMDumbAllocator::create(drmBackend->backend->reopenDRMNode(gpu->fd), backend);
+    drmBackend->dumbAllocator = CDRMDumbAllocator::create(gpu->fd, backend);
 
     // so that session can handle udev change/remove events for this gpu
     backend->session->sessionDevices.push_back(gpu);
@@ -333,7 +333,7 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
             newPrimary = drmBackend;
         }
 
-        drmBackend->dumbAllocator = CDRMDumbAllocator::create(drmBackend->backend->reopenDRMNode(gpu->fd), backend);
+        drmBackend->dumbAllocator = CDRMDumbAllocator::create(gpu->fd, backend);
 
         backends.emplace_back(drmBackend);
 
@@ -590,7 +590,7 @@ bool Aquamarine::CDRMBackend::shouldBlit() {
 bool Aquamarine::CDRMBackend::initMgpu() {
     SP<CGBMAllocator> newAllocator;
     if (primary || backend->primaryAllocator->type() != AQ_ALLOCATOR_TYPE_GBM) {
-        newAllocator            = CGBMAllocator::create(backend->reopenDRMNode(gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd), backend);
+        newAllocator            = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
         rendererState.allocator = newAllocator;
     } else {
         newAllocator            = ((CGBMAllocator*)backend->primaryAllocator.get())->self.lock();
@@ -602,7 +602,7 @@ bool Aquamarine::CDRMBackend::initMgpu() {
         return false;
     }
 
-    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), newAllocator);
+    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
 
     if (!rendererState.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
@@ -975,11 +975,11 @@ void Aquamarine::CDRMBackend::onReady() {
     // init a drm renderer to gather gl formats.
     // if we are secondary, initMgpu will have done that
     if (!primary) {
-        auto a = CGBMAllocator::create(backend->reopenDRMNode(gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd), backend);
+        auto a = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
         if (!a)
             backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
         else {
-            auto r = CDRMRenderer::attempt(backend.lock(), a);
+            auto r = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
             if (!r)
                 backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
             else {
