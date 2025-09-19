@@ -2,6 +2,7 @@
 #include <aquamarine/backend/Wayland.hpp>
 #include <aquamarine/backend/Headless.hpp>
 #include <aquamarine/backend/DRM.hpp>
+#include <aquamarine/backend/Null.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 #include <ranges>
 #include <sys/timerfd.h>
@@ -83,6 +84,10 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
             auto ref = SP<CHeadlessBackend>(new CHeadlessBackend(backend));
             backend->implementations.emplace_back(ref);
             ref->self = ref;
+        } else if (b.backendType == AQ_BACKEND_NULL) {
+            auto ref = SP<CNullBackend>(new CNullBackend(backend));
+            backend->implementations.emplace_back(ref);
+            ref->self = ref;
         } else {
             backend->log(AQ_LOG_ERROR, std::format("Unknown backend id: {}", (int)b.backendType));
             continue;
@@ -133,7 +138,7 @@ bool Aquamarine::CBackend::start() {
 
     // erase failed impls
     std::erase_if(implementations, [this](const auto& i) {
-        bool failed = i->pollFDs().empty();
+        bool failed = i->pollFDs().empty() && i->type() != AQ_BACKEND_NULL;
         if (failed)
             log(AQ_LOG_ERROR, std::format("Implementation {} failed, erasing.", backendTypeToName(i->type())));
         return failed;
@@ -153,7 +158,7 @@ bool Aquamarine::CBackend::start() {
         }
     }
 
-    if (!primaryAllocator) {
+    if (!primaryAllocator && (implementations.empty() || implementations.at(0)->type() != AQ_BACKEND_NULL)) {
         log(AQ_LOG_CRITICAL, "Cannot open backend: no allocator available");
         return false;
     }

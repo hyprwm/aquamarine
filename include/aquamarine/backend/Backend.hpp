@@ -25,6 +25,7 @@ namespace Aquamarine {
         AQ_BACKEND_WAYLAND = 0,
         AQ_BACKEND_DRM,
         AQ_BACKEND_HEADLESS,
+        AQ_BACKEND_NULL,
     };
 
     enum eBackendRequestMode : uint32_t {
