@@ -847,12 +847,12 @@ void Aquamarine::CDRMBackend::scanConnectors() {
     }
 
     // cleanup hot unplugged connectors
-    std::erase_if(connectors, [resources](const auto& conn) {
+    std::erase_if(connectors, [resources](auto& conn) {
         for (int i = 0; i < resources->count_connectors; ++i) {
             if (resources->connectors[i] == conn->id)
                 return false;
         }
-
+        conn->disconnect();
         return true;
     });
 
