@@ -645,6 +645,8 @@ void Aquamarine::CWaylandOutput::sendFrameAndSetCallback() {
 
     waylandState.frameCallback = makeShared<CCWlCallback>(waylandState.surface->sendFrame());
     waylandState.frameCallback->setDone([this](CCWlCallback* r, uint32_t ms) { onFrameDone(); });
+
+    waylandState.surface->sendCommit();
 }
 
 void Aquamarine::CWaylandOutput::onFrameDone() {
