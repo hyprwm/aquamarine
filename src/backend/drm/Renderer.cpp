@@ -307,7 +307,7 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     }
 
     // if the driver doesn't mark linear as external, add it. It's allowed unless the driver says otherwise. (e.g. nvidia)
-    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end() && mods.empty())
+    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end())
         result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
 
     return result;
