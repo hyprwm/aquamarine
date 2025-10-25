@@ -656,14 +656,15 @@ CEglContextGuard::~CEglContextGuard() {
 }
 
 EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
-    std::vector<uint32_t> attribs;
+    std::array<EGLint, 50> attribs;
+    size_t                 idx = 0;
 
-    attribs.push_back(EGL_WIDTH);
-    attribs.push_back(attrs.size.x);
-    attribs.push_back(EGL_HEIGHT);
-    attribs.push_back(attrs.size.y);
-    attribs.push_back(EGL_LINUX_DRM_FOURCC_EXT);
-    attribs.push_back(attrs.format);
+    attribs[idx++] = EGL_WIDTH;
+    attribs[idx++] = attrs.size.x;
+    attribs[idx++] = EGL_HEIGHT;
+    attribs[idx++] = attrs.size.y;
+    attribs[idx++] = EGL_LINUX_DRM_FOURCC_EXT;
+    attribs[idx++] = attrs.format;
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL: createEGLImage: size {} with format {} and modifier 0x{:x}", attrs.size, fourccToName(attrs.format), attrs.modifier)));
 
@@ -695,26 +696,27 @@ EGLImageKHR CDRMRenderer::createEGLImage(const SDMABUFAttrs& attrs) {
                        .modhi  = EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT}};
 
     for (int i = 0; i < attrs.planes; i++) {
-        attribs.push_back(attrNames[i].fd);
-        attribs.push_back(attrs.fds[i]);
-        attribs.push_back(attrNames[i].offset);
-        attribs.push_back(attrs.offsets[i]);
-        attribs.push_back(attrNames[i].pitch);
-        attribs.push_back(attrs.strides[i]);
+        attribs[idx++] = attrNames[i].fd;
+        attribs[idx++] = attrs.fds[i];
+        attribs[idx++] = attrNames[i].offset;
+        attribs[idx++] = attrs.offsets[i];
+        attribs[idx++] = attrNames[i].pitch;
+        attribs[idx++] = attrs.strides[i];
         if (hasModifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
-            attribs.push_back(attrNames[i].modlo);
-            attribs.push_back(attrs.modifier & 0xFFFFFFFF);
-            attribs.push_back(attrNames[i].modhi);
-            attribs.push_back(attrs.modifier >> 32);
+            attribs[idx++] = attrNames[i].modlo;
+            attribs[idx++] = attrs.modifier & 0xFFFFFFFF;
+            attribs[idx++] = attrNames[i].modhi;
+            attribs[idx++] = attrs.modifier >> 32;
         }
     }
 
-    attribs.push_back(EGL_IMAGE_PRESERVED_KHR);
-    attribs.push_back(EGL_TRUE);
+    attribs[idx++] = EGL_IMAGE_PRESERVED_KHR;
+    attribs[idx++] = EGL_TRUE;
 
-    attribs.push_back(EGL_NONE);
+    attribs[idx++] = EGL_NONE;
+    RASSERT(idx <= attribs.size(), "EGL: EGLCreateImageKHR: attribs array out of bounds.");
 
-    EGLImageKHR image = proc.eglCreateImageKHR(egl.display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, (int*)attribs.data());
+    EGLImageKHR image = proc.eglCreateImageKHR(egl.display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data());
     if (image == EGL_NO_IMAGE_KHR) {
         backend->log(AQ_LOG_ERROR, std::format("EGL: EGLCreateImageKHR failed: {}", eglGetError()));
         return EGL_NO_IMAGE_KHR;
