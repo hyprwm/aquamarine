@@ -1499,7 +1499,7 @@ void Aquamarine::SDRMConnector::disconnect() {
         return;
     }
 
-    // Don't emit destroy here, the `IOutput` destructor will emit it
+    output->events.destroy.emit();
     output.reset();
 
     status = DRM_MODE_DISCONNECTED;
@@ -1565,10 +1565,8 @@ void Aquamarine::SDRMConnector::onPresent() {
 }
 
 Aquamarine::CDRMOutput::~CDRMOutput() {
-    auto backendLock = backend.lock();
-    if (backendLock && backendLock->backend) {
-        backendLock->backend->removeIdleEvent(frameIdle);
-    }
+    if (backend && backend->backend)
+        backend->backend->removeIdleEvent(frameIdle);
     connector->isPageFlipPending   = false;
     connector->frameEventScheduled = false;
 }
