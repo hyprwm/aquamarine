@@ -1565,7 +1565,8 @@ void Aquamarine::SDRMConnector::onPresent() {
 }
 
 Aquamarine::CDRMOutput::~CDRMOutput() {
-    backend->backend->removeIdleEvent(frameIdle);
+    if (backend && backend->backend)
+        backend->backend->removeIdleEvent(frameIdle);
     connector->isPageFlipPending   = false;
     connector->frameEventScheduled = false;
 }
