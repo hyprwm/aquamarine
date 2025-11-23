@@ -12,6 +12,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "Logger.hpp"
+
 using namespace Hyprutils::Memory;
 using namespace Aquamarine;
 #define SP CSharedPointer
@@ -59,6 +61,10 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
     backend->options               = options;
     backend->implementationOptions = backends;
     backend->self                  = backend;
+
+    g_logger->m_loggerConnection = options.logConnection;
+    g_logger->m_logFn            = options.logFunction;
+    g_logger->updateLevels();
 
     if (backends.size() <= 0)
         return nullptr;
@@ -177,10 +183,7 @@ bool Aquamarine::CBackend::start() {
 }
 
 void Aquamarine::CBackend::log(eBackendLogLevel level, const std::string& msg) {
-    if (!options.logFunction)
-        return;
-
-    options.logFunction(level, msg);
+    g_logger->log(level, msg);
 }
 
 std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CBackend::getPollFDs() {

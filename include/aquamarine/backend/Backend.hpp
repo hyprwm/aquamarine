@@ -3,6 +3,7 @@
 #include <hyprutils/memory/SharedPtr.hpp>
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <hyprutils/signal/Signal.hpp>
+#include <hyprutils/cli/Logger.hpp>
 #include <vector>
 #include <functional>
 #include <mutex>
@@ -59,7 +60,8 @@ namespace Aquamarine {
 
     struct SBackendOptions {
         explicit SBackendOptions();
-        std::function<void(eBackendLogLevel, std::string)> logFunction;
+        std::function<void(eBackendLogLevel, std::string)>                   logFunction;
+        Hyprutils::Memory::CSharedPointer<Hyprutils::CLI::CLoggerConnection> logConnection;
     };
 
     struct SPollFD {
