@@ -374,6 +374,7 @@ bool Aquamarine::CWaylandBackend::initDmabuf() {
 
         if (!name) {
             backend->log(AQ_LOG_ERROR, "zwp_linux_dmabuf_v1: no node name");
+            drmFreeDevice(&drmDev);
             return;
         }
 
