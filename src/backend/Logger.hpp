@@ -34,6 +34,4 @@ namespace Aquamarine {
         std::function<void(eBackendLogLevel, std::string)>                   m_logFn;
         Hyprutils::Memory::CSharedPointer<Hyprutils::CLI::CLoggerConnection> m_loggerConnection;
     };
-
-    inline Hyprutils::Memory::CSharedPointer<CLogger> g_logger = Hyprutils::Memory::makeShared<CLogger>();
 };

@@ -59,12 +59,13 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
     auto backend = SP<CBackend>(new CBackend());
 
     backend->options               = options;
+    backend->logger                = Hyprutils::Memory::makeShared<CLogger>();
     backend->implementationOptions = backends;
     backend->self                  = backend;
 
-    g_logger->m_loggerConnection = options.logConnection;
-    g_logger->m_logFn            = options.logFunction;
-    g_logger->updateLevels();
+    backend->logger->m_loggerConnection = options.logConnection;
+    backend->logger->m_logFn            = options.logFunction;
+    backend->logger->updateLevels();
 
     if (backends.size() <= 0)
         return nullptr;
@@ -183,7 +184,8 @@ bool Aquamarine::CBackend::start() {
 }
 
 void Aquamarine::CBackend::log(eBackendLogLevel level, const std::string& msg) {
-    g_logger->log(level, msg);
+    if (logger)
+        logger->log(level, msg);
 }
 
 std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CBackend::getPollFDs() {

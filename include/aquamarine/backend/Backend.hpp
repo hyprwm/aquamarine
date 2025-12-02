@@ -13,6 +13,7 @@
 #include "Session.hpp"
 
 namespace Aquamarine {
+    class CLogger;
     class IOutput;
     class IPointer;
     class IKeyboard;
@@ -165,6 +166,7 @@ namespace Aquamarine {
         SBackendOptions                                                        options;
         Hyprutils::Memory::CWeakPointer<CBackend>                              self;
         std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>                sessionFDs;
+        Hyprutils::Memory::CSharedPointer<CLogger>                             logger;
 
         struct {
             int                                                                       fd = -1;
