@@ -383,9 +383,6 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
 
-    if (!impl->reset())
-        backend->log(AQ_LOG_ERROR, "drm: failed reset");
-
     std::vector<SP<SDRMConnector>> noMode;
 
     for (auto const& c : connectors) {
