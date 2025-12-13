@@ -200,7 +200,14 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
         for (auto const& d : explicitDevices) {
             bool found = false;
             for (auto const& vd : devices) {
-                if (vd->path == d) {
+                std::error_code ec;
+                auto            canonicalFilePath = std::filesystem::canonical(vd->path, ec);
+                if (ec) {
+                    backend->log(AQ_LOG_ERROR, std::format("drm: Failed to canonicalize path {}", d));
+                    canonicalFilePath = vd->path;
+                }
+                
+                if (canonicalFilePath == d) {
                     vecDevices.emplace_back(vd);
                     found = true;
                     break;
