@@ -137,7 +137,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
     conn = connector;
-    if (enable) {
+    if (enable && STATE.committed & COutputState::AQ_OUTPUT_STATE_MODE) {
         drmModeModeInfo* currentMode = connector->getCurrentMode();
         bool             modeDiffers = true;
         if (currentMode) {
@@ -164,7 +164,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
     add(connector->id, connector->props.values.crtc_id, enable ? connector->crtc->id : 0);
 
-    if (enable && connector->props.values.content_type)
+    if (enable && connector->props.values.content_type && STATE.committed & COutputState::AQ_OUTPUT_CONTENT_TYPE)
         add(connector->id, connector->props.values.content_type, STATE.contentType);
 
     add(connector->crtc->id, connector->crtc->props.values.active, enable);
@@ -182,7 +182,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         if (connector->crtc->props.values.ctm && data.atomic.ctmd)
             add(connector->crtc->id, connector->crtc->props.values.ctm, data.atomic.ctmBlob);
 
-        if (connector->crtc->props.values.vrr_enabled)
+        if (connector->crtc->props.values.vrr_enabled && STATE.committed & COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC)
             add(connector->crtc->id, connector->crtc->props.values.vrr_enabled, (uint64_t)STATE.adaptiveSync);
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {});
@@ -190,7 +190,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         if (connector->output->supportsExplicit && STATE.explicitInFence >= 0)
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.in_fence_fd, STATE.explicitInFence);
 
-        if (connector->crtc->primary->props.values.fb_damage_clips)
+        if (connector->crtc->primary->props.values.fb_damage_clips && STATE.committed & COutputState::AQ_OUTPUT_STATE_DAMAGE)
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.fb_damage_clips, data.atomic.fbDamage);
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
