@@ -137,7 +137,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
     conn = connector;
-    if (enable && STATE.committed & COutputState::AQ_OUTPUT_STATE_MODE) {
+    if (enable && data.modeset) {
         drmModeModeInfo* currentMode = connector->getCurrentMode();
         bool             modeDiffers = true;
         if (currentMode) {
@@ -173,13 +173,13 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
             add(connector->crtc->id, connector->crtc->props.values.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
-        if (connector->crtc->props.values.gamma_lut && data.atomic.gammad)
+        if (connector->crtc->props.values.gamma_lut && data.atomic.gammad && STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT)
             add(connector->crtc->id, connector->crtc->props.values.gamma_lut, data.atomic.gammaLut);
 
-        if (connector->crtc->props.values.degamma_lut && data.atomic.degammad)
+        if (connector->crtc->props.values.degamma_lut && data.atomic.degammad && STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT)
             add(connector->crtc->id, connector->crtc->props.values.degamma_lut, data.atomic.degammaLut);
 
-        if (connector->crtc->props.values.ctm && data.atomic.ctmd)
+        if (connector->crtc->props.values.ctm && data.atomic.ctmd && STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM)
             add(connector->crtc->id, connector->crtc->props.values.ctm, data.atomic.ctmBlob);
 
         if (connector->crtc->props.values.vrr_enabled && STATE.committed & COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC)
