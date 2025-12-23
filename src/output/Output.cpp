@@ -51,6 +51,10 @@ const Aquamarine::COutputState::SInternalState& Aquamarine::COutputState::state(
     return internalState;
 }
 
+void Aquamarine::COutputState::overWriteState(Aquamarine::COutputState::SInternalState&& state) {
+    internalState = std::move(state);
+}
+
 void Aquamarine::COutputState::addDamage(const Hyprutils::Math::CRegion& region) {
     if (region.empty())
         return;
