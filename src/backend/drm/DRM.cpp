@@ -389,18 +389,10 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         if (!c->crtc || !c->output)
             continue;
 
-        auto&                   STATE = c->output->state->state();
+        auto&                        STATE    = c->output->state->state();
+        COutputState::SInternalState newState = c->output->state->state();
 
-        SDRMConnectorCommitData data = {
-            .mainFB      = nullptr,
-            .modeset     = true,
-            .blocking    = true,
-            .flags       = 0,
-            .test        = false,
-            .hdrMetadata = STATE.hdrMetadata,
-        };
-
-        auto& MODE = STATE.customMode ? STATE.customMode : STATE.mode;
+        auto&                        MODE = STATE.customMode ? STATE.customMode : STATE.mode;
 
         if (!MODE) {
             backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no mode, will send a reset state event later.");
@@ -408,35 +400,55 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             continue;
         }
 
-        if (MODE->modeInfo.has_value())
-            data.modeInfo = *MODE->modeInfo;
-        else
-            data.calculateMode(c);
+        if (MODE->modeInfo.has_value()) {
+            drmModeModeInfo* currentMode = c->getCurrentMode();
+            bool             modeDiffers = true;
+            if (currentMode) {
+                modeDiffers = memcmp(currentMode, &MODE->modeInfo, sizeof(drmModeModeInfo)) != 0;
+                free(currentMode);
+            }
 
-        if (STATE.buffer) {
-            SP<CDRMFB> drmFB;
-            auto       buf   = STATE.buffer;
-            bool       isNew = false;
+            if (modeDiffers) {
+                newState.committed |= COutputState::AQ_OUTPUT_STATE_MODE;
+            }
 
-            drmFB = CDRMFB::create(buf, self, &isNew);
-
-            if (!drmFB)
-                backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
-
-            data.mainFB = drmFB;
+        } else {
+            backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no modeInfo, will send a reset state event later.");
+            noMode.emplace_back(c);
+            continue;
         }
 
-        if (c->crtc->pendingCursor)
-            data.cursorFB = c->crtc->pendingCursor;
+        if (STATE.buffer)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_BUFFER;
 
-        if (data.cursorFB && (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID))
-            data.cursorFB = nullptr;
+        newState.committed |= COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC;
+        newState.committed |= COutputState::AQ_OUTPUT_STATE_PRESENTATION_MODE;
+
+        if (!STATE.gammaLut.empty())
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_GAMMA_LUT;
+        if (!STATE.degammaLut.empty())
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT;
+        if (STATE.drmFormat != DRM_FORMAT_INVALID) // if invalid what do we do here?
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_FORMAT;
+        if (STATE.ctm.has_value())
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_CTM;
+        if (STATE.wideColorGamut)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_WCG;
+        if (STATE.hdrMetadata.has_value())
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_HDR;
+
+        newState.committed |= COutputState::AQ_OUTPUT_CONTENT_TYPE;
+
+        if (STATE.explicitInFence >= 0) // this is probably not valid anymore reset it. we might blit on a invalid fence otherwise
+            newState.explicitInFence = -1;
 
         backend->log(AQ_LOG_DEBUG,
-                     std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, data.modeInfo.clock, data.modeInfo.hdisplay,
-                                 data.modeInfo.vdisplay, data.modeInfo.vrefresh));
+                     std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, MODE->modeInfo->clock, MODE->modeInfo->hdisplay,
+                                 MODE->modeInfo->vdisplay, MODE->modeInfo->vrefresh));
 
-        if (!impl->commit(c, data))
+        c->output->state->overWriteState(std::move(newState));
+
+        if (!c->output->commit())
             backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
     }
 
@@ -1745,6 +1757,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             else
                 state->setExplicitInFence(-1);
 
+            auto newState   = STATE;
+            newState.buffer = NEWAQBUF;
+            state->overWriteState(std::move(newState)); // set the new blitted buffer to internalState
+
             drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
         } else
             drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
@@ -1793,10 +1809,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
     }
 
-    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM)
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM && STATE.ctm.has_value())
         data.ctm = STATE.ctm;
 
-    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR && STATE.hdrMetadata.has_value())
         data.hdrMetadata = STATE.hdrMetadata;
 
     data.blocking = BLOCKING || formatMismatch;
