@@ -164,6 +164,8 @@ void Aquamarine::COutputState::resetExplicitFences() {
 }
 
 void Aquamarine::COutputState::setCTM(const Hyprutils::Math::Mat3x3& ctm) {
+    internalState.hasCtm = ctm != Hyprutils::Math::Mat3x3::identity();
+
     if (internalState.ctm == ctm)
         return;
 
@@ -180,7 +182,8 @@ void Aquamarine::COutputState::setWideColorGamut(bool wcg) {
 }
 
 void Aquamarine::COutputState::setHDRMetadata(const hdr_output_metadata& metadata) {
-    internalState.hdrMetadata = metadata;
+    internalState.hasHdrMetadata = metadata.hdmi_metadata_type1.eotf != 0;
+    internalState.hdrMetadata    = metadata;
     internalState.committed |= AQ_OUTPUT_STATE_HDR;
 }
 

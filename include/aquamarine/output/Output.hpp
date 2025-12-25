@@ -76,10 +76,12 @@ namespace Aquamarine {
             uint32_t                                       drmFormat = DRM_FORMAT_INVALID;
             Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
             int32_t                                        explicitInFence = -1, explicitOutFence = -1;
-            std::optional<Hyprutils::Math::Mat3x3>         ctm;
+            Hyprutils::Math::Mat3x3                        ctm;
+            bool                                           hasCtm         = false;
             bool                                           wideColorGamut = false;
-            std::optional<hdr_output_metadata>             hdrMetadata;
-            uint16_t                                       contentType = DRM_MODE_CONTENT_TYPE_GRAPHICS;
+            hdr_output_metadata                            hdrMetadata;
+            bool                                           hasHdrMetadata = false;
+            uint16_t                                       contentType    = DRM_MODE_CONTENT_TYPE_GRAPHICS;
         };
 
         const SInternalState& state();

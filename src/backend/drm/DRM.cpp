@@ -422,9 +422,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             newState.committed |= COutputState::AQ_OUTPUT_STATE_BUFFER;
 
         if (c->crtc->props.values.ctm) {
-            if (STATE.ctm.has_value())
-                newState.ctm = STATE.ctm;
-            else
+            if (!STATE.hasCtm)
                 newState.ctm = Hyprutils::Math::Mat3x3::identity();
 
             newState.committed |= COutputState::AQ_OUTPUT_STATE_CTM;
@@ -440,7 +438,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             newState.committed |= COutputState::AQ_OUTPUT_STATE_WCG;
 
         if (c->props.values.hdr_output_metadata) {
-            if (!STATE.hdrMetadata.has_value())
+            if (!STATE.hasHdrMetadata)
                 newState.hdrMetadata = {.hdmi_metadata_type1 = hdr_metadata_infoframe{.eotf = 0}};
 
             newState.committed |= COutputState::AQ_OUTPUT_STATE_HDR;
@@ -1824,10 +1822,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
     }
 
-    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM && STATE.ctm.has_value())
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM)
         data.ctm = STATE.ctm;
 
-    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR && STATE.hdrMetadata.has_value())
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
         data.hdrMetadata = STATE.hdrMetadata;
 
     data.blocking = BLOCKING || formatMismatch;
