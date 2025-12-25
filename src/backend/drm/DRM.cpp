@@ -421,21 +421,36 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         if (STATE.buffer)
             newState.committed |= COutputState::AQ_OUTPUT_STATE_BUFFER;
 
+        if (c->crtc->props.values.ctm) {
+            if (STATE.ctm.has_value())
+                newState.ctm = STATE.ctm;
+            else
+                newState.ctm = Hyprutils::Math::Mat3x3::identity();
+
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_CTM;
+        }
+
+        if (c->crtc->props.values.gamma_lut)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_GAMMA_LUT;
+
+        if (c->crtc->props.values.degamma_lut)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT;
+
+        if (c->props.values.Colorspace)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_WCG;
+
+        if (c->props.values.hdr_output_metadata) {
+            if (!STATE.hdrMetadata.has_value())
+                newState.hdrMetadata = {.hdmi_metadata_type1 = hdr_metadata_infoframe{.eotf = 0}};
+
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_HDR;
+        }
+
         newState.committed |= COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC;
         newState.committed |= COutputState::AQ_OUTPUT_STATE_PRESENTATION_MODE;
 
-        if (!STATE.gammaLut.empty())
-            newState.committed |= COutputState::AQ_OUTPUT_STATE_GAMMA_LUT;
-        if (!STATE.degammaLut.empty())
-            newState.committed |= COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT;
         if (STATE.drmFormat != DRM_FORMAT_INVALID) // if invalid what do we do here?
             newState.committed |= COutputState::AQ_OUTPUT_STATE_FORMAT;
-        if (STATE.ctm.has_value())
-            newState.committed |= COutputState::AQ_OUTPUT_STATE_CTM;
-        if (STATE.wideColorGamut)
-            newState.committed |= COutputState::AQ_OUTPUT_STATE_WCG;
-        if (STATE.hdrMetadata.has_value())
-            newState.committed |= COutputState::AQ_OUTPUT_STATE_HDR;
 
         newState.committed |= COutputState::AQ_OUTPUT_CONTENT_TYPE;
 
