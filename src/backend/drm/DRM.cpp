@@ -1425,7 +1425,9 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
     backend->backend->log(AQ_LOG_DEBUG, "drm: Dumping detected modes:");
 
-    auto currentModeInfo = getCurrentMode();
+    auto                                         currentModeInfo = getCurrentMode();
+    auto                                         state           = output->state->state();
+    Hyprutils::Memory::CWeakPointer<SOutputMode> matchedMode;
 
     for (int i = 0; i < connector->count_modes; ++i) {
         auto& drmMode = connector->modes[i];
@@ -1446,20 +1448,20 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
         output->modes.emplace_back(aqMode);
 
-        if (currentModeInfo && std::memcmp(&drmMode, currentModeInfo, sizeof(drmModeModeInfo)) != 0) {
-            output->state->setMode(aqMode);
-
-            //uint64_t modeID = 0;
-            // getDRMProp(backend->gpu->fd, crtc->id, crtc->props.mode_id, &modeID);
-        }
+        if (currentModeInfo && std::memcmp(&drmMode, currentModeInfo, sizeof(drmModeModeInfo)) == 0)
+            matchedMode = aqMode;
 
         backend->backend->log(AQ_LOG_DEBUG,
                               std::format("drm: Mode {}: {}x{}@{:.2f}Hz {}", i, (int)aqMode->pixelSize.x, (int)aqMode->pixelSize.y, aqMode->refreshRate / 1000.0,
                                           aqMode->preferred ? " (preferred)" : ""));
     }
 
-    if (!currentModeInfo && fallbackMode)
-        output->state->setMode(fallbackMode);
+    if (matchedMode) {
+        state.mode = matchedMode;
+    } else if (!currentModeInfo && fallbackMode) {
+        state.mode = fallbackMode;
+        state.committed |= COutputState::AQ_OUTPUT_STATE_MODE; // flag needed for modeset in commit.
+    }
 
     if (currentModeInfo)
         free(currentModeInfo);
@@ -1513,8 +1515,6 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     status = DRM_MODE_CONNECTED;
 
     recheckCRTCProps();
-
-    auto state = output->state->state();
 
     auto recreateGammaBlob = [this](uint32_t prop) {
         auto*                 blob = drmModeGetPropertyBlob(backend->gpu->fd, prop);
