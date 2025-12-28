@@ -142,10 +142,14 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1))
             add(connector->id, connector->props.values.max_bpc, getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format));
 
-        if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB)
-            add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
+        if (connector->props.values.Colorspace && STATE.committed & COutputState::AQ_OUTPUT_STATE_WCG) {
+            if (connector->colorspace.values.BT2020_RGB)
+                add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
+            else
+                add(connector->id, connector->props.values.Colorspace, connector->colorspace.values.Default);
+        }
 
-        if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
+        if (connector->props.values.hdr_output_metadata && data.atomic.hdrd && STATE.committed & COutputState::AQ_OUTPUT_STATE_HDR)
             add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
     }
 

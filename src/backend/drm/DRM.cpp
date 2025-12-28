@@ -1514,6 +1514,101 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
     recheckCRTCProps();
 
+    auto state = output->state->state();
+
+    auto recreateGammaBlob = [this](uint32_t prop) {
+        auto*                 blob = drmModeGetPropertyBlob(backend->gpu->fd, prop);
+        std::vector<uint16_t> retVal;
+
+        if (blob && blob->data && blob->length != 0) {
+            const auto  lutEntries = blob->length / sizeof(drm_color_lut);
+            const auto* lut        = sc<const drm_color_lut*>(blob->data);
+
+            retVal.reserve(lutEntries * 3);
+
+            for (size_t i = 0; i < lutEntries; ++i) {
+                retVal.emplace_back(lut[i].red);
+                retVal.emplace_back(lut[i].green);
+                retVal.emplace_back(lut[i].blue);
+            }
+        }
+
+        if (blob)
+            drmModeFreePropertyBlob(blob);
+
+        return retVal;
+    };
+
+    auto recreateCtm = [this](uint32_t prop) {
+        auto* blob   = drmModeGetPropertyBlob(backend->gpu->fd, prop);
+        auto  retVal = Mat3x3::identity();
+
+        if (!blob || blob->length != sizeof(drm_color_ctm))
+            return retVal;
+        else {
+            const auto*          ctm = sc<const drm_color_ctm*>(blob->data);
+            std::array<float, 9> currentCTM;
+
+            auto                 s3132ToDouble = [](auto v) -> double {
+                const auto negative = v & (1ULL << 63);
+                const auto mag      = v & ~(1ULL << 63);
+                auto       d        = sc<double>(mag) / sc<double>(1ULL << 32);
+                return negative ? -d : d;
+            };
+
+            for (size_t i = 0; i < 9; ++i) {
+                currentCTM[i] = s3132ToDouble(ctm->matrix[i]);
+            }
+
+            retVal = currentCTM;
+        }
+
+        if (blob)
+            drmModeFreePropertyBlob(blob);
+
+        return retVal;
+    };
+
+    auto recreateHdrMetadata = [this](uint32_t prop) {
+        auto*               blob = drmModeGetPropertyBlob(backend->gpu->fd, prop);
+        hdr_output_metadata retVal;
+
+        if (!blob || blob->length != sizeof(hdr_output_metadata))
+            retVal = {.hdmi_metadata_type1 = hdr_metadata_infoframe{.eotf = 0}};
+        else {
+            const auto* hdr = sc<const hdr_output_metadata*>(blob->data);
+            if (hdr->hdmi_metadata_type1.eotf != 0)
+                retVal = *hdr;
+        }
+
+        if (blob)
+            drmModeFreePropertyBlob(blob);
+
+        return retVal;
+    };
+
+    // recreate internal state from current driver state.
+    if (crtc->props.values.ctm) {
+        state.ctm    = recreateCtm(crtc->props.values.ctm);
+        state.hasCtm = state.ctm != Mat3x3::identity();
+    }
+
+    if (crtc->props.values.gamma_lut)
+        state.gammaLut = recreateGammaBlob(crtc->props.values.gamma_lut);
+
+    if (crtc->props.values.degamma_lut)
+        state.degammaLut = recreateGammaBlob(crtc->props.values.degamma_lut);
+
+    if (props.values.Colorspace)
+        state.wideColorGamut = props.values.Colorspace != colorspace.values.Default;
+
+    if (props.values.hdr_output_metadata) {
+        state.hdrMetadata    = recreateHdrMetadata(props.values.hdr_output_metadata);
+        state.hasHdrMetadata = state.hdrMetadata.hdmi_metadata_type1.eotf != 0;
+    }
+
+    output->state->overWriteState(std::move(state));
+
     if (!backend->backend->ready)
         return;
 
