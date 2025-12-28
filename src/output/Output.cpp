@@ -82,7 +82,7 @@ void Aquamarine::COutputState::setGammaLut(const std::vector<uint16_t>& lut) {
 }
 
 void Aquamarine::COutputState::setDeGammaLut(const std::vector<uint16_t>& lut) {
-    internalState.gammaLut = lut;
+    internalState.degammaLut = lut;
     internalState.committed |= AQ_OUTPUT_STATE_DEGAMMA_LUT;
 }
 
