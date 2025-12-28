@@ -137,21 +137,6 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
     conn = connector;
-    if (enable && data.modeset) {
-        // Setup HDR
-        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1))
-            add(connector->id, connector->props.values.max_bpc, getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format));
-
-        if (connector->props.values.Colorspace && STATE.committed & COutputState::AQ_OUTPUT_STATE_WCG) {
-            if (connector->colorspace.values.BT2020_RGB)
-                add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
-            else
-                add(connector->id, connector->props.values.Colorspace, connector->colorspace.values.Default);
-        }
-
-        if (connector->props.values.hdr_output_metadata && data.atomic.hdrd && STATE.committed & COutputState::AQ_OUTPUT_STATE_HDR)
-            add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
-    }
 
     addConnectorModeset(connector, data);
 
@@ -198,20 +183,25 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
     const bool  enable = STATE.enabled && data.mainFB;
 
     if (enable) {
-        drmModeModeInfo* currentMode = connector->getCurrentMode();
-        bool             modeDiffers = true;
-        if (currentMode) {
-            modeDiffers = memcmp(currentMode, &data.modeInfo, sizeof(drmModeModeInfo)) != 0;
-            free(currentMode);
+        // Setup HDR
+        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1))
+            add(connector->id, connector->props.values.max_bpc, getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format));
+
+        if (connector->props.values.Colorspace && STATE.committed & COutputState::AQ_OUTPUT_STATE_WCG) {
+            if (connector->colorspace.values.BT2020_RGB)
+                add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
+            else
+                add(connector->id, connector->props.values.Colorspace, connector->colorspace.values.Default);
         }
 
-        if (modeDiffers) {
-            data.atomic.blobbed = true;
-            add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
-            add(connector->crtc->id, connector->crtc->props.values.active, 1);
-            if (connector->props.values.link_status)
-                add(connector->id, connector->props.values.link_status, DRM_MODE_LINK_STATUS_GOOD);
-        }
+        if (connector->props.values.hdr_output_metadata && data.atomic.hdrd && STATE.committed & COutputState::AQ_OUTPUT_STATE_HDR)
+            add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
+
+        data.atomic.blobbed = true;
+        add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
+        add(connector->crtc->id, connector->crtc->props.values.active, 1);
+        if (connector->props.values.link_status)
+            add(connector->id, connector->props.values.link_status, DRM_MODE_LINK_STATUS_GOOD);
     } else {
         add(connector->crtc->id, connector->crtc->props.values.mode_id, 0);
         add(connector->crtc->id, connector->crtc->props.values.active, 0);
