@@ -1486,7 +1486,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
     maxBpcBounds.fill(0);
 
-    if (props.values.max_bpc && !introspectDRMPropRange(backend->gpu->fd, props.values.max_bpc, maxBpcBounds.data(), &maxBpcBounds[1]))
+    if (props.values.max_bpc && !introspectDRMPropRange(backend->gpu->fd, props.values.max_bpc, &maxBpcBounds[0], &maxBpcBounds[1]))
         backend->backend->log(AQ_LOG_ERROR, "drm: Failed to check max_bpc");
 
     size_t               edidLen  = 0;
