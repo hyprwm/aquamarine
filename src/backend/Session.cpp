@@ -1140,6 +1140,7 @@ const std::string& Aquamarine::CLibinputTabletPad::getName() {
 
 SP<ITabletPad::STabletPadGroup> Aquamarine::CLibinputTabletPad::createGroupFromID(int id) {
     auto libinputGroup = libinput_device_tablet_pad_get_mode_group(device->device, id);
+    libinput_tablet_pad_mode_group_ref(libinputGroup);
 
     auto group = makeShared<STabletPadGroup>();
     for (size_t i = 0; i < rings; ++i) {
