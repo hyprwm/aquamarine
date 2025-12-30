@@ -298,6 +298,7 @@ void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
         rollbackBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     rollbackBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
     rollbackBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
+    rollbackBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
     destroyBlob(data.atomic.fbDamage);
 }
 
@@ -313,6 +314,7 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
         commitBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     commitBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
     commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
+    commitBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
     destroyBlob(data.atomic.fbDamage);
 }
 
