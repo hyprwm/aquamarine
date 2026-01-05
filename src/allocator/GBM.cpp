@@ -125,7 +125,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
                     }
 
                     if (std::find(rformat->modifiers.begin(), rformat->modifiers.end(), m) == rformat->modifiers.end()) {
-                        TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping modifier {} as it's not renderable", drmModifierToName(m))));
+                        TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Dropping modifier 0x{:x} : {} as it's not renderable", m, drmModifierToName(m))));
                         continue;
                     }
                 }
@@ -174,7 +174,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     } else {
         TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: Using modifier-based allocation, modifiers: {}", explicitModifiers.size())));
         for (auto const& mod : explicitModifiers) {
-            TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod {}", drmModifierToName(mod))));
+            TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("GBM: | mod 0x{:x} : {}", mod, drmModifierToName(mod))));
         }
         bo = gbm_bo_create_with_modifiers2(allocator->gbmDevice, attrs.size.x, attrs.size.y, attrs.format, explicitModifiers.data(), explicitModifiers.size(), flags);
 
@@ -242,9 +242,9 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
 
     attrs.success = true;
 
-    allocator->backend->log(
-        AQ_LOG_DEBUG,
-        std::format("GBM: Allocated a new buffer with size {} and format {} with modifier {}", attrs.size, fourccToName(attrs.format), drmModifierToName(attrs.modifier)));
+    allocator->backend->log(AQ_LOG_DEBUG,
+                            std::format("GBM: Allocated a new buffer with size {} and format {} with modifier 0x{:x} : {}", attrs.size, fourccToName(attrs.format), attrs.modifier,
+                                        drmModifierToName(attrs.modifier)));
 
     if (params.scanout && !MULTIGPU && swapchain->backendImpl->type() == AQ_BACKEND_DRM) {
         // clear the buffer using the DRM renderer to avoid uninitialized mem

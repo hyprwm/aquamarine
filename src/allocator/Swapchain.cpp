@@ -83,9 +83,9 @@ bool Aquamarine::CSwapchain::fullReconfigure(const SSwapchainOptions& options_) 
             allocator->getBackend()->log(AQ_LOG_ERROR, "Swapchain: Failed acquiring a buffer");
             return false;
         }
-        allocator->getBackend()->log(
-            AQ_LOG_TRACE,
-            std::format("Swapchain: Acquired a buffer with format {} and modifier {}", fourccToName(buf->dmabuf().format), drmModifierToName(buf->dmabuf().modifier)));
+        allocator->getBackend()->log(AQ_LOG_TRACE,
+                                     std::format("Swapchain: Acquired a buffer with format {} and modifier 0x{:x} : {}", fourccToName(buf->dmabuf().format), buf->dmabuf().modifier,
+                                                 drmModifierToName(buf->dmabuf().modifier)));
         bfs.emplace_back(buf);
     }
 

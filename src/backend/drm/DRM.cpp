@@ -1136,7 +1136,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
         while (drmModeFormatModifierBlobIterNext(blob, &iter)) {
             auto it = std::ranges::find_if(formats, [iter](const auto& e) { return e.drmFormat == iter.fmt; });
 
-            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Modifier {} with format {}", drmModifierToName(iter.mod), fourccToName(iter.fmt))));
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: | Modifier 0x{:x} : {} with format {}", iter.mod, drmModifierToName(iter.mod), fourccToName(iter.fmt))));
 
             if (it == formats.end())
                 formats.emplace_back(SDRMFormat{.drmFormat = iter.fmt, .modifiers = {iter.mod}});
@@ -2174,8 +2174,8 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
 
     if (backend->drmProps.supportsAddFb2Modifiers && attrs.modifier != DRM_FORMAT_MOD_INVALID) {
         TRACE(backend->backend->log(AQ_LOG_TRACE,
-                                    std::format("drm: Using drmModeAddFB2WithModifiers to import buffer into KMS: Size {} with format {} and mod {}", attrs.size,
-                                                fourccToName(attrs.format), drmModifierToName(attrs.modifier))));
+                                    std::format("drm: Using drmModeAddFB2WithModifiers to import buffer into KMS: Size {} with format {} and mod 0x{:x} : {}", attrs.size,
+                                                fourccToName(attrs.format), attrs.modifier, drmModifierToName(attrs.modifier))));
         if (drmModeAddFB2WithModifiers(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), mods.data(),
                                        &newID, DRM_MODE_FB_MODIFIERS)) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2WithModifiers");
@@ -2188,8 +2188,8 @@ uint32_t Aquamarine::CDRMFB::submitBuffer() {
         }
 
         TRACE(backend->backend->log(AQ_LOG_TRACE,
-                                    std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod {}", attrs.size, fourccToName(attrs.format),
-                                                drmModifierToName(attrs.modifier))));
+                                    std::format("drm: Using drmModeAddFB2 to import buffer into KMS: Size {} with format {} and mod 0x{:x} : {}", attrs.size,
+                                                fourccToName(attrs.format), attrs.modifier, drmModifierToName(attrs.modifier))));
 
         if (drmModeAddFB2(backend->gpu->fd, attrs.size.x, attrs.size.y, attrs.format, boHandles.data(), attrs.strides.data(), attrs.offsets.data(), &newID, 0)) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Failed to submit a buffer with drmModeAddFB2");
