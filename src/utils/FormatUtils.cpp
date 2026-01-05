@@ -9,3 +9,10 @@ std::string fourccToName(uint32_t drmFormat) {
     free(fmt);
     return name;
 }
+
+std::string drmModifierToName(uint64_t drmModifier) {
+    auto        n    = drmGetFormatModifierName(drmModifier);
+    std::string name = n;
+    free(n); // NOLINT(cppcoreguidelines-no-malloc,-warnings-as-errors)
+    return name;
+}
