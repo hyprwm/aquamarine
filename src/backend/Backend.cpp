@@ -278,6 +278,9 @@ void Aquamarine::CBackend::removeIdleEvent(SP<std::function<void(void)>> pfn) {
 }
 
 void Aquamarine::CBackend::dispatchIdle() {
+    uint64_t expirations;
+    read(idle.fd, &expirations, sizeof(expirations));
+
     auto cpy = idle.pending;
     idle.pending.clear();
 
