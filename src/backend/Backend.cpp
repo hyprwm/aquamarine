@@ -4,6 +4,7 @@
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/backend/Null.hpp>
 #include <aquamarine/allocator/GBM.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 #include <ranges>
 #include <sys/timerfd.h>
 #include <ctime>
@@ -15,6 +16,7 @@
 #include "Logger.hpp"
 
 using namespace Hyprutils::Memory;
+using namespace Hyprutils::OS;
 using namespace Aquamarine;
 #define SP CSharedPointer
 
@@ -278,8 +280,12 @@ void Aquamarine::CBackend::removeIdleEvent(SP<std::function<void(void)>> pfn) {
 }
 
 void Aquamarine::CBackend::dispatchIdle() {
-    uint64_t expirations;
-    read(idle.fd, &expirations, sizeof(expirations));
+    if (!CFileDescriptor::isReadable(idle.fd))
+        log(AQ_LOG_ERROR, std::format("dispatchIdle: dispatched an non readable idle event on fd : {}", idle.fd));
+    else {
+        uint64_t expirations;
+        read(idle.fd, &expirations, sizeof(expirations));
+    }
 
     auto cpy = idle.pending;
     idle.pending.clear();
