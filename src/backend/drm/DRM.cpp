@@ -906,6 +906,8 @@ void Aquamarine::CDRMBackend::scanLeases() {
 }
 
 bool Aquamarine::CDRMBackend::start() {
+    if (!envEnabled("AQ_FAST_MODESET"))
+        impl->reset();
     return true;
 }
 
