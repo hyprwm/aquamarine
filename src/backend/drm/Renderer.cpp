@@ -453,6 +453,7 @@ void CDRMRenderer::initContext() {
     exts.EXT_create_context_robustness      = EGLEXTENSIONS.contains("EXT_create_context_robustness");
     exts.EXT_image_dma_buf_import           = EGLEXTENSIONS.contains("EXT_image_dma_buf_import");
     exts.EXT_image_dma_buf_import_modifiers = EGLEXTENSIONS.contains("EXT_image_dma_buf_import_modifiers");
+    exts.KHR_context_flush_control          = EGLEXTENSIONS.contains("EGL_KHR_context_flush_control");
 
     std::vector<EGLint> attrs;
 
@@ -466,6 +467,12 @@ void CDRMRenderer::initContext() {
         backend->log(AQ_LOG_DEBUG, "CDRMRenderer: EXT_create_context_robustness supported, requesting lose on reset");
         attrs.push_back(EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT);
         attrs.push_back(EGL_LOSE_CONTEXT_ON_RESET_EXT);
+    }
+
+    if (exts.KHR_context_flush_control) {
+        backend->log(AQ_LOG_DEBUG, "CDRMRenderer: Using KHR_context_flush_control");
+        attrs.push_back(EGL_CONTEXT_RELEASE_BEHAVIOR_KHR);
+        attrs.push_back(EGL_CONTEXT_RELEASE_BEHAVIOR_NONE_KHR); // or _FLUSH_KHR
     }
 
     attrs.push_back(EGL_CONTEXT_OPENGL_DEBUG);
