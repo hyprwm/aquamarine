@@ -1436,6 +1436,9 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (!currentModeInfo && fallbackMode)
         output->state->setMode(fallbackMode);
 
+    if (currentModeInfo)
+        free(currentModeInfo);
+
     output->physicalSize = {(double)connector->mmWidth, (double)connector->mmHeight};
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Physical size {} (mm)", output->physicalSize));

@@ -159,6 +159,7 @@ namespace Aquamarine {
             uint32_t modeID    = 0;
             uint32_t gammaLut  = 0;
             uint32_t ctm       = 0;
+            uint32_t hdr       = 0;
         } atomic;
 
         Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
