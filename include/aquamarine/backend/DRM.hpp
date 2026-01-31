@@ -107,6 +107,7 @@ namespace Aquamarine {
 
     struct SDRMPlane {
         bool                                         init(drmModePlane* plane);
+        void                                         dropFBs();
 
         uint64_t                                     type      = 0;
         uint32_t                                     id        = 0;
