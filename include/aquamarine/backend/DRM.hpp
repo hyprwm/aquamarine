@@ -233,6 +233,8 @@ namespace Aquamarine {
     };
 
     struct SDRMPageFlip {
+        uint64_t                                       queuedSequence = 0;
+        std::optional<std::pair<uint64_t, timespec>>   presentTime    = std::nullopt;
         Hyprutils::Memory::CWeakPointer<SDRMConnector> connector;
     };
 

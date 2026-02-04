@@ -921,20 +921,24 @@ int Aquamarine::CDRMBackend::drmRenderNodeFD() {
     return gpu->renderNodeFd;
 }
 
-static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void* data) {
-    auto pageFlip = (SDRMPageFlip*)data;
-
-    if (!pageFlip || !pageFlip->connector)
-        return;
-
+static void present(SDRMPageFlip* pageFlip) {
     pageFlip->connector->isPageFlipPending = false;
 
     const auto& BACKEND = pageFlip->connector->backend;
 
-    TRACE(BACKEND->log(AQ_LOG_TRACE, std::format("drm: pf event seq {} sec {} usec {} crtc {}", seq, tv_sec, tv_usec, crtc_id)));
+    if (!pageFlip->presentTime) {
+        TRACE(BACKEND->log(AQ_LOG_ERROR, "drm: present event missing presentTime"));
+        return;
+    }
+
+    auto& presentTime = pageFlip->presentTime.value();
+
+    TRACE(BACKEND->log(
+        AQ_LOG_TRACE,
+        std::format("drm: present event seq {} sec {} usec {} crtc {}", presentTime.first, presentTime.second.tv_sec, presentTime.second.tv_nsec, pageFlip->connector->crtc->id)));
 
     if (pageFlip->connector->status != DRM_MODE_CONNECTED || !pageFlip->connector->crtc) {
-        BACKEND->log(AQ_LOG_DEBUG, "drm: Ignoring a pf event from a disabled crtc / connector");
+        BACKEND->log(AQ_LOG_DEBUG, "drm: Ignoring a present event from a disabled crtc / connector");
         return;
     }
 
@@ -942,13 +946,11 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
 
     uint32_t flags = IOutput::AQ_OUTPUT_PRESENT_VSYNC | IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK | IOutput::AQ_OUTPUT_PRESENT_HW_COMPLETION | IOutput::AQ_OUTPUT_PRESENT_ZEROCOPY;
 
-    timespec presented = {.tv_sec = (time_t)tv_sec, .tv_nsec = (long)(tv_usec * 1000)};
-
     pageFlip->connector->output->events.present.emit(IOutput::SPresentEvent{
         .presented = BACKEND->sessionActive(),
-        .when      = &presented,
-        .seq       = seq,
-        .refresh   = (int)(pageFlip->connector->refresh ? (1000000000000LL / pageFlip->connector->refresh) : 0),
+        .when      = &presentTime.second,
+        .seq       = sc<unsigned int>(presentTime.first),
+        .refresh   = sc<int>(pageFlip->connector->refresh ? (1000000000000LL / pageFlip->connector->refresh) : 0),
         .flags     = flags,
     });
 
@@ -956,10 +958,41 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         pageFlip->connector->output->events.frame.emit();
 }
 
+static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void* data) {
+    auto pageFlip = rc<SDRMPageFlip*>(data);
+
+    if (!pageFlip || !pageFlip->connector)
+        return;
+
+    if (!pageFlip->presentTime || pageFlip->presentTime->first != seq) {
+        TRACE(pageFlip->connector->backend->log(AQ_LOG_TRACE, std::format("drm: handlePF event seq {} didnt have a timestamp from handleCRTCSequence", seq)));
+        pageFlip->presentTime = {seq, {.tv_sec = (time_t)tv_sec, .tv_nsec = (long)(tv_usec * 1000)}};
+    }
+
+    auto& presentTime = pageFlip->presentTime.value();
+    TRACE(pageFlip->connector->backend->log(
+        AQ_LOG_TRACE,
+        std::format("drm: handlePF event seq {} sec {} usec {} crtc {}", presentTime.first, presentTime.second.tv_sec, presentTime.second.tv_nsec, pageFlip->connector->crtc->id)));
+
+    present(pageFlip);
+}
+
+static void handleCRTCSequence(int fd, uint64_t seq, uint64_t ns, uint64_t data) {
+    auto* pageFlip = rc<SDRMPageFlip*>(data);
+
+    if (!pageFlip || !pageFlip->connector || pageFlip->queuedSequence != seq)
+        return;
+
+    TRACE(pageFlip->connector->backend->log(AQ_LOG_TRACE, std::format("drm: handleCRTCSequence event seq {} ns {}", seq, ns)));
+
+    pageFlip->presentTime = {seq, {.tv_sec = sc<time_t>(ns / 1'000'000'000), .tv_nsec = sc<long>(ns % 1'000'000'000)}};
+}
+
 bool Aquamarine::CDRMBackend::dispatchEvents() {
     drmEventContext event = {
-        .version            = 3,
+        .version            = 4,
         .page_flip_handler2 = ::handlePF,
+        .sequence_handler   = ::handleCRTCSequence,
     };
 
     if (drmHandleEvent(gpu->fd, &event) != 0)
