@@ -150,12 +150,7 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
             continue;
         }
 
-        auto drmVer     = drmGetVersion(sessionDevice->fd);
-        auto drmVerName = drmVer->name ? drmVer->name : "unknown";
-        if (std::string_view(drmVerName) != "evdi")
-            sessionDevice->resolveMatchingRenderNode(device);
-
-        drmFreeVersion(drmVer);
+        sessionDevice->resolveMatchingRenderNode(device);
 
         udev_device_unref(device);
 

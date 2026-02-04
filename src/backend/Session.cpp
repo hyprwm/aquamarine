@@ -143,7 +143,7 @@ Aquamarine::CSessionDevice::~CSessionDevice() {
     if (fd >= 0)
         close(fd);
 
-    if (renderNodeFd)
+    if (renderNodeFd >= 0)
         close(renderNodeFd);
 }
 
@@ -165,8 +165,8 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
     if (!cardDevice)
         return;
 
-    auto        pciParent  = udev_device_get_parent_with_subsystem_devtype(cardDevice, "pci", nullptr);
-    const auto* pciSyspath = pciParent ? udev_device_get_syspath(pciParent) : nullptr;
+    auto*       parentDevice  = udev_device_get_parent(cardDevice);
+    const char* parentSyspath = parentDevice ? udev_device_get_syspath(parentDevice) : nullptr;
 
     auto*       enumerate = udev_enumerate_new(session->udevHandle);
     if (!enumerate)
@@ -177,8 +177,6 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
 
     auto*            devices = udev_enumerate_get_list_entry(enumerate);
     udev_list_entry* entry   = nullptr;
-
-    bool             matched = false;
 
     udev_list_entry_foreach(entry, devices) {
         const auto* path = udev_list_entry_get_name(entry);
@@ -194,46 +192,17 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
             continue;
         }
 
-        auto devParent = udev_device_get_parent_with_subsystem_devtype(dev, "pci", nullptr);
-        if (devParent && pciSyspath && strcmp(udev_device_get_syspath(devParent), pciSyspath) == 0) {
+        auto* devParent = udev_device_get_parent(dev);
+        if (devParent && parentSyspath && strcmp(udev_device_get_syspath(devParent), parentSyspath) == 0) {
             renderNodeFd = open(devnode, O_RDWR | O_CLOEXEC);
             if (renderNodeFd < 0)
                 session->backend->log(AQ_LOG_WARNING, std::format("drm: Failed to open matching render node {}", devnode));
-            else
-                matched = true;
 
             udev_device_unref(dev);
             break;
         }
 
         udev_device_unref(dev);
-    }
-
-    if (!matched) {
-        // fallback to the first render node
-        udev_list_entry_foreach(entry, devices) {
-            const auto* path = udev_list_entry_get_name(entry);
-            auto        dev  = udev_device_new_from_syspath(session->udevHandle, path);
-            if (!dev)
-                continue;
-
-            const auto* devnode = udev_device_get_devnode(dev);
-            const auto* devtype = udev_device_get_devtype(dev);
-
-            if (!devnode || !devtype || strcmp(devtype, "drm_minor") != 0 || !strstr(devnode, "renderD")) {
-                udev_device_unref(dev);
-                continue;
-            }
-
-            renderNodeFd = open(devnode, O_RDWR | O_CLOEXEC);
-            if (renderNodeFd >= 0) {
-                session->backend->log(AQ_LOG_WARNING, std::format("drm: No matching render node for {}, falling back to {}", path, devnode));
-                udev_device_unref(dev);
-                break;
-            }
-
-            udev_device_unref(dev);
-        }
     }
 
     udev_enumerate_unref(enumerate);
