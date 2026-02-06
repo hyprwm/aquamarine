@@ -11,6 +11,7 @@
 #include <chrono>
 #include <thread>
 #include <deque>
+#include <unordered_map>
 #include <cstring>
 #include <filesystem>
 #include <system_error>
@@ -649,6 +650,11 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
     std::vector<SP<SDRMConnector>> recheck, changed;
     for (auto const& c : connectors) {
+        if (c->tilingRedundant) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Skipping tiling-redundant connector {} from CRTC assignment", c->szName));
+            continue;
+        }
+
         if (c->crtc && c->status == DRM_MODE_CONNECTED) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Skipping connector {}, has crtc {} and is connected", c->szName, c->crtc->id));
             continue;
@@ -664,7 +670,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             if (c->crtc != crtcs.at(i))
                 continue;
 
-            if (c->status != DRM_MODE_CONNECTED)
+            if (c->status != DRM_MODE_CONNECTED || c->tilingRedundant)
                 continue;
 
             backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} taken by {}, skipping", i, c->crtc->id, c->szName));
@@ -764,13 +770,67 @@ eBackendType Aquamarine::CDRMBackend::type() {
     return eBackendType::AQ_BACKEND_DRM;
 }
 
+void Aquamarine::CDRMBackend::markRedundantTiles() {
+    for (const auto& conn : connectors) {
+        conn->parseTileInfo();
+        conn->tilingRedundant = false;
+    }
+
+    std::unordered_map<uint32_t, std::vector<SP<SDRMConnector>>> tileGroups;
+    for (const auto& conn : connectors) {
+        if (conn->status != DRM_MODE_CONNECTED || conn->tileInfo.groupId == 0)
+            continue;
+        tileGroups[conn->tileInfo.groupId].emplace_back(conn);
+    }
+
+    for (auto& [groupId, members] : tileGroups) {
+        if (members.size() <= 1)
+            continue;
+
+        const auto& ti         = members.at(0)->tileInfo;
+        int         fullWidth  = ti.numHTile * ti.tileHSize;
+        int         fullHeight = ti.numVTile * ti.tileVSize;
+
+        backend->log(AQ_LOG_DEBUG, std::format("drm: Tile group {} has {} members, full tiled resolution {}x{}", groupId, members.size(), fullWidth, fullHeight));
+
+        // check if any single connector already has the full tiled resolution,
+        // meaning the driver handles tiling internally
+        SP<SDRMConnector> fullResConn;
+        for (const auto& conn : members) {
+            if (conn->maxMode.x >= fullWidth && conn->maxMode.y >= fullHeight) {
+                fullResConn = conn;
+                break;
+            }
+        }
+
+        if (!fullResConn)
+            continue;
+
+        for (const auto& conn : members) {
+            if (conn == fullResConn)
+                continue;
+
+            conn->tilingRedundant = true;
+            backend->log(AQ_LOG_DEBUG,
+                         std::format("drm: Connector {} marked as tiling redundant (tile group {}, driver-managed by {})", conn->szName, groupId, fullResConn->szName));
+        }
+    }
+}
+
 void Aquamarine::CDRMBackend::recheckOutputs() {
     scanConnectors();
+    markRedundantTiles();
 
     // disconnect now to possibly free up crtcs
     for (const auto& conn : connectors) {
         if (conn->status != DRM_MODE_CONNECTED && conn->output) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} disconnected", conn->szName));
+            conn->disconnect();
+        }
+
+        // also disconnect redundant tiled connectors that may have been previously connected
+        if (conn->tilingRedundant && conn->output) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Disconnecting tiling-redundant connector {}", conn->szName));
             conn->disconnect();
         }
     }
@@ -779,7 +839,7 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
 
     // now that crtcs are assigned, connect outputs
     for (const auto& conn : connectors) {
-        if (conn->status == DRM_MODE_CONNECTED && !conn->output) {
+        if (conn->status == DRM_MODE_CONNECTED && !conn->output && !conn->tilingRedundant) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
 
             auto drmConn = drmModeGetConnector(gpu->fd, conn->id);
@@ -836,6 +896,12 @@ void Aquamarine::CDRMBackend::scanConnectors() {
         }
 
         conn->status = drmConn->connection;
+
+        conn->maxMode = {};
+        for (int i = 0; i < drmConn->count_modes; ++i) {
+            conn->maxMode.x = std::max<double>(conn->maxMode.x, drmConn->modes[i].hdisplay);
+            conn->maxMode.y = std::max<double>(conn->maxMode.y, drmConn->modes[i].vdisplay);
+        }
 
         if (conn->crtc)
             conn->recheckCRTCProps();
@@ -1223,6 +1289,39 @@ bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
     crtc = getCurrentCRTC(connector);
 
     return true;
+}
+
+void Aquamarine::SDRMConnector::parseTileInfo() {
+    tileInfo = {};
+
+    if (!props.values.tile)
+        return;
+
+    size_t blobLen  = 0;
+    char*  blobData = (char*)getDRMPropBlob(backend->gpu->fd, id, props.values.tile, &blobLen);
+    if (!blobData || blobLen == 0) {
+        free(blobData);
+        return;
+    }
+
+    // TILE blob is a text string: "group_id:is_single_monitor:num_h:num_v:h_loc:v_loc:h_size:v_size"
+    uint32_t groupId         = 0;
+    int      isSingleMonitor = 0, numH = 0, numV = 0, hLoc = 0, vLoc = 0, hSize = 0, vSize = 0;
+    if (sscanf(blobData, "%u:%d:%d:%d:%d:%d:%d:%d", &groupId, &isSingleMonitor, &numH, &numV, &hLoc, &vLoc, &hSize, &vSize) == 8 && groupId != 0) {
+        tileInfo.groupId         = groupId;
+        tileInfo.isSingleMonitor = isSingleMonitor != 0;
+        tileInfo.numHTile        = numH;
+        tileInfo.numVTile        = numV;
+        tileInfo.tileHLoc        = hLoc;
+        tileInfo.tileVLoc        = vLoc;
+        tileInfo.tileHSize       = hSize;
+        tileInfo.tileVSize       = vSize;
+
+        backend->backend->log(AQ_LOG_DEBUG,
+                              std::format("drm: Connector {} tile info: group={} tiles={}x{} pos=({},{}) size={}x{}", szName, groupId, numH, numV, hLoc, vLoc, hSize, vSize));
+    }
+
+    free(blobData);
 }
 
 Aquamarine::SDRMConnector::~SDRMConnector() {

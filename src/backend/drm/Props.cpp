@@ -26,6 +26,7 @@ static const struct prop_info connector_info[] = {
     {.name = "EDID", .index = INDEX(edid)},
     {.name = "HDR_OUTPUT_METADATA", .index = INDEX(hdr_output_metadata)},
     {.name = "PATH", .index = INDEX(path)},
+    {.name = "TILE", .index = INDEX(tile)},
     {.name = "content type", .index = INDEX(content_type)},
     {.name = "link-status", .index = INDEX(link_status)},
     {.name = "max bpc", .index = INDEX(max_bpc)},
