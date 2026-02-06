@@ -267,6 +267,14 @@ namespace Aquamarine {
     struct SDRMConnector {
         ~SDRMConnector();
 
+        struct STileInfo {
+            uint32_t groupId         = 0;
+            bool     isSingleMonitor = false;
+            int      numHTile = 0, numVTile = 0;
+            int      tileHLoc = 0, tileVLoc = 0;
+            int      tileHSize = 0, tileVSize = 0;
+        };
+
         bool                                           init(drmModeConnector* connector);
         void                                           connect(drmModeConnector* connector);
         void                                           disconnect();
@@ -278,6 +286,7 @@ namespace Aquamarine {
         void                                           rollbackCommit(const SDRMConnectorCommitData& data);
         void                                           onPresent();
         void                                           recheckCRTCProps();
+        void                                           parseTileInfo();
 
         Hyprutils::Memory::CSharedPointer<CDRMOutput>  output;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>   backend;
@@ -291,6 +300,10 @@ namespace Aquamarine {
         uint32_t                                       possibleCrtcs = 0;
         std::string                                    make, serial, model;
         bool                                           canDoVrr = false;
+
+        STileInfo                                      tileInfo;
+        bool                                           tilingRedundant = false;
+        Hyprutils::Math::Vector2D                      maxMode;
 
         bool                                           cursorEnabled = false;
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
@@ -323,12 +336,13 @@ namespace Aquamarine {
                 uint32_t max_bpc;             // not guaranteed to exist
                 uint32_t Colorspace;          // not guaranteed to exist
                 uint32_t hdr_output_metadata; // not guaranteed to exist
+                uint32_t tile;                // not guaranteed to exist
 
                 // atomic-modesetting only
 
                 uint32_t crtc_id;
             } values;
-            uint32_t props[13] = {0};
+            uint32_t props[14] = {0};
         };
         UDRMConnectorProps props;
 
@@ -400,6 +414,7 @@ namespace Aquamarine {
         void restoreAfterVT();
         void recheckOutputs();
         void recheckCRTCs();
+        void markRedundantTiles();
         void buildGlFormats(const std::vector<SGLFormat>& fmts);
 
         Hyprutils::Memory::CSharedPointer<CSessionDevice>     gpu;
