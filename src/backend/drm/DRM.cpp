@@ -15,6 +15,7 @@
 #include <cstring>
 #include <filesystem>
 #include <system_error>
+#include <unordered_set>
 #include <sys/mman.h>
 #include <fcntl.h>
 
@@ -358,7 +359,8 @@ Aquamarine::CDRMBackend::~CDRMBackend() {
         conn.reset();
     }
 
-    rendererState.allocator->destroyBuffers();
+    if (rendererState.allocator)
+        rendererState.allocator->destroyBuffers();
 
     rendererState.renderer.reset();
     rendererState.allocator.reset();
@@ -621,6 +623,49 @@ bool Aquamarine::CDRMBackend::initMgpu() {
     return true;
 }
 
+bool Aquamarine::CDRMBackend::updateSecondaryRendererState() {
+    if (!backend->ready)
+        return true;
+
+    if (!primary) {
+        if (rendererState.renderer && rendererState.allocator)
+            return true;
+
+        return initMgpu();
+    }
+
+    const bool hasEnabledOutputs =
+        std::ranges::any_of(connectors, [](const auto& c) { return c->status == DRM_MODE_CONNECTED && c->output && c->output->state && c->output->state->state().enabled; });
+
+    if (hasEnabledOutputs) {
+        if (rendererState.renderer && rendererState.allocator)
+            return true;
+
+        backend->log(AQ_LOG_DEBUG, std::format("drm: Initializing secondary renderer on {}, has enabled outputs", gpu->path));
+        return initMgpu();
+    }
+
+    if (!rendererState.renderer && !rendererState.allocator)
+        return true;
+
+    backend->log(AQ_LOG_DEBUG, std::format("drm: Deinitializing secondary renderer on {}, no enabled outputs", gpu->path));
+
+    for (auto const& c : connectors) {
+        c->releaseFBReferences();
+
+        if (c->output)
+            c->output->releaseMgpuResources();
+    }
+
+    if (rendererState.allocator)
+        rendererState.allocator->destroyBuffers();
+
+    rendererState.renderer.reset();
+    rendererState.allocator.reset();
+
+    return true;
+}
+
 void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts) {
     std::vector<SDRMFormat> result;
 
@@ -854,6 +899,9 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
             drmModeFreeConnector(drmConn);
         }
     }
+
+    if (!updateSecondaryRendererState())
+        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to update renderer state for {}", gpu->path));
 }
 
 void Aquamarine::CDRMBackend::scanConnectors() {
@@ -994,7 +1042,7 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
 
     TRACE(BACKEND->log(AQ_LOG_TRACE, std::format("drm: pf event seq {} sec {} usec {} crtc {}", seq, tv_sec, tv_usec, crtc_id)));
 
-    if (pageFlip->connector->status != DRM_MODE_CONNECTED || !pageFlip->connector->crtc) {
+    if (pageFlip->connector->status != DRM_MODE_CONNECTED || !pageFlip->connector->crtc || !pageFlip->connector->output) {
         BACKEND->log(AQ_LOG_DEBUG, "drm: Ignoring a pf event from a disabled crtc / connector");
         return;
     }
@@ -1077,8 +1125,8 @@ void Aquamarine::CDRMBackend::onReady() {
         backend->events.newOutput.emit(SP<IOutput>(c->output));
     }
 
-    if (!initMgpu()) {
-        backend->log(AQ_LOG_ERROR, "drm: Failed initializing mgpu");
+    if (!updateSecondaryRendererState()) {
+        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to initialize renderer state for {}", gpu->path));
         return;
     }
 }
@@ -1322,6 +1370,42 @@ void Aquamarine::SDRMConnector::parseTileInfo() {
     }
 
     free(blobData);
+}
+
+void Aquamarine::SDRMConnector::releaseFBReferences() {
+    std::unordered_set<IBuffer*> releasedBuffers;
+
+    const auto                   releaseFB = [&releasedBuffers](SP<CDRMFB>& fb) {
+        if (!fb) {
+            fb.reset();
+            return;
+        }
+
+        if (auto buf = fb->buffer.lock(); buf && buf->lockedByBackend && releasedBuffers.emplace(buf.get()).second) {
+            buf->lockedByBackend = false;
+            buf->events.backendRelease.emit();
+        }
+
+        fb.reset();
+    };
+
+    if (crtc) {
+        if (crtc->primary) {
+            releaseFB(crtc->primary->front);
+            releaseFB(crtc->primary->back);
+            releaseFB(crtc->primary->last);
+        }
+
+        if (crtc->cursor) {
+            releaseFB(crtc->cursor->front);
+            releaseFB(crtc->cursor->back);
+            releaseFB(crtc->cursor->last);
+        }
+
+        releaseFB(crtc->pendingCursor);
+    }
+
+    releaseFB(pendingCursorFB);
 }
 
 Aquamarine::SDRMConnector::~SDRMConnector() {
@@ -1586,6 +1670,11 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (!backend->backend->ready)
         return;
 
+    if (!backend->updateSecondaryRendererState()) {
+        backend->backend->log(AQ_LOG_ERROR, std::format("drm: Failed to update renderer state for {} on connect", szName));
+        return;
+    }
+
     auto primaryBackend = backend->primary ? backend->primary : backend;
     output->swapchain   = CSwapchain::create(backend->backend->primaryAllocator, primaryBackend.lock());
     output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary, .scanoutOutput = output}); // mark the swapchain for scanout
@@ -1600,10 +1689,11 @@ void Aquamarine::SDRMConnector::disconnect() {
         return;
     }
 
+    status = DRM_MODE_DISCONNECTED;
+    releaseFBReferences();
+
     output->events.destroy.emit();
     output.reset();
-
-    status = DRM_MODE_DISCONNECTED;
 }
 
 bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
@@ -1633,6 +1723,12 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
         refresh = calculateRefresh(data.modeInfo);
 
     output->enabledState = output->state->state().enabled;
+
+    if (!output->enabledState)
+        releaseFBReferences();
+
+    if (!backend->updateSecondaryRendererState())
+        backend->backend->log(AQ_LOG_ERROR, std::format("drm: Failed to update renderer state for {} on applyCommit", szName));
 }
 
 void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
@@ -1670,6 +1766,17 @@ Aquamarine::CDRMOutput::~CDRMOutput() {
         backend->backend->removeIdleEvent(frameIdle);
     connector->isPageFlipPending   = false;
     connector->frameEventScheduled = false;
+}
+
+void Aquamarine::CDRMOutput::releaseMgpuResources() {
+    mgpu.swapchain.reset();
+    mgpu.cursorSwapchain.reset();
+
+    if (swapchain) {
+        auto options   = swapchain->currentOptions();
+        options.length = 0;
+        swapchain->reconfigure(options);
+    }
 }
 
 bool Aquamarine::CDRMOutput::commit() {
@@ -1789,15 +1896,18 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     SDRMConnectorCommitData data;
 
-    if (STATE.buffer) {
+    if (STATE.buffer && STATE.enabled) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Committed a buffer, updating state"));
 
         SP<CDRMFB> drmFB;
 
         if (backend->shouldBlit()) {
             if (!backend->rendererState.renderer) {
-                backend->backend->log(AQ_LOG_ERROR, "drm: No renderer attached to backend when required for blitting");
-                return false;
+                backend->backend->log(AQ_LOG_DEBUG, "drm: No renderer attached to backend when required for blitting, initializing");
+                if (!backend->initMgpu() || !backend->rendererState.renderer || !backend->rendererState.allocator) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: Failed to initialize renderer backend for blitting");
+                    return false;
+                }
             }
 
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires blit, blitting"));
@@ -1981,6 +2091,14 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
 
         if (backend->primary) {
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires cursor blit, blitting"));
+
+            if (!backend->rendererState.renderer || !backend->rendererState.allocator) {
+                backend->backend->log(AQ_LOG_DEBUG, "drm: No renderer attached to backend when required for cursor blitting, initializing");
+                if (!backend->initMgpu() || !backend->rendererState.renderer || !backend->rendererState.allocator) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: Failed to initialize renderer backend for cursor blitting");
+                    return false;
+                }
+            }
 
             // TODO: will this not implode on drm_dumb?!
 
