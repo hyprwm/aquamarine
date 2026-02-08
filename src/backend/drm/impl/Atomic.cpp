@@ -259,6 +259,18 @@ bool Aquamarine::CDRMAtomicRequest::commit(uint32_t flagssss) {
         return false;
     }
 
+    if (conn && flagssss & DRM_MODE_PAGE_FLIP_EVENT) {
+        uint64_t prevSeq, prevNs;
+        if (drmCrtcGetSequence(backend->gpu->fd, conn->crtc->id, &prevSeq, &prevNs) == 0) {
+            if (drmCrtcQueueSequence(backend->gpu->fd, conn->crtc->id, DRM_CRTC_SEQUENCE_NEXT_ON_MISS, prevSeq + 1, &conn->pendingPageFlip.queuedSequence,
+                                     rc<uint64_t>(&conn->pendingPageFlip)) != 0) {
+                backend->log(AQ_LOG_TRACE, "atomic drm request: failed to queue crtc sequence");
+                conn->pendingPageFlip.queuedSequence = 0; // fallback to page_flip_handler2
+            }
+        } else
+            backend->log(AQ_LOG_TRACE, "atomic drm request: failed to get crtc sequence");
+    }
+
     if (auto ret = drmModeAtomicCommit(backend->gpu->fd, req, flagssss, conn ? &conn->pendingPageFlip : nullptr); ret) {
         backend->log((flagssss & DRM_MODE_ATOMIC_TEST_ONLY) ? AQ_LOG_DEBUG : AQ_LOG_ERROR,
                      std::format("atomic drm request: failed to commit: {}, flags: {}", strerror(ret == -1 ? errno : -ret), flagsToStr(flagssss)));
