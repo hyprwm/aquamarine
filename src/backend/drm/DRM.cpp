@@ -923,8 +923,7 @@ int Aquamarine::CDRMBackend::drmRenderNodeFD() {
 
 static void present(SDRMPageFlip* pageFlip) {
     pageFlip->connector->isPageFlipPending = false;
-
-    const auto& BACKEND = pageFlip->connector->backend;
+    const auto& BACKEND                    = pageFlip->connector->backend;
 
     if (!pageFlip->presentTime) {
         TRACE(BACKEND->log(AQ_LOG_ERROR, "drm: present event missing presentTime"));
@@ -942,6 +941,9 @@ static void present(SDRMPageFlip* pageFlip) {
         return;
     }
 
+    if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState)
+        pageFlip->connector->isFrameRunning = true;
+
     pageFlip->connector->onPresent();
 
     uint32_t flags = IOutput::AQ_OUTPUT_PRESENT_VSYNC | IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK | IOutput::AQ_OUTPUT_PRESENT_HW_COMPLETION | IOutput::AQ_OUTPUT_PRESENT_ZEROCOPY;
@@ -954,8 +956,10 @@ static void present(SDRMPageFlip* pageFlip) {
         .flags     = flags,
     });
 
-    if (BACKEND->sessionActive() && !pageFlip->connector->frameEventScheduled && pageFlip->connector->output->enabledState)
+    if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState) {
         pageFlip->connector->output->events.frame.emit();
+        pageFlip->connector->isFrameRunning = false;
+    }
 }
 
 static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void* data) {
@@ -1987,11 +1991,10 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
                                             connector->isPageFlipPending, connector->frameEventScheduled)));
     needsFrame = true;
 
-    if (connector->isPageFlipPending || connector->frameEventScheduled || !enabledState)
+    if (connector->isPageFlipPending || connector->isFrameRunning || connector->frameEventScheduled || !enabledState)
         return;
 
     connector->frameEventScheduled = true;
-
     backend->backend->addIdleEvent(frameIdle);
 }
 

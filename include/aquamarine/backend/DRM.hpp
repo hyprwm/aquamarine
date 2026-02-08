@@ -298,6 +298,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<CDRMFB>      pendingCursorFB;
 
         bool                                           isPageFlipPending = false;
+        bool                                           isFrameRunning    = false;
         SDRMPageFlip                                   pendingPageFlip;
         bool                                           frameEventScheduled = false;
 
