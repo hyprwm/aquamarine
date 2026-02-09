@@ -1228,6 +1228,12 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     return true;
 }
 
+void Aquamarine::SDRMPlane::dropFBs() {
+    front.reset();
+    back.reset();
+    last.reset();
+}
+
 SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* connector) {
     uint32_t crtcID = 0;
     if (props.values.crtc_id) {
@@ -1600,6 +1606,11 @@ void Aquamarine::SDRMConnector::disconnect() {
         return;
     }
 
+    if (output->connector->crtc) {
+        output->connector->crtc->primary->dropFBs();
+        output->connector->crtc->cursor->dropFBs();
+    }
+
     output->events.destroy.emit();
     output.reset();
 
@@ -1618,21 +1629,27 @@ bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
 }
 
 void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data) {
-    crtc->primary->back = data.mainFB;
-    if (crtc->cursor && data.cursorFB)
-        crtc->cursor->back = data.cursorFB;
 
-    if (data.mainFB)
-        data.mainFB->buffer->lockedByBackend = true;
-    if (crtc->cursor && data.cursorFB)
-        data.cursorFB->buffer->lockedByBackend = true;
+    output->enabledState = output->state->state().enabled;
+
+    if (!output->enabledState) {
+        crtc->primary->dropFBs();
+        crtc->cursor->dropFBs();
+    } else {
+        crtc->primary->back = data.mainFB;
+        if (crtc->cursor && data.cursorFB)
+            crtc->cursor->back = data.cursorFB;
+
+        if (data.mainFB)
+            data.mainFB->buffer->lockedByBackend = true;
+        if (crtc->cursor && data.cursorFB)
+            data.cursorFB->buffer->lockedByBackend = true;
+    }
 
     pendingCursorFB.reset();
 
     if (output->state->state().committed & COutputState::AQ_OUTPUT_STATE_MODE)
         refresh = calculateRefresh(data.modeInfo);
-
-    output->enabledState = output->state->state().enabled;
 }
 
 void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
