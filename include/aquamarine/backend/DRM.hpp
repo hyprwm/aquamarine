@@ -202,6 +202,7 @@ namespace Aquamarine {
         virtual size_t                                                    getGammaSize();
         virtual size_t                                                    getDeGammaSize();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
+        void                                                              releaseMgpuResources();
 
         int                                                               getConnectorID();
 
@@ -287,6 +288,7 @@ namespace Aquamarine {
         void                                           onPresent();
         void                                           recheckCRTCProps();
         void                                           parseTileInfo();
+        void                                           releaseFBReferences();
 
         Hyprutils::Memory::CSharedPointer<CDRMOutput>  output;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>   backend;
@@ -407,6 +409,7 @@ namespace Aquamarine {
         bool checkFeatures();
         bool initResources();
         bool initMgpu();
+        bool updateSecondaryRendererState();
         bool grabFormats();
         bool shouldBlit();
         void scanConnectors();

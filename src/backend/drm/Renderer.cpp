@@ -773,6 +773,13 @@ constexpr GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
 void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out) {
     CEglContextGuard eglContext(*this);
     auto             att = buf->attachments.get<CDRMRendererBufferAttachment>();
+    if (att && att->renderer.lock() != self.lock()) {
+        if (auto oldRenderer = att->renderer.lock(); oldRenderer && oldRenderer != self.lock())
+            oldRenderer->onBufferAttachmentDrop(att.get());
+        buf->attachments.removeByType<CDRMRendererBufferAttachment>();
+        att.reset();
+    }
+
     if (!att) {
         att = makeShared<CDRMRendererBufferAttachment>(self, buf, nullptr, 0, 0, CGLTex{}, std::vector<uint8_t>());
         buf->attachments.add(att);
@@ -948,6 +955,13 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     std::span<uint8_t> intermediateBuf;
     {
         auto attachment = from->attachments.get<CDRMRendererBufferAttachment>();
+        if (attachment && attachment->renderer.lock() != self.lock()) {
+            if (auto oldRenderer = attachment->renderer.lock(); oldRenderer && oldRenderer != self.lock())
+                oldRenderer->onBufferAttachmentDrop(attachment.get());
+            from->attachments.removeByType<CDRMRendererBufferAttachment>();
+            attachment.reset();
+        }
+
         if (attachment) {
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): From attachment found"));
             fromTex         = attachment->tex;
@@ -996,6 +1010,13 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
     {
         auto attachment = to->attachments.get<CDRMRendererBufferAttachment>();
+        if (attachment && attachment->renderer != self) {
+            if (auto oldRenderer = attachment->renderer.lock(); oldRenderer && oldRenderer != self.lock())
+                oldRenderer->onBufferAttachmentDrop(attachment.get());
+            to->attachments.removeByType<CDRMRendererBufferAttachment>();
+            attachment.reset();
+        }
+
         if (attachment) {
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): To attachment found"));
             rboImage = attachment->eglImage;
@@ -1064,12 +1085,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     float glMtx[9];
     matrixMultiply(glMtx, monitorProj, mtx);
 
-    static Vector2D lastViewportSize = {-1, -1};
-    if (lastViewportSize != toDma.size) {
-        GLCALL(glViewport(0, 0, toDma.size.x, toDma.size.y));
-        lastViewportSize = toDma.size;
-    }
-
+    GLCALL(glViewport(0, 0, toDma.size.x, toDma.size.y));
     GLCALL(glActiveTexture(GL_TEXTURE0));
     GLCALL(fromTex->bind());
     GLCALL(fromTex->setTexParameter(GL_TEXTURE_MAG_FILTER, GL_NEAREST));
@@ -1180,5 +1196,8 @@ void CGLTex::setTexParameter(GLenum pname, GLint param) {
 CDRMRendererBufferAttachment::CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer,
                                                            EGLImageKHR image, GLuint fbo_, GLuint rbo_, CGLTex&& tex_, std::vector<uint8_t> intermediateBuf_) :
     eglImage(image), fbo(fbo_), rbo(rbo_), tex(makeUnique<CGLTex>(std::move(tex_))), intermediateBuf(intermediateBuf_), renderer(renderer_) {
-    bufferDestroy = buffer->events.destroy.listen([this] { renderer->onBufferAttachmentDrop(this); });
+    bufferDestroy = buffer->events.destroy.listen([this] {
+        if (auto r = renderer.lock())
+            r->onBufferAttachmentDrop(this);
+    });
 }
