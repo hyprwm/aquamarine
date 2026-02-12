@@ -110,7 +110,9 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
 }
 
 Aquamarine::CBackend::~CBackend() {
-    ;
+    // Tear down implementations before the logger is destroyed,
+    // as backends may log during teardown (e.g. SDRMConnector::disconnect).
+    implementations.clear();
 }
 
 bool Aquamarine::CBackend::start() {
