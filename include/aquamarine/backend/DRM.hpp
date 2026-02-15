@@ -314,6 +314,7 @@ namespace Aquamarine {
         bool                                           isPageFlipPending = false;
         SDRMPageFlip                                   pendingPageFlip;
         bool                                           frameEventScheduled = false;
+        bool                                           isFrameRunning      = false;
 
         // the current state is invalid and won't commit, don't try to modeset.
         bool                                           commitTainted = false;

@@ -1047,6 +1047,9 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         return;
     }
 
+    if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState)
+        pageFlip->connector->isFrameRunning = true;
+
     pageFlip->connector->onPresent();
 
     uint32_t flags = IOutput::AQ_OUTPUT_PRESENT_VSYNC | IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK | IOutput::AQ_OUTPUT_PRESENT_HW_COMPLETION | IOutput::AQ_OUTPUT_PRESENT_ZEROCOPY;
@@ -1061,8 +1064,10 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         .flags     = flags,
     });
 
-    if (BACKEND->sessionActive() && !pageFlip->connector->frameEventScheduled && pageFlip->connector->output->enabledState)
+    if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState) {
         pageFlip->connector->output->events.frame.emit();
+        pageFlip->connector->isFrameRunning = false;
+    }
 }
 
 bool Aquamarine::CDRMBackend::dispatchEvents() {
@@ -2169,7 +2174,7 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
                                             connector->isPageFlipPending, connector->frameEventScheduled)));
     needsFrame = true;
 
-    if (connector->isPageFlipPending || connector->frameEventScheduled || !enabledState)
+    if (connector->isPageFlipPending || connector->isFrameRunning || connector->frameEventScheduled || !enabledState)
         return;
 
     connector->frameEventScheduled = true;
@@ -2229,7 +2234,7 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
 
     frameIdle = makeShared<std::function<void(void)>>([this]() {
         connector->frameEventScheduled = false;
-        if (connector->isPageFlipPending)
+        if (connector->isPageFlipPending || connector->isFrameRunning)
             return;
         events.frame.emit();
     });
