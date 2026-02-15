@@ -950,9 +950,10 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     // both from and to have the same AQ_ATTACHMENT_DRM_RENDERER_DATA.
     // Those buffers always come from different swapchains, so it's OK.
 
-    WP<CGLTex>         fromTex;
-    const auto&        fromDma = from->dmabuf();
-    std::span<uint8_t> intermediateBuf;
+    WP<CGLTex>                       fromTex;
+    const auto&                      fromDma = from->dmabuf();
+    std::span<uint8_t>               intermediateBuf;
+    SP<CDRMRendererBufferAttachment> fromAtt; // prevent premature destruction of tex/intermediateBuf
     {
         auto attachment = from->attachments.get<CDRMRendererBufferAttachment>();
         if (attachment && attachment->renderer.lock() != self.lock()) {
@@ -990,6 +991,10 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
             // Note: this might modify from's attachments
             primaryRenderer->readBuffer(from, intermediateBuf);
         }
+
+        // Keep attachment alive: readBuffer() may have removed it from the map,
+        // but fromTex (WP) and intermediateBuf (span) reference its internals.
+        fromAtt = attachment;
     }
 
     TRACE(backend->log(AQ_LOG_TRACE,
