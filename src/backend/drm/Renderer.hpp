@@ -41,19 +41,24 @@ namespace Aquamarine {
         std::array<std::optional<GLint>, TEXTURE_PAR_LAST> m_cachedStates;
     };
 
-    class CDRMRendererBufferAttachment : public IAttachment {
+    class CDRMRendererBufferInputAttachment : public IAttachment {
       public:
-        CDRMRendererBufferAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, Hyprutils::Memory::CSharedPointer<IBuffer> buffer, EGLImageKHR image, GLuint fbo_,
-                                     GLuint rbo_, CGLTex&& tex, std::vector<uint8_t> intermediateBuf_);
-        virtual ~CDRMRendererBufferAttachment() {
-            ;
-        }
+        CDRMRendererBufferInputAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, CGLTex&& tex, std::vector<uint8_t> intermediateBuf_);
+        virtual ~CDRMRendererBufferInputAttachment();
+
+        Hyprutils::Memory::CUniquePointer<CGLTex>     tex;
+        std::vector<uint8_t>                          intermediateBuf;
+
+        Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
+    };
+
+    class CDRMRendererBufferOutputAttachment : public IAttachment {
+      public:
+        CDRMRendererBufferOutputAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_, EGLImageKHR image, GLuint fbo_, GLuint rbo_);
+        virtual ~CDRMRendererBufferOutputAttachment();
 
         EGLImageKHR                                   eglImage = nullptr;
         GLuint                                        fbo = 0, rbo = 0;
-        Hyprutils::Memory::CUniquePointer<CGLTex>     tex;
-        Hyprutils::Signal::CHyprSignalListener        bufferDestroy;
-        std::vector<uint8_t>                          intermediateBuf;
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
     };
@@ -100,8 +105,6 @@ namespace Aquamarine {
                          Hyprutils::Memory::CSharedPointer<CDRMRenderer> primaryRenderer, int waitFD = -1);
         // can't be a SP<> because we call it from buf's ctor...
         void clearBuffer(IBuffer* buf);
-
-        void onBufferAttachmentDrop(CDRMRendererBufferAttachment* attachment);
 
         struct SShader {
             ~SShader();
@@ -177,5 +180,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CBackend>             backend;
 
         friend class CEglContextGuard;
+        friend class CDRMRendererBufferInputAttachment;
+        friend class CDRMRendererBufferOutputAttachment;
     };
 };
