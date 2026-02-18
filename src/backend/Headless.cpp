@@ -55,6 +55,10 @@ std::vector<SDRMFormat> Aquamarine::CHeadlessOutput::getRenderFormats() {
     return backend->getRenderFormats();
 }
 
+bool Aquamarine::CHeadlessOutput::pendingPageFlip() {
+    return false;
+}
+
 Hyprutils::Memory::CSharedPointer<IBackendImplementation> Aquamarine::CHeadlessOutput::getBackend() {
     return backend.lock();
 }

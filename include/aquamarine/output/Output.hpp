@@ -171,6 +171,7 @@ namespace Aquamarine {
         virtual size_t                                                    getGammaSize();
         virtual size_t                                                    getDeGammaSize();
         virtual bool                                                      destroy(); // not all backends allow this!!!
+        virtual bool                                                      pendingPageFlip() = 0;
 
         std::string                                                       name, description, make, model, serial;
         SParsedEDID                                                       parsedEDID;

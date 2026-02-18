@@ -202,6 +202,7 @@ namespace Aquamarine {
         virtual size_t                                                    getGammaSize();
         virtual size_t                                                    getDeGammaSize();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
+        virtual bool                                                      pendingPageFlip();
         void                                                              releaseMgpuResources();
 
         int                                                               getConnectorID();
