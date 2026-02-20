@@ -19,6 +19,7 @@ namespace Aquamarine {
         virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual bool                                                      destroy();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
+        virtual bool                                                      pendingPageFlip();
 
         Hyprutils::Memory::CWeakPointer<CHeadlessOutput>                  self;
 

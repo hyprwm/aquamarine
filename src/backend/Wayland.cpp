@@ -534,6 +534,10 @@ std::vector<SDRMFormat> Aquamarine::CWaylandOutput::getRenderFormats() {
     return backend->getRenderFormats();
 }
 
+bool Aquamarine::CWaylandOutput::pendingPageFlip() {
+    return false;
+}
+
 bool Aquamarine::CWaylandOutput::destroy() {
     events.destroy.emit();
     waylandState.surface->sendAttach(nullptr, 0, 0);

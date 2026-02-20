@@ -50,6 +50,7 @@ namespace Aquamarine {
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
         virtual bool                                                      destroy();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
+        virtual bool                                                      pendingPageFlip();
 
         Hyprutils::Memory::CWeakPointer<CWaylandOutput>                   self;
 

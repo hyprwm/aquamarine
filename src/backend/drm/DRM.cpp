@@ -2223,6 +2223,10 @@ std::vector<SDRMFormat> Aquamarine::CDRMOutput::getRenderFormats() {
     return connector->crtc->primary->formats;
 }
 
+bool Aquamarine::CDRMOutput::pendingPageFlip() {
+    return connector->isPageFlipPending;
+}
+
 int Aquamarine::CDRMOutput::getConnectorID() {
     return connector->id;
 }
