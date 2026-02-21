@@ -82,8 +82,8 @@ namespace Aquamarine {
         struct {
             EGLDisplay display = nullptr;
             EGLContext context = nullptr;
-            EGLSurface draw = nullptr, read = nullptr;
         } savedEGLState;
+        bool madeChange = false;
     };
 
     class CDRMRenderer {

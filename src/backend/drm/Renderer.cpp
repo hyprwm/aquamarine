@@ -644,21 +644,26 @@ SP<CDRMRenderer> CDRMRenderer::attempt(SP<CBackend> backend_, Hyprutils::Memory:
 CEglContextGuard::CEglContextGuard(const CDRMRenderer& renderer_) : renderer(renderer_) {
     savedEGLState.display = eglGetCurrentDisplay();
     savedEGLState.context = eglGetCurrentContext();
-    savedEGLState.draw    = eglGetCurrentSurface(EGL_DRAW);
-    savedEGLState.read    = eglGetCurrentSurface(EGL_READ);
 
-    if (!eglMakeCurrent(renderer.egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, renderer.egl.context))
-        renderer.backend->log(AQ_LOG_WARNING, "CDRMRenderer: setEGL eglMakeCurrent failed");
+    const bool alreadyCurrent = savedEGLState.display == renderer.egl.display && savedEGLState.context == renderer.egl.context;
+
+    if (!alreadyCurrent) {
+        if (!eglMakeCurrent(renderer.egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, renderer.egl.context))
+            renderer.backend->log(AQ_LOG_WARNING, "CDRMRenderer: setEGL eglMakeCurrent failed");
+        madeChange = true;
+    }
 }
 
 CEglContextGuard::~CEglContextGuard() {
+    if (!madeChange)
+        return; // Skip restore if we didn’t change anything
+
     EGLDisplay dpy = savedEGLState.display ? savedEGLState.display : renderer.egl.display;
 
-    // egl can't handle this
     if (dpy == EGL_NO_DISPLAY)
         return;
 
-    if (!eglMakeCurrent(dpy, savedEGLState.draw, savedEGLState.read, savedEGLState.context))
+    if (!eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, savedEGLState.context))
         renderer.backend->log(AQ_LOG_WARNING, "CDRMRenderer: restoreEGL eglMakeCurrent failed");
 }
 
