@@ -387,18 +387,10 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         if (!c->crtc || !c->output)
             continue;
 
-        auto&                   STATE = c->output->state->state();
+        auto&                        STATE    = c->output->state->state();
+        COutputState::SInternalState newState = c->output->state->state();
 
-        SDRMConnectorCommitData data = {
-            .mainFB      = nullptr,
-            .modeset     = true,
-            .blocking    = true,
-            .flags       = 0,
-            .test        = false,
-            .hdrMetadata = STATE.hdrMetadata,
-        };
-
-        auto& MODE = STATE.customMode ? STATE.customMode : STATE.mode;
+        auto&                        MODE = STATE.customMode ? STATE.customMode : STATE.mode;
 
         if (!MODE) {
             backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no mode, will send a reset state event later.");
@@ -406,35 +398,68 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             continue;
         }
 
-        if (MODE->modeInfo.has_value())
-            data.modeInfo = *MODE->modeInfo;
-        else
-            data.calculateMode(c);
+        if (MODE->modeInfo.has_value()) {
+            drmModeModeInfo* currentMode = c->getCurrentMode();
+            bool             modeDiffers = true;
+            if (currentMode) {
+                modeDiffers = memcmp(currentMode, &MODE->modeInfo, sizeof(drmModeModeInfo)) != 0;
+                free(currentMode);
+            }
 
-        if (STATE.buffer) {
-            SP<CDRMFB> drmFB;
-            auto       buf   = STATE.buffer;
-            bool       isNew = false;
+            if (modeDiffers) {
+                newState.committed |= COutputState::AQ_OUTPUT_STATE_MODE;
+            }
 
-            drmFB = CDRMFB::create(buf, self, &isNew);
-
-            if (!drmFB)
-                backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
-
-            data.mainFB = drmFB;
+        } else {
+            backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no modeInfo, will send a reset state event later.");
+            noMode.emplace_back(c);
+            continue;
         }
 
-        if (c->crtc->pendingCursor)
-            data.cursorFB = c->crtc->pendingCursor;
+        if (STATE.buffer)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_BUFFER;
 
-        if (data.cursorFB && (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID))
-            data.cursorFB = nullptr;
+        if (c->crtc->props.values.ctm) {
+            if (!STATE.hasCtm)
+                newState.ctm = Hyprutils::Math::Mat3x3::identity();
+
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_CTM;
+        }
+
+        if (c->crtc->props.values.gamma_lut)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_GAMMA_LUT;
+
+        if (c->crtc->props.values.degamma_lut)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT;
+
+        if (c->props.values.Colorspace)
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_WCG;
+
+        if (c->props.values.hdr_output_metadata) {
+            if (!STATE.hasHdrMetadata)
+                newState.hdrMetadata = {.hdmi_metadata_type1 = hdr_metadata_infoframe{.eotf = 0}};
+
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_HDR;
+        }
+
+        newState.committed |= COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC;
+        newState.committed |= COutputState::AQ_OUTPUT_STATE_PRESENTATION_MODE;
+
+        if (STATE.drmFormat != DRM_FORMAT_INVALID) // if invalid what do we do here?
+            newState.committed |= COutputState::AQ_OUTPUT_STATE_FORMAT;
+
+        newState.committed |= COutputState::AQ_OUTPUT_CONTENT_TYPE;
+
+        if (STATE.explicitInFence >= 0) // this is probably not valid anymore reset it. we might blit on a invalid fence otherwise
+            newState.explicitInFence = -1;
 
         backend->log(AQ_LOG_DEBUG,
-                     std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, data.modeInfo.clock, data.modeInfo.hdisplay,
-                                 data.modeInfo.vdisplay, data.modeInfo.vrefresh));
+                     std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, MODE->modeInfo->clock, MODE->modeInfo->hdisplay,
+                                 MODE->modeInfo->vdisplay, MODE->modeInfo->vrefresh));
 
-        if (!impl->commit(c, data))
+        c->output->state->overWriteState(std::move(newState));
+
+        if (!c->output->commit())
             backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
     }
 
@@ -1576,7 +1601,9 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
     backend->backend->log(AQ_LOG_DEBUG, "drm: Dumping detected modes:");
 
-    auto currentModeInfo = getCurrentMode();
+    auto                                         currentModeInfo = getCurrentMode();
+    auto                                         state           = output->state->state();
+    Hyprutils::Memory::CWeakPointer<SOutputMode> matchedMode;
 
     for (int i = 0; i < connector->count_modes; ++i) {
         auto& drmMode = connector->modes[i];
@@ -1597,20 +1624,20 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
         output->modes.emplace_back(aqMode);
 
-        if (currentModeInfo && std::memcmp(&drmMode, currentModeInfo, sizeof(drmModeModeInfo)) != 0) {
-            output->state->setMode(aqMode);
-
-            //uint64_t modeID = 0;
-            // getDRMProp(backend->gpu->fd, crtc->id, crtc->props.mode_id, &modeID);
-        }
+        if (currentModeInfo && std::memcmp(&drmMode, currentModeInfo, sizeof(drmModeModeInfo)) == 0)
+            matchedMode = aqMode;
 
         backend->backend->log(AQ_LOG_DEBUG,
                               std::format("drm: Mode {}: {}x{}@{:.2f}Hz {}", i, (int)aqMode->pixelSize.x, (int)aqMode->pixelSize.y, aqMode->refreshRate / 1000.0,
                                           aqMode->preferred ? " (preferred)" : ""));
     }
 
-    if (!currentModeInfo && fallbackMode)
-        output->state->setMode(fallbackMode);
+    if (matchedMode) {
+        state.mode = matchedMode;
+    } else if (!currentModeInfo && fallbackMode) {
+        state.mode = fallbackMode;
+        state.committed |= COutputState::AQ_OUTPUT_STATE_MODE; // flag needed for modeset in commit.
+    }
 
     if (currentModeInfo)
         free(currentModeInfo);
@@ -1664,6 +1691,99 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     status = DRM_MODE_CONNECTED;
 
     recheckCRTCProps();
+
+    auto recreateGammaBlob = [this](uint32_t prop) {
+        auto*                 blob = drmModeGetPropertyBlob(backend->gpu->fd, prop);
+        std::vector<uint16_t> retVal;
+
+        if (blob && blob->data && blob->length != 0) {
+            const auto  lutEntries = blob->length / sizeof(drm_color_lut);
+            const auto* lut        = sc<const drm_color_lut*>(blob->data);
+
+            retVal.reserve(lutEntries * 3);
+
+            for (size_t i = 0; i < lutEntries; ++i) {
+                retVal.emplace_back(lut[i].red);
+                retVal.emplace_back(lut[i].green);
+                retVal.emplace_back(lut[i].blue);
+            }
+        }
+
+        if (blob)
+            drmModeFreePropertyBlob(blob);
+
+        return retVal;
+    };
+
+    auto recreateCtm = [this](uint32_t prop) {
+        auto* blob   = drmModeGetPropertyBlob(backend->gpu->fd, prop);
+        auto  retVal = Mat3x3::identity();
+
+        if (!blob || blob->length != sizeof(drm_color_ctm))
+            return retVal;
+        else {
+            const auto*          ctm = sc<const drm_color_ctm*>(blob->data);
+            std::array<float, 9> currentCTM;
+
+            auto                 s3132ToDouble = [](auto v) -> double {
+                const auto negative = v & (1ULL << 63);
+                const auto mag      = v & ~(1ULL << 63);
+                auto       d        = sc<double>(mag) / sc<double>(1ULL << 32);
+                return negative ? -d : d;
+            };
+
+            for (size_t i = 0; i < 9; ++i) {
+                currentCTM[i] = s3132ToDouble(ctm->matrix[i]);
+            }
+
+            retVal = currentCTM;
+        }
+
+        if (blob)
+            drmModeFreePropertyBlob(blob);
+
+        return retVal;
+    };
+
+    auto recreateHdrMetadata = [this](uint32_t prop) {
+        auto*               blob = drmModeGetPropertyBlob(backend->gpu->fd, prop);
+        hdr_output_metadata retVal;
+
+        if (!blob || blob->length != sizeof(hdr_output_metadata))
+            retVal = {.hdmi_metadata_type1 = hdr_metadata_infoframe{.eotf = 0}};
+        else {
+            const auto* hdr = sc<const hdr_output_metadata*>(blob->data);
+            if (hdr->hdmi_metadata_type1.eotf != 0)
+                retVal = *hdr;
+        }
+
+        if (blob)
+            drmModeFreePropertyBlob(blob);
+
+        return retVal;
+    };
+
+    // recreate internal state from current driver state.
+    if (crtc->props.values.ctm) {
+        state.ctm    = recreateCtm(crtc->props.values.ctm);
+        state.hasCtm = state.ctm != Mat3x3::identity();
+    }
+
+    if (crtc->props.values.gamma_lut)
+        state.gammaLut = recreateGammaBlob(crtc->props.values.gamma_lut);
+
+    if (crtc->props.values.degamma_lut)
+        state.degammaLut = recreateGammaBlob(crtc->props.values.degamma_lut);
+
+    if (props.values.Colorspace)
+        state.wideColorGamut = props.values.Colorspace != colorspace.values.Default;
+
+    if (props.values.hdr_output_metadata) {
+        state.hdrMetadata    = recreateHdrMetadata(props.values.hdr_output_metadata);
+        state.hasHdrMetadata = state.hdrMetadata.hdmi_metadata_type1.eotf != 0;
+    }
+
+    output->state->overWriteState(std::move(state));
 
     if (!backend->backend->ready)
         return;
@@ -1952,6 +2072,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 state->setExplicitInFence(blitResult.syncFD.value());
             else
                 state->setExplicitInFence(-1);
+
+            auto newState   = STATE;
+            newState.buffer = NEWAQBUF;
+            state->overWriteState(std::move(newState)); // set the new blitted buffer to internalState
 
             drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
         } else
