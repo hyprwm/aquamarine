@@ -916,6 +916,7 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
 
     glClearColor(0.F, 0.F, 0.F, 1.F);
     glClear(GL_COLOR_BUFFER_BIT);
+    glFlush();
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
