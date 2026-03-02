@@ -25,7 +25,8 @@
   # whether to use the mold linker
   # disable this for older machines without SSE4_2 and AVX2 support
   withMold ? true,
-}: let
+}:
+let
   inherit (builtins) foldl';
   inherit (lib.lists) flatten;
 
@@ -36,51 +37,51 @@
 
   customStdenv = foldl' (acc: adapter: adapter acc) stdenv adapters;
 in
-  customStdenv.mkDerivation {
-    pname = "aquamarine";
-    inherit version doCheck;
-    src = ../.;
+customStdenv.mkDerivation {
+  pname = "aquamarine";
+  inherit version doCheck;
+  src = ../.;
 
-    strictDeps = true;
+  strictDeps = true;
 
-    depsBuildBuild = [
-      pkg-config
-    ];
+  depsBuildBuild = [
+    pkg-config
+  ];
 
-    nativeBuildInputs = [
-      cmake
-      hyprwayland-scanner
-      pkg-config
-    ];
+  nativeBuildInputs = [
+    cmake
+    hyprwayland-scanner
+    pkg-config
+  ];
 
-    buildInputs = [
-      hwdata
-      (hyprutils.override {inherit withMold;})
-      libdisplay-info
-      libdrm
-      libffi
-      libGL
-      libinput
-      libgbm
-      pixman
-      seatd
-      udev
-      wayland
-      wayland-protocols
-      wayland-scanner
-    ];
+  buildInputs = [
+    hwdata
+    (hyprutils.override { inherit withMold; })
+    libdisplay-info
+    libdrm
+    libffi
+    libGL
+    libinput
+    libgbm
+    pixman
+    seatd
+    udev
+    wayland
+    wayland-protocols
+    wayland-scanner
+  ];
 
-    outputs = ["out" "dev"];
+  outputs = [
+    "out"
+    "dev"
+  ];
 
-    cmakeBuildType =
-      if debug
-      then "Debug"
-      else "RelWithDebInfo";
+  cmakeBuildType = if debug then "Debug" else "RelWithDebInfo";
 
-    meta = {
-      homepage = "https://github.com/hyprwm/aquamarine";
-      description = "A very light linux rendering backend library";
-      license = lib.licenses.bsd3;
-      platforms = lib.platforms.linux;
-    };
-  }
+  meta = {
+    homepage = "https://github.com/hyprwm/aquamarine";
+    description = "A very light linux rendering backend library";
+    license = lib.licenses.bsd3;
+    platforms = lib.platforms.linux;
+  };
+}
