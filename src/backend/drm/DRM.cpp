@@ -699,6 +699,12 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             continue;
         }
 
+        // disabled outputs release their CRTCs so active outputs get priority
+        if (c->crtc && c->status == DRM_MODE_CONNECTED && c->output && !c->output->enabledState) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: {} is disabled, releasing crtc {}", c->szName, c->crtc->id));
+            c->crtc.reset();
+        }
+
         if (c->crtc && c->status == DRM_MODE_CONNECTED) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Skipping connector {}, has crtc {} and is connected", c->szName, c->crtc->id));
             continue;
@@ -727,12 +733,16 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
         bool assigned = false;
 
-        // try to use a connected connector
+        // try to use a connected, enabled connector
         for (auto const& c : recheck) {
             if (!(c->possibleCrtcs & (1 << i)))
                 continue;
 
             if (c->status != DRM_MODE_CONNECTED)
+                continue;
+
+            // Pass 1 only assigns to enabled connectors
+            if (c->output && !c->output->enabledState)
                 continue;
 
             // deactivate old output
@@ -754,11 +764,38 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} unassigned", i, crtcs.at(i)->id));
     }
 
+    // Pass 2: assign remaining CRTCs to disabled connectors as backup slots
+    for (size_t i = 0; i < crtcs.size(); ++i) {
+        bool taken = false;
+        for (auto const& c : connectors) {
+            if (c->crtc == crtcs.at(i)) {
+                taken = true;
+                break;
+            }
+        }
+        if (taken)
+            continue;
+
+        for (auto const& c : recheck) {
+            if (!(c->possibleCrtcs & (1 << i)))
+                continue;
+            if (c->status != DRM_MODE_CONNECTED)
+                continue;
+
+            backend->log(AQ_LOG_DEBUG, std::format("drm: backup slot {} crtc {} assigned to disabled {}", i, crtcs.at(i)->id, c->szName));
+            c->crtc = crtcs.at(i);
+            std::erase(recheck, c);
+            break;
+        }
+    }
+
     for (auto const& c : connectors) {
         if (c->status == DRM_MODE_CONNECTED)
             continue;
 
-        backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} is not connected{}", c->szName, c->crtc ? std::format(", removing old crtc {}", c->crtc->id) : ""));
+        if (c->crtc)
+            backend->log(AQ_LOG_DEBUG, std::format("drm: {} is not connected, clearing stale crtc {}", c->szName, c->crtc->id));
+        c->crtc.reset();
     }
 
     // tell the user to re-assign a valid mode etc, if needed
@@ -884,6 +921,11 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
     // now that crtcs are assigned, connect outputs
     for (const auto& conn : connectors) {
         if (conn->status == DRM_MODE_CONNECTED && !conn->output && !conn->tilingRedundant) {
+            if (!conn->crtc) {
+                backend->log(AQ_LOG_DEBUG, std::format("drm: {} has no CRTC, deferring connection", conn->szName));
+                continue;
+            }
+
             backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
 
             auto drmConn = drmModeGetConnector(gpu->fd, conn->id);
@@ -1726,13 +1768,27 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     if (output->state->state().committed & COutputState::AQ_OUTPUT_STATE_MODE)
         refresh = calculateRefresh(data.modeInfo);
 
-    output->enabledState = output->state->state().enabled;
+    const bool wasEnabled = output->enabledState;
+    output->enabledState  = output->state->state().enabled;
 
     if (!output->enabledState)
         releaseFBReferences();
 
     if (!backend->updateSecondaryRendererState())
         backend->backend->log(AQ_LOG_ERROR, std::format("drm: Failed to update renderer state for {} on applyCommit", szName));
+
+    if (wasEnabled != output->enabledState) {
+        auto bk = backend.lock();
+        if (bk) {
+            bk->backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} enabledState changed {} -> {}", szName, wasEnabled, output->enabledState));
+            auto weak = bk->self;
+            bk->backend->addIdleEvent(makeShared<std::function<void(void)>>([weak] {
+                auto b = weak.lock();
+                if (b)
+                    b->recheckOutputs();
+            }));
+        }
+    }
 }
 
 void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
