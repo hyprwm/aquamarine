@@ -3,6 +3,7 @@
 #include <ctime>
 #include <sys/timerfd.h>
 #include <cstring>
+#include <unistd.h>
 #include "Shared.hpp"
 
 using namespace Aquamarine;
@@ -30,12 +31,14 @@ Aquamarine::CHeadlessOutput::CHeadlessOutput(const std::string& name_, Hyprutils
 
     framecb = makeShared<std::function<void()>>([this]() {
         frameScheduled = false;
+        lastFrame      = std::chrono::steady_clock::now();
         events.frame.emit();
     });
+
+    lastFrame = std::chrono::steady_clock::now();
 }
 
 Aquamarine::CHeadlessOutput::~CHeadlessOutput() {
-    backend->backend->removeIdleEvent(framecb);
     events.destroy.emit();
 }
 
@@ -66,14 +69,38 @@ Hyprutils::Memory::CSharedPointer<IBackendImplementation> Aquamarine::CHeadlessO
 void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason) {
     TRACE(backend->backend->log(AQ_LOG_TRACE,
                                 std::format("CHeadlessOutput::scheduleFrame: reason {}, needsFrame {}, frameScheduled {}", (uint32_t)reason, needsFrame, frameScheduled)));
-    // FIXME: limit fps to the committed framerate.
+
     needsFrame = true;
 
     if (frameScheduled)
         return;
 
     frameScheduled = true;
-    backend->backend->addIdleEvent(framecb);
+
+    // schedule next frame when it should occur with a timer
+    int64_t refreshRatemHz = 60000;
+    auto&   currentState   = state->state();
+
+    if (currentState.mode)
+        refreshRatemHz = currentState.mode->refreshRate;
+    else if (currentState.customMode)
+        refreshRatemHz = currentState.customMode->refreshRate;
+
+    int64_t       frameIntervalNs = (TIMESPEC_NSEC_PER_SEC * 1000LL) / refreshRatemHz;
+
+    const auto    NOW              = std::chrono::steady_clock::now();
+    const int64_t TIME_SINCE_FRAME = std::chrono::duration_cast<std::chrono::nanoseconds>(NOW - lastFrame).count();
+    const int64_t TIME_UNTIL_FRAME = frameIntervalNs - TIME_SINCE_FRAME;
+
+    if (TIME_UNTIL_FRAME <= 0) {
+        backend->backend->addIdleEvent(framecb);
+        return;
+    }
+
+    backend->addTimer(NOW + std::chrono::nanoseconds(TIME_UNTIL_FRAME), [this]() {
+        if (framecb)
+            (*framecb)();
+    });
 }
 
 bool Aquamarine::CHeadlessOutput::destroy() {
@@ -87,7 +114,7 @@ Aquamarine::CHeadlessBackend::~CHeadlessBackend() {
 }
 
 Aquamarine::CHeadlessBackend::CHeadlessBackend(SP<CBackend> backend_) : backend(backend_) {
-    timers.timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+    timers.timerfd = Hyprutils::OS::CFileDescriptor{timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC)};
 }
 
 eBackendType Aquamarine::CHeadlessBackend::type() {
@@ -99,7 +126,7 @@ bool Aquamarine::CHeadlessBackend::start() {
 }
 
 std::vector<SP<SPollFD>> Aquamarine::CHeadlessBackend::pollFDs() {
-    return {makeShared<SPollFD>(timers.timerfd, [this]() { dispatchTimers(); })};
+    return {makeShared<SPollFD>(timers.timerfd.get(), [this]() { dispatchTimers(); })};
 }
 
 int Aquamarine::CHeadlessBackend::drmFD() {
@@ -159,7 +186,7 @@ std::vector<SDRMFormat> Aquamarine::CHeadlessBackend::getCursorFormats() {
 bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
     auto output = SP<CHeadlessOutput>(new CHeadlessOutput(name.empty() ? std::format("HEADLESS-{}", ++outputIDCounter) : name, self.lock()));
     outputs.emplace_back(output);
-    output->modes.emplace_back(SP<SOutputMode>(new SOutputMode(Vector2D{1920, 1080}, 60, true)));
+    output->modes.emplace_back(SP<SOutputMode>(new SOutputMode(Vector2D{1920, 1080}, 60000, true)));
     output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
     output->self      = output;
     backend->events.newOutput.emit(SP<IOutput>(output));
@@ -168,6 +195,12 @@ bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
 }
 
 void Aquamarine::CHeadlessBackend::dispatchTimers() {
+    std::array<char, 1024> buf;
+    if (timers.timerfd.isValid() && timers.timerfd.isReadable() && read(timers.timerfd.get(), buf.data(), buf.size()) < 0) {
+        backend->log(AQ_LOG_ERROR, std::format("headless: failed to read timerfd: {}", strerror(errno)));
+        return;
+    }
+
     std::vector<CTimer> toFire;
     for (size_t i = 0; i < timers.timers.size(); ++i) {
         if (timers.timers.at(i).expired()) {
@@ -206,8 +239,13 @@ void Aquamarine::CHeadlessBackend::updateTimerFD() {
 
     itimerspec ts = {.it_value = now};
 
-    if (timerfd_settime(timers.timerfd, TFD_TIMER_ABSTIME, &ts, nullptr))
+    if (timerfd_settime(timers.timerfd.get(), TFD_TIMER_ABSTIME, &ts, nullptr))
         backend->log(AQ_LOG_ERROR, std::format("headless: failed to arm timerfd: {}", strerror(errno)));
+}
+
+void Aquamarine::CHeadlessBackend::addTimer(std::chrono::steady_clock::time_point when, std::function<void(void)> what) {
+    timers.timers.push_back(CTimer{.when = when, .what = what});
+    updateTimerFD();
 }
 
 SP<IAllocator> Aquamarine::CHeadlessBackend::preferredAllocator() {

@@ -4,6 +4,7 @@
 #include "../allocator/Swapchain.hpp"
 #include "../output/Output.hpp"
 #include <hyprutils/memory/WeakPtr.hpp>
+#include <hyprutils/os/FileDescriptor.hpp>
 
 namespace Aquamarine {
     class CBackend;
@@ -30,6 +31,7 @@ namespace Aquamarine {
 
         Hyprutils::Memory::CSharedPointer<std::function<void()>> framecb;
         bool                                                     frameScheduled = false;
+        std::chrono::steady_clock::time_point                    lastFrame;
 
         friend class CHeadlessBackend;
     };
@@ -71,12 +73,13 @@ namespace Aquamarine {
         };
 
         struct {
-            int                 timerfd = -1;
-            std::vector<CTimer> timers;
+            Hyprutils::OS::CFileDescriptor timerfd;
+            std::vector<CTimer>            timers;
         } timers;
 
         void dispatchTimers();
         void updateTimerFD();
+        void addTimer(std::chrono::steady_clock::time_point when, std::function<void(void)> what);
 
         friend class CBackend;
         friend class CHeadlessOutput;
