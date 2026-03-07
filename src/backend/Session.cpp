@@ -245,7 +245,7 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
 
 SP<CSessionDevice> Aquamarine::CSessionDevice::openIfKMS(SP<CSession> session_, const std::string& path_) {
     auto dev = makeShared<CSessionDevice>(session_, path_);
-    if (!dev->supportsKMS())
+    if (!getenv("AQ_NO_KMS") && !dev->supportsKMS())
         return nullptr;
     return dev;
 }
