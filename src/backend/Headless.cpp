@@ -13,19 +13,6 @@ using namespace Hyprutils::Math;
 
 #define TIMESPEC_NSEC_PER_SEC 1000000000LL
 
-static void timespecAddNs(timespec* pTimespec, int64_t delta) {
-    int delta_ns_low = delta % TIMESPEC_NSEC_PER_SEC;
-    int delta_s_high = delta / TIMESPEC_NSEC_PER_SEC;
-
-    pTimespec->tv_sec += delta_s_high;
-
-    pTimespec->tv_nsec += (long)delta_ns_low;
-    if (pTimespec->tv_nsec >= TIMESPEC_NSEC_PER_SEC) {
-        pTimespec->tv_nsec -= TIMESPEC_NSEC_PER_SEC;
-        ++pTimespec->tv_sec;
-    }
-}
-
 Aquamarine::CHeadlessOutput::CHeadlessOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CHeadlessBackend> backend_) : backend(backend_) {
     name = name_;
 
@@ -220,24 +207,16 @@ void Aquamarine::CHeadlessBackend::dispatchTimers() {
 }
 
 void Aquamarine::CHeadlessBackend::updateTimerFD() {
-    long long  lowestNs = TIMESPEC_NSEC_PER_SEC * 240 /* 240s, 4 mins */;
-    const auto clocknow = std::chrono::steady_clock::now();
-
+    long long soonestTimer = std::chrono::steady_clock::now() + std::chrono::minutes(4);
+    
     for (auto const& t : timers.timers) {
-        auto delta = std::chrono::duration_cast<std::chrono::microseconds>(t.when - clocknow).count() * 1000 /* µs -> ns */;
-
-        if (delta < lowestNs)
-            lowestNs = delta;
+        if (t.when < soonestTimer)
+            soonestTimer = t.when;
     }
-
-    if (lowestNs < 0)
-        lowestNs = 0;
-
-    timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    timespecAddNs(&now, lowestNs);
-
-    itimerspec ts = {.it_value = now};
+    
+    auto       secs = std::chrono::time_point_cast<std::chrono::seconds>(soonestTimer);
+    auto       ns   = std::chrono::time_point_cast<std::chrono::nanoseconds>(soonestTimer) - std::chrono::time_point_cast<std::chrono::nanoseconds>(secs);
+    itimerspec ts   = {.it_value = {secs.time_since_epoch().count(), ns.count()}};
 
     if (timerfd_settime(timers.timerfd.get(), TFD_TIMER_ABSTIME, &ts, nullptr))
         backend->log(AQ_LOG_ERROR, std::format("headless: failed to arm timerfd: {}", strerror(errno)));
