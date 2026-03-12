@@ -378,6 +378,27 @@ bool Aquamarine::CDRMBackend::sessionActive() {
 void Aquamarine::CDRMBackend::restoreAfterVT() {
     backend->log(AQ_LOG_DEBUG, "drm: Restoring after VT switch");
 
+    // Clear stale page-flip bookkeeping for all connectors.
+    // During S3 suspend the display hardware powers off, so any pending
+    // page-flip completion events are lost. The handlePF() callback that
+    // normally clears these flags will never fire. Without this reset,
+    // commitState() rejects every frame with "Cannot commit when a
+    // page-flip is awaiting" and scheduleFrame() returns early, leaving
+    // outputs permanently black after resume.
+    //
+    // For VT switch this is also safe: pending events from the old session
+    // are still queued in the fd buffer and will fire handlePF() after
+    // restore, but isPageFlipPending is already false so the = false
+    // assignment is a harmless no-op.
+    for (auto const& c : connectors) {
+        if (c->isPageFlipPending || c->isFrameRunning) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Clearing stale page-flip state for {}", c->szName));
+            c->isPageFlipPending   = false;
+            c->isFrameRunning      = false;
+            c->frameEventScheduled = false;
+        }
+    }
+
     recheckOutputs();
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
@@ -1954,8 +1975,30 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
 
         if (STATE.enabled && (NEEDS_RECONFIG || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) && connector->isPageFlipPending) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
-            return false;
+            // Check if the pending page-flip is stale (>500ms — well beyond
+            // any vblank interval, even at low refresh rates). Stale flips
+            // occur after S3/S4 suspend when page-flip completion events are
+            // lost because the display hardware was powered off.
+            struct timespec ts;
+            clock_gettime(CLOCK_BOOTTIME, &ts);
+            uint64_t nowMs     = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
+            bool     staleFlip = (nowMs - connector->pageFlipPendingAtMs) > 500;
+
+            if (NEEDS_RECONFIG && staleFlip) {
+                // A blocking modeset uses DRM_MODE_ATOMIC_ALLOW_MODESET which
+                // fully resets the CRTC, implicitly cancelling any stale
+                // page-flip at the kernel level. Clear the stale userspace
+                // bookkeeping to match.
+                backend->backend->log(AQ_LOG_DEBUG,
+                                      std::format("drm: Clearing stale page-flip state for {} during modeset (pending for {}ms)", name,
+                                                  nowMs - connector->pageFlipPendingAtMs));
+                connector->isPageFlipPending   = false;
+                connector->isFrameRunning      = false;
+                connector->frameEventScheduled = false;
+            } else {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
+                return false;
+            }
         }
 
         if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))

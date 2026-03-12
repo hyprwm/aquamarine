@@ -462,8 +462,12 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 
     if (ok) {
         request.apply(data);
-        if (!data.test && data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
+        if (!data.test && data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
             connector->isPageFlipPending = true;
+            struct timespec ts;
+            clock_gettime(CLOCK_BOOTTIME, &ts);
+            connector->pageFlipPendingAtMs = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
+        }
     } else
         request.rollback(data);
 

@@ -138,6 +138,9 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
     }
 
     connector->isPageFlipPending = true;
+    struct timespec ts;
+    clock_gettime(CLOCK_BOOTTIME, &ts);
+    connector->pageFlipPendingAtMs = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
 
     return true;
 }
