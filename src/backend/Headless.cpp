@@ -86,7 +86,7 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
         if (framecb)
             (*framecb)();
         
-       lastFrame = NEXT_FRAME_TIME;
+        lastFrame = NEXT_FRAME_TIME;
     });
 }
 
