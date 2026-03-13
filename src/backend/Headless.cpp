@@ -73,7 +73,7 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
     else if (currentState.customMode)
         refreshRatemHz = currentState.customMode->refreshRate;
 
-    auto frameInterval   = std::chrono::nanoseconds(1000L * TIMESPEC_NSEC_PER_SEC / refreshRatemHz);
+    auto frameInterval   = std::chrono::nanoseconds(1000LL * TIMESPEC_NSEC_PER_SEC / refreshRatemHz);
     auto NEXT_FRAME_TIME = lastFrame + frameInterval;
 
     if (std::chrono::steady_clock::now() >= NEXT_FRAME_TIME) {
