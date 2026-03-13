@@ -18,6 +18,7 @@ Aquamarine::CHeadlessOutput::CHeadlessOutput(const std::string& name_, Hyprutils
 
     framecb = makeShared<std::function<void()>>([this]() {
         frameScheduled = false;
+        // not sure about removing this since framecb might be called outside of scheduleFrames no?!
         lastFrame      = std::chrono::steady_clock::now();
         events.frame.emit();
     });
@@ -81,9 +82,11 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
         return;
     }
 
-    backend->addTimer(NEXT_FRAME_TIME, [this]() {
+    backend->addTimer(NEXT_FRAME_TIME, [this, NEXT_FRAME_TIME]() {
         if (framecb)
             (*framecb)();
+        
+       lastFrame = NEXT_FRAME_TIME;
     });
 }
 
