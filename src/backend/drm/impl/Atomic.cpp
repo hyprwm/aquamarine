@@ -375,7 +375,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
     if (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT)
         data.atomic.degammad = prepareGammaBlob(connector->crtc->props.values.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
 
-    if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM) && data.ctm.has_value()) {
+    if (data.ctm.has_value() && (data.modeset || (STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM))) {
         if (!connector->crtc->props.values.ctm)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit ctm: no ctm prop support");
         else {

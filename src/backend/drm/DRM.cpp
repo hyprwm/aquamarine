@@ -7,6 +7,7 @@
 #include <aquamarine/allocator/DRMDumb.hpp>
 #include <cstdint>
 #include <format>
+#include <hyprutils/math/Mat3x3.hpp>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
@@ -2001,9 +2002,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
     }
 
-    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM)
-        data.ctm = STATE.ctm;
-
     if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
         data.hdrMetadata = STATE.hdrMetadata;
 
@@ -2015,6 +2013,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         data.modeInfo = *MODE->modeInfo;
     else
         data.calculateMode(connector);
+
+    if ((data.modeset && STATE.ctm != Mat3x3()) || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM))
+        data.ctm = STATE.ctm;
 
     bool ok = connector->commitState(data);
 
