@@ -189,7 +189,7 @@ void Aquamarine::CHeadlessBackend::dispatchTimers() {
     }
 
     auto it = std::stable_partition(timers.timers.begin(), timers.timers.end(), 
-        [](const CTimer& t) {
+        [](CTimer& t) {
             return !t.expired();
         });
     
