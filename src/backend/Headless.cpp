@@ -182,25 +182,24 @@ bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
 }
 
 void Aquamarine::CHeadlessBackend::dispatchTimers() {
-    std::array<char, 1024> buf;
-    if (timers.timerfd.isValid() && timers.timerfd.isReadable() && read(timers.timerfd.get(), buf.data(), buf.size()) < 0) {
+    uint64_t expirations;
+    if (timers.timerfd.isValid() && timers.timerfd.isReadable() && read(timers.timerfd.get(), &expirations, sizeof(uint64_t)) < 0) {
         backend->log(AQ_LOG_ERROR, std::format("headless: failed to read timerfd: {}", strerror(errno)));
         return;
     }
 
-    std::vector<CTimer> toFire;
-    for (size_t i = 0; i < timers.timers.size(); ++i) {
-        if (timers.timers.at(i).expired()) {
-            toFire.emplace_back(timers.timers.at(i));
-            timers.timers.erase(timers.timers.begin() + i);
-            i--;
-            continue;
-        }
-    }
+    auto it = std::stable_partition(timers.timers.begin(), timers.timers.end(), 
+        [](const CTimer& t) {
+            return !t.expired();
+        });
+    
+    std::vector<CTimer> toFire(std::make_move_iterator(it), 
+                               std::make_move_iterator(timers.timers.end()));
+    timers.timers.erase(it, timers.timers.end());
 
-    for (auto const& copy : toFire) {
-        if (copy.what)
-            copy.what();
+    for (auto& timer : toFire) {
+        if (timer.what)
+            timer.what();
     }
 
     updateTimerFD();
