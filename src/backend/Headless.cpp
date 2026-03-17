@@ -13,24 +13,12 @@ using namespace Hyprutils::Math;
 
 #define TIMESPEC_NSEC_PER_SEC 1000000000LL
 
-static void timespecAddNs(timespec* pTimespec, int64_t delta) {
-    int delta_ns_low = delta % TIMESPEC_NSEC_PER_SEC;
-    int delta_s_high = delta / TIMESPEC_NSEC_PER_SEC;
-
-    pTimespec->tv_sec += delta_s_high;
-
-    pTimespec->tv_nsec += (long)delta_ns_low;
-    if (pTimespec->tv_nsec >= TIMESPEC_NSEC_PER_SEC) {
-        pTimespec->tv_nsec -= TIMESPEC_NSEC_PER_SEC;
-        ++pTimespec->tv_sec;
-    }
-}
-
 Aquamarine::CHeadlessOutput::CHeadlessOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CHeadlessBackend> backend_) : backend(backend_) {
     name = name_;
 
     framecb = makeShared<std::function<void()>>([this]() {
         frameScheduled = false;
+        // not sure about removing this since framecb might be called outside of scheduleFrames no?!
         lastFrame      = std::chrono::steady_clock::now();
         events.frame.emit();
     });
@@ -86,20 +74,19 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
     else if (currentState.customMode)
         refreshRatemHz = currentState.customMode->refreshRate;
 
-    int64_t       frameIntervalNs = (TIMESPEC_NSEC_PER_SEC * 1000LL) / refreshRatemHz;
+    const auto FRAME_INTERVAL  = std::chrono::nanoseconds(1000LL * TIMESPEC_NSEC_PER_SEC / refreshRatemHz);
+    const auto NEXT_FRAME_TIME = lastFrame + FRAME_INTERVAL;
 
-    const auto    NOW              = std::chrono::steady_clock::now();
-    const int64_t TIME_SINCE_FRAME = std::chrono::duration_cast<std::chrono::nanoseconds>(NOW - lastFrame).count();
-    const int64_t TIME_UNTIL_FRAME = frameIntervalNs - TIME_SINCE_FRAME;
-
-    if (TIME_UNTIL_FRAME <= 0) {
+    if (std::chrono::steady_clock::now() >= NEXT_FRAME_TIME) {
         backend->backend->addIdleEvent(framecb);
         return;
     }
 
-    backend->addTimer(NOW + std::chrono::nanoseconds(TIME_UNTIL_FRAME), [this]() {
+    backend->addTimer(NEXT_FRAME_TIME, [this, NEXT_FRAME_TIME]() {
         if (framecb)
             (*framecb)();
+        
+        lastFrame = NEXT_FRAME_TIME;
     });
 }
 
@@ -195,49 +182,40 @@ bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
 }
 
 void Aquamarine::CHeadlessBackend::dispatchTimers() {
-    std::array<char, 1024> buf;
-    if (timers.timerfd.isValid() && timers.timerfd.isReadable() && read(timers.timerfd.get(), buf.data(), buf.size()) < 0) {
+    uint64_t expirations;
+    if (timers.timerfd.isValid() && timers.timerfd.isReadable() && read(timers.timerfd.get(), &expirations, sizeof(uint64_t)) < 0) {
         backend->log(AQ_LOG_ERROR, std::format("headless: failed to read timerfd: {}", strerror(errno)));
         return;
     }
 
-    std::vector<CTimer> toFire;
-    for (size_t i = 0; i < timers.timers.size(); ++i) {
-        if (timers.timers.at(i).expired()) {
-            toFire.emplace_back(timers.timers.at(i));
-            timers.timers.erase(timers.timers.begin() + i);
-            i--;
-            continue;
-        }
-    }
+    auto it = std::stable_partition(timers.timers.begin(), timers.timers.end(), 
+        [](CTimer& t) {
+            return !t.expired();
+        });
+    
+    std::vector<CTimer> toFire(std::make_move_iterator(it), 
+                               std::make_move_iterator(timers.timers.end()));
+    timers.timers.erase(it, timers.timers.end());
 
-    for (auto const& copy : toFire) {
-        if (copy.what)
-            copy.what();
+    for (auto& timer : toFire) {
+        if (timer.what)
+            timer.what();
     }
 
     updateTimerFD();
 }
 
 void Aquamarine::CHeadlessBackend::updateTimerFD() {
-    long long  lowestNs = TIMESPEC_NSEC_PER_SEC * 240 /* 240s, 4 mins */;
-    const auto clocknow = std::chrono::steady_clock::now();
+    auto soonestTimer = std::chrono::steady_clock::now() + std::chrono::minutes(4);
 
     for (auto const& t : timers.timers) {
-        auto delta = std::chrono::duration_cast<std::chrono::microseconds>(t.when - clocknow).count() * 1000 /* µs -> ns */;
-
-        if (delta < lowestNs)
-            lowestNs = delta;
+        if (t.when < soonestTimer)
+            soonestTimer = t.when;
     }
 
-    if (lowestNs < 0)
-        lowestNs = 0;
-
-    timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    timespecAddNs(&now, lowestNs);
-
-    itimerspec ts = {.it_value = now};
+    auto       secs = std::chrono::time_point_cast<std::chrono::seconds>(soonestTimer);
+    auto       ns   = std::chrono::time_point_cast<std::chrono::nanoseconds>(soonestTimer) - std::chrono::time_point_cast<std::chrono::nanoseconds>(secs);
+    itimerspec ts   = {.it_value = {secs.time_since_epoch().count(), ns.count()}};
 
     if (timerfd_settime(timers.timerfd.get(), TFD_TIMER_ABSTIME, &ts, nullptr))
         backend->log(AQ_LOG_ERROR, std::format("headless: failed to arm timerfd: {}", strerror(errno)));
