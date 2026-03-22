@@ -408,13 +408,22 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
         if (STATE.buffer) {
             SP<CDRMFB> drmFB;
-            auto       buf   = STATE.buffer;
-            bool       isNew = false;
 
-            drmFB = CDRMFB::create(buf, self, &isNew);
+            // If this backend requires blit (multi-GPU), the STATE.buffer was
+            // rendered on a different GPU and cannot be directly imported here.
+            // Skip the import and request a re-render through the proper blit pipeline.
+            if (!shouldBlit()) {
+                auto buf   = STATE.buffer;
+                bool isNew = false;
+                drmFB      = CDRMFB::create(buf, self, &isNew);
+            }
 
-            if (!drmFB)
-                backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
+            if (!drmFB) {
+                backend->log(AQ_LOG_DEBUG, std::format("drm: Buffer unavailable for crtc {} restore ({}), requesting re-render",
+                                                       c->crtc->id, shouldBlit() ? "multi-gpu" : "import failed"));
+                noMode.emplace_back(c);
+                continue;
+            }
 
             data.mainFB = drmFB;
         }
