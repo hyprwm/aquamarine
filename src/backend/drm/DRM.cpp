@@ -9,6 +9,7 @@
 #include <format>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <deque>
 #include <cstring>
@@ -38,6 +39,23 @@ using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
+
+static float aqDisplayIDFloat16(uint16_t raw) {
+    if (raw == 0)
+        return 0.F;
+
+    const int sign = (raw & 0x8000) ? -1 : 1;
+    const int exp  = (raw >> 10) & 0x1F;
+    const int mant = raw & 0x03FF;
+
+    if (exp == 0x1F)
+        return sign * INFINITY;
+
+    if (exp == 0)
+        return sign * std::ldexp(static_cast<float>(mant), -24);
+
+    return sign * std::ldexp(1.F + static_cast<float>(mant) / 1024.F, exp - 15);
+}
 
 Aquamarine::CDRMBackend::CDRMBackend(SP<CBackend> backend_) : backend(backend_) {
     listeners.sessionActivate = backend->session->events.changeActive.listen([this] {
@@ -1316,6 +1334,14 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
 
     auto exts = di_edid_get_extensions(edid);
 
+    struct SDisplayID2Caps {
+        bool  supportsBT2020 = false;
+        bool  supportsPQ     = false;
+        float maxLuminance   = 0.F;
+        float maxAvgLuma     = 0.F;
+        float minLuminance   = 0.F;
+    } displayid2Caps;
+
     for (; *exts != nullptr; exts++) {
         auto tag = di_edid_ext_get_tag(*exts);
         TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: checking ext {}", (uint32_t)tag)));
@@ -1347,6 +1373,57 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
             }
             break;
         }
+    }
+
+    for (size_t off = 128; off + 5 < data.size(); off += 128) {
+        if (data[off] != 0x70)
+            continue;
+
+        const uint8_t displayidVersion = data[off + 1] >> 4;
+        if (displayidVersion < 2)
+            continue;
+
+        const size_t payloadStart = off + 5;
+        const size_t payloadEnd   = std::min(payloadStart + static_cast<size_t>(data[off + 2]), data.size());
+
+        for (size_t idx = payloadStart; idx + 2 < payloadEnd;) {
+            const uint8_t tag = data[idx + 0];
+            const uint8_t len = data[idx + 2];
+            if (idx + 3 + len > payloadEnd)
+                break;
+
+            const uint8_t* block = data.data() + idx;
+
+            if (tag == 0x21 && len >= 29) {
+                displayid2Caps.maxAvgLuma   = aqDisplayIDFloat16(block[0x18] | (block[0x19] << 8));
+                displayid2Caps.maxLuminance = aqDisplayIDFloat16(block[0x1A] | (block[0x1B] << 8));
+                displayid2Caps.minLuminance = aqDisplayIDFloat16(block[0x1C] | (block[0x1D] << 8));
+                TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                            std::format("EDID: DisplayID v2 luminance full={} peak={} min={}", displayid2Caps.maxAvgLuma,
+                                                        displayid2Caps.maxLuminance, displayid2Caps.minLuminance)));
+            } else if (tag == 0x26 && len >= 7) {
+                const uint8_t combo1 = block[9];
+                displayid2Caps.supportsBT2020 = combo1 & (1 << 5) || combo1 & (1 << 6);
+                displayid2Caps.supportsPQ     = combo1 & (1 << 6);
+                TRACE(backend->backend->log(AQ_LOG_TRACE,
+                                            std::format("EDID: DisplayID v2 interface features combo1=0x{:02x} bt2020={} pq={}", combo1,
+                                                        displayid2Caps.supportsBT2020, displayid2Caps.supportsPQ)));
+            }
+
+            idx += 3 + len;
+        }
+    }
+
+    if (!parsed.supportsBT2020 && displayid2Caps.supportsBT2020)
+        parsed.supportsBT2020 = true;
+
+    if ((!parsed.hdrMetadata.has_value() || !parsed.hdrMetadata->supportsPQ) && displayid2Caps.supportsPQ) {
+        parsed.hdrMetadata = IOutput::SHDRMetadata{
+            .desiredContentMaxLuminance      = displayid2Caps.maxLuminance,
+            .desiredMaxFrameAverageLuminance = displayid2Caps.maxAvgLuma,
+            .desiredContentMinLuminance      = displayid2Caps.minLuminance,
+            .supportsPQ                      = true,
+        };
     }
 
     di_info_destroy(info);
