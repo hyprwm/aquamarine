@@ -605,11 +605,13 @@ bool Aquamarine::CDRMBackend::shouldBlit() {
 }
 
 bool Aquamarine::CDRMBackend::initMgpu() {
-    if (!rendererState.allocator) {
-        if (primary || backend->primaryAllocator->type() != AQ_ALLOCATOR_TYPE_GBM)
-            rendererState.allocator = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
-        else
-            rendererState.allocator = ((CGBMAllocator*)backend->primaryAllocator.get())->self.lock();
+    SP<CGBMAllocator> newAllocator;
+    if (primary || backend->primaryAllocator->type() != AQ_ALLOCATOR_TYPE_GBM) {
+        newAllocator            = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
+        rendererState.allocator = newAllocator;
+    } else {
+        newAllocator            = ((CGBMAllocator*)backend->primaryAllocator.get())->self.lock();
+        rendererState.allocator = newAllocator;
     }
 
     if (!rendererState.allocator) {
@@ -617,8 +619,7 @@ bool Aquamarine::CDRMBackend::initMgpu() {
         return false;
     }
 
-    if (!rendererState.renderer)
-        rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
+    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
 
     if (!rendererState.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
@@ -1106,15 +1107,21 @@ void Aquamarine::CDRMBackend::onReady() {
 
     // init a drm renderer to gather gl formats.
     // if we are secondary, initMgpu will have done that
-    bool ok = true;
-    if (primary)
-        ok = updateSecondaryRendererState();
-    else if (!rendererState.renderer || !rendererState.allocator)
-        ok = initMgpu();
-
-    if (!ok) {
-        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to initialize renderer state for {}", gpu->path));
-        return;
+    if (!primary) {
+        auto a = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
+        if (!a)
+            backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
+        else {
+            auto r = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
+            if (!r)
+                backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
+            else {
+                TRACE(backend->log(AQ_LOG_TRACE, std::format("drm: onReady: gathered {} gl formats", r->formats.size())));
+                buildGlFormats(r->formats);
+                r.reset();
+                a.reset();
+            }
+        }
     }
 
     for (auto const& c : connectors) {
@@ -1678,13 +1685,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (!backend->backend->ready)
         return;
 
-    bool ok = true;
-    if (backend->primary)
-        ok = backend->updateSecondaryRendererState();
-    else if (!backend->rendererState.renderer || !backend->rendererState.allocator)
-        ok = backend->initMgpu();
-
-    if (!ok) {
+    if (!backend->updateSecondaryRendererState()) {
         backend->backend->log(AQ_LOG_ERROR, std::format("drm: Failed to update renderer state for {} on connect", szName));
         return;
     }
