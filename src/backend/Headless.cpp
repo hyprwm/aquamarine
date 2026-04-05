@@ -1,5 +1,6 @@
 #include <aquamarine/backend/Headless.hpp>
 #include <fcntl.h>
+#include <algorithm>
 #include <ctime>
 #include <sys/timerfd.h>
 #include <cstring>
