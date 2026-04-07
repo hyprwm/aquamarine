@@ -284,6 +284,7 @@ namespace Aquamarine {
         virtual uint32_t                                                  commitCapabilities() const;
         virtual SCommitSubmission                                         commitAsync(const SCommitOptions& options);
         virtual std::vector<SPlaneData>                                   getPlanes();
+        virtual std::optional<SPlaneData>                                 getOverlayPlane();
 
         std::string                                                       name, description, make, model, serial;
         SParsedEDID                                                       parsedEDID;
