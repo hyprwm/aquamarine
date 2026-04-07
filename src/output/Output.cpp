@@ -51,6 +51,10 @@ std::vector<Aquamarine::IOutput::SPlaneData> Aquamarine::IOutput::getPlanes() {
     return {{.renderFormats = {}, .type = AQ_PLANE_PRIMARY}};
 }
 
+std::optional<Aquamarine::IOutput::SPlaneData> Aquamarine::IOutput::getOverlayPlane() {
+    return {};
+}
+
 const Aquamarine::COutputState::SInternalState& Aquamarine::COutputState::state() {
     return internalState;
 }

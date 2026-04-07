@@ -203,6 +203,7 @@ namespace Aquamarine {
         virtual bool                                                      pendingPageFlip()  = 0;
         virtual bool                                                      pendingIdleFrame() = 0;
         virtual std::vector<SPlaneData>                                   getPlanes();
+        virtual std::optional<SPlaneData>                                 getOverlayPlane();
 
         std::string                                                       name, description, make, model, serial;
         SParsedEDID                                                       parsedEDID;
