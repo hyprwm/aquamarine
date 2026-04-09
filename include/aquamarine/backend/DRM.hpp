@@ -130,8 +130,9 @@ namespace Aquamarine {
         union UDRMPlaneProps {
             struct {
                 uint32_t type;
-                uint32_t rotation;   // Not guaranteed to exist
-                uint32_t in_formats; // Not guaranteed to exist
+                uint32_t rotation;    // Not guaranteed to exist
+                uint32_t in_formats;  // Not guaranteed to exist
+                uint32_t color_range; // Not guaranteed to exist
 
                 // atomic-modesetting only
 
@@ -251,6 +252,8 @@ namespace Aquamarine {
         virtual bool                                                      pendingIdleFrame();
         virtual uint32_t                                                  commitCapabilities() const;
         virtual SCommitSubmission                                         commitAsync(const SCommitOptions& options);
+        virtual std::vector<SPlaneData>                                   getPlanes();
+        virtual std::optional<SPlaneData>                                 getOverlayPlane();
         void                                                              releaseMgpuResources();
 
         int                                                               getConnectorID();
@@ -434,7 +437,7 @@ namespace Aquamarine {
 
                 uint32_t crtc_id;
             } values;
-            uint32_t props[14] = {0};
+            uint32_t props[15] = {0};
         };
         UDRMConnectorProps props;
 

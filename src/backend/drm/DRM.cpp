@@ -850,7 +850,13 @@ bool Aquamarine::CDRMBackend::initResources() {
     }
 
     success = true;
-    return true;
+
+    for (const auto& crtc : crtcs) {}
+
+    drmModeFreePlaneResources(planeResources);
+    drmModeFreeResources(resources);
+
+    return success;
 }
 
 bool Aquamarine::CDRMBackend::shouldBlit() {
@@ -1658,6 +1664,9 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 
     if (!getDRMProp(backend->gpu->fd, id, props.values.type, &type))
         return false;
+
+    if (props.values.color_range)
+        getDRMPlaneColorRange(backend->gpu->fd, props.values.color_range, &colorRange);
 
     initialID = id;
 
@@ -3252,6 +3261,33 @@ bool Aquamarine::CDRMOutput::pendingIdleFrame() {
     return connector->sched.frameScheduled();
 }
 
+std::vector<Aquamarine::IOutput::SPlaneData> Aquamarine::CDRMOutput::getPlanes() {
+    std::vector<Aquamarine::IOutput::SPlaneData> result(connector->crtc->planes.size());
+    uint32_t                                     i = 0;
+    for (const auto& p : connector->crtc->planes) {
+        result.push_back(Aquamarine::IOutput::SPlaneData{
+            .renderFormats = p->formats,
+            .type          = AQ_PLANE_GENERIC,
+            .id            = p->id,
+            .index         = i++,
+        });
+    }
+    return result;
+}
+
+std::optional<Aquamarine::IOutput::SPlaneData> Aquamarine::CDRMOutput::getOverlayPlane() {
+    if (!connector || !connector->crtc || !connector->crtc->planes.size())
+        return {};
+    const auto& overlay = connector->crtc->planes.back();
+    ASSERT(overlay->type == DRM_PLANE_TYPE_OVERLAY);
+    return Aquamarine::IOutput::SPlaneData{
+        .renderFormats = overlay->formats,
+        .type          = AQ_PLANE_GENERIC,
+        .id            = overlay->id,
+        .index         = (uint32_t)(connector->crtc->planes.size() - 1),
+    };
+}
+
 int Aquamarine::CDRMOutput::getConnectorID() {
     return connector->id;
 }
@@ -3268,6 +3304,7 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
 
     // scheduled from inside a running frame, schedule it once the running frame is done.
     rescheduleListener = connector->sched.rescheduleNeeded.listen([this]() { scheduleFrame(AQ_SCHEDULE_NEEDS_FRAME); });
+    state->internalState.planeStates.resize(connector->crtc->planes.size());
 }
 
 SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, bool* isNew) {
