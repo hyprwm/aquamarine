@@ -22,6 +22,7 @@ static const struct prop_info connector_info[] = {
 #define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorProps, values.name) / sizeof(uint32_t))
     {.name = "CRTC_ID", .index = INDEX(crtc_id)},
     {.name = "Colorspace", .index = INDEX(Colorspace)},
+    {.name = "Broadcast RGB", .index = INDEX(BroadcastRGB)},
     {.name = "DPMS", .index = INDEX(dpms)},
     {.name = "EDID", .index = INDEX(edid)},
     {.name = "HDR_OUTPUT_METADATA", .index = INDEX(hdr_output_metadata)},
@@ -42,6 +43,14 @@ static const struct prop_info colorspace_info[] = {
     {.name = "BT2020_RGB", .index = INDEX(BT2020_RGB)},
     {.name = "BT2020_YCC", .index = INDEX(BT2020_YCC)},
     {.name = "Default", .index = INDEX(Default)},
+#undef INDEX
+};
+
+static const struct prop_info broadcast_rgb_info[] = {
+#define INDEX(name) (offsetof(SDRMConnector::UDRMConnectorBroadcastRGB, values.name) / sizeof(uint32_t))
+    {.name = "Automatic", .index = INDEX(Automatic)},
+    {.name = "Full", .index = INDEX(Full)},
+    {.name = "Limited 16:235", .index = INDEX(Limited)},
 #undef INDEX
 };
 
@@ -129,6 +138,10 @@ namespace Aquamarine {
 
     bool getDRMConnectorColorspace(int fd, uint32_t id, SDRMConnector::UDRMConnectorColorspace* out) {
         return scanPropertyEnum(fd, id, out->props, colorspace_info, sizeof(colorspace_info) / sizeof(colorspace_info[0]));
+    }
+
+    bool getDRMConnectorBroadcastRGB(int fd, uint32_t id, SDRMConnector::UDRMConnectorBroadcastRGB* out) {
+        return scanPropertyEnum(fd, id, out->props, broadcast_rgb_info, sizeof(broadcast_rgb_info) / sizeof(broadcast_rgb_info[0]));
     }
 
     bool getDRMCRTCProps(int fd, uint32_t id, SDRMCRTC::UDRMCRTCProps* out) {

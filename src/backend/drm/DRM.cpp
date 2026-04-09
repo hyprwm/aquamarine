@@ -1447,6 +1447,8 @@ bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
         return false;
     if (props.values.Colorspace)
         getDRMConnectorColorspace(backend->gpu->fd, props.values.Colorspace, &colorspace);
+    if (props.values.BroadcastRGB)
+        getDRMConnectorBroadcastRGB(backend->gpu->fd, props.values.BroadcastRGB, &broadcastRGB);
 
     auto name = drmModeGetConnectorTypeName(connector->connector_type);
     if (!name)
@@ -1690,6 +1692,9 @@ void Aquamarine::SDRMConnector::recheckCRTCProps() {
 
     backend->backend->log(AQ_LOG_DEBUG,
                           std::format("drm: connector {} crtc {} Colorspace ({})", szName, (props.values.Colorspace ? "supports" : "doesn't support"), props.values.Colorspace));
+
+    backend->backend->log(
+        AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} Broadcast RGB ({})", szName, (props.values.BroadcastRGB ? "supports" : "doesn't support"), props.values.BroadcastRGB));
 }
 
 void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {

@@ -172,6 +172,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
                 add(connector->id, connector->props.values.Colorspace, newColorspace);
         }
 
+        if (connector->props.values.BroadcastRGB && connector->broadcastRGB.values.Full)
+            add(connector->id, connector->props.values.BroadcastRGB, connector->broadcastRGB.values.Full);
+
         if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
             add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
     } else

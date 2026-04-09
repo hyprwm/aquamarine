@@ -362,6 +362,7 @@ namespace Aquamarine {
                 uint32_t content_type;        // not guaranteed to exist
                 uint32_t max_bpc;             // not guaranteed to exist
                 uint32_t Colorspace;          // not guaranteed to exist
+                uint32_t BroadcastRGB;        // not guaranteed to exist
                 uint32_t hdr_output_metadata; // not guaranteed to exist
                 uint32_t tile;                // not guaranteed to exist
 
@@ -382,6 +383,16 @@ namespace Aquamarine {
             uint32_t props[3] = {0};
         };
         UDRMConnectorColorspace colorspace;
+
+        union UDRMConnectorBroadcastRGB {
+            struct {
+                uint32_t Automatic;
+                uint32_t Full;
+                uint32_t Limited;
+            } values;
+            uint32_t props[3] = {0};
+        };
+        UDRMConnectorBroadcastRGB broadcastRGB;
     };
 
     class IDRMImplementation {
