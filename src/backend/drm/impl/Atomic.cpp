@@ -107,6 +107,8 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
     add(plane->id, plane->props.values.crtc_h, (uint32_t)fb->buffer->size.y);
     add(plane->id, plane->props.values.fb_id, fb->id);
     add(plane->id, plane->props.values.crtc_id, crtc);
+    if (plane->props.values.color_range && plane->colorRange.values.full)
+        add(plane->id, plane->props.values.color_range, plane->colorRange.values.full);
     planePropsPos(plane, pos);
 }
 
@@ -215,6 +217,11 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->crtc->id, connector->crtc->props.values.vrr_enabled, (uint64_t)STATE.adaptiveSync);
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {});
+        int i = 0;
+        for (const auto& state : connector->output->state->state().planeStates) {
+            const auto& plane = connector->crtc->planes.at(i);
+            // TODO
+        }
 
         if (connector->output->supportsExplicit && STATE.explicitInFence >= 0)
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.in_fence_fd, STATE.explicitInFence);
@@ -223,6 +230,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.fb_damage_clips, data.atomic.fbDamage);
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
+        for (const auto& plane : connector->crtc->planes) {
+            planeProps(plane, nullptr, 0, {});
+        }
     }
 }
 

@@ -184,7 +184,9 @@ namespace Aquamarine {
 
         struct SPlaneData {
             std::vector<SDRMFormat> renderFormats; // empty if unknown / not specified -> use getRenderFormats()
-            ePlaneType              type = AQ_PLANE_UNKNOWN;
+            ePlaneType              type  = AQ_PLANE_UNKNOWN;
+            uint32_t                id    = 0;
+            uint32_t                index = 0;
         };
 
         virtual bool                                                      commit()           = 0;

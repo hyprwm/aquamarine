@@ -8,6 +8,7 @@ namespace Aquamarine {
     bool  getDRMConnectorBroadcastRGB(int fd, uint32_t id, SDRMConnector::UDRMConnectorBroadcastRGB* out);
     bool  getDRMCRTCProps(int fd, uint32_t id, SDRMCRTC::UDRMCRTCProps* out);
     bool  getDRMPlaneProps(int fd, uint32_t id, SDRMPlane::UDRMPlaneProps* out);
+    bool  getDRMPlaneColorRange(int fd, uint32_t id, SDRMPlane::UDRMPlanePropsColorRange* out);
     bool  getDRMProp(int fd, uint32_t obj, uint32_t prop, uint64_t* ret);
     void* getDRMPropBlob(int fd, uint32_t obj, uint32_t prop, size_t* ret_len);
     char* getDRMPropEnum(int fd, uint32_t obj, uint32_t prop_id);
