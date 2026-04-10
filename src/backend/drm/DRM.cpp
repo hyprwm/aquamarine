@@ -1700,9 +1700,12 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 
 void Aquamarine::SDRMConnector::disconnect() {
     if (!output) {
-        if (auto* b = backend ? backend->backend : nullptr)
-            b->log(AQ_LOG_DEBUG,
-                std::format("drm: Not disconnecting connector {} because it's already disconnected", szName));
+        if (backend) {
+            auto b = backend->backend.lock();
+            if (b)
+                b->log(AQ_LOG_DEBUG,
+                    std::format("drm: Not disconnecting connector {} because it's already disconnected", szName));
+        }
         return;
     }
 
