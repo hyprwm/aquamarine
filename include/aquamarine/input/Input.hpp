@@ -4,6 +4,7 @@
 #include <hyprutils/math/Vector2D.hpp>
 
 struct libinput_device;
+struct libinput_tablet_tool;
 
 namespace Aquamarine {
     class ITabletTool;
@@ -292,6 +293,7 @@ namespace Aquamarine {
         }
 
         virtual libinput_device*   getLibinputHandle();
+        virtual libinput_tablet_tool* getLibinputTool();
         virtual const std::string& getName() = 0;
 
         enum eTabletToolType : uint32_t {

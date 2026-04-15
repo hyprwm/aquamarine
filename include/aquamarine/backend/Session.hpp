@@ -150,6 +150,7 @@ namespace Aquamarine {
         virtual ~CLibinputTabletTool();
 
         virtual libinput_device*   getLibinputHandle();
+        virtual libinput_tablet_tool* getLibinputTool();
         virtual const std::string& getName();
 
       private:

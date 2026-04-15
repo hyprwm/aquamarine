@@ -1066,6 +1066,10 @@ libinput_device* Aquamarine::CLibinputTabletTool::getLibinputHandle() {
     return device->device;
 }
 
+libinput_tablet_tool* Aquamarine::CLibinputTabletTool::getLibinputTool() {
+    return libinputTool;
+}
+
 const std::string& Aquamarine::CLibinputTabletTool::getName() {
     if (!device)
         return AQ_UNKNOWN_DEVICE_NAME;
