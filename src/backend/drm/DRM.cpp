@@ -1978,7 +1978,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
             drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
         } else {
-            if (!(backend->sinkOnly && backend->sinkCpuCopy))
+            if (!backend->sinkOnly || !backend->sinkCpuCopy)
                 drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
 
             if (!drmFB && backend->sinkOnly && backend->dumbAllocator) {
@@ -1998,12 +1998,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                     mgpu.swapchain = CSwapchain::create(backend->dumbAllocator, backend.lock());
 
                 auto bufDma  = STATE.buffer->dmabuf();
-                auto OPTIONS = mgpu.swapchain->currentOptions();
+                auto OPTIONS = swapchain->currentOptions();
                 OPTIONS.size = STATE.buffer->size;
                 if (OPTIONS.format == DRM_FORMAT_INVALID)
                     OPTIONS.format = bufDma.format;
-                if (OPTIONS.length == 0)
-                    OPTIONS.length = 2;
                 OPTIONS.multigpu = false;
                 OPTIONS.cursor   = false;
                 OPTIONS.scanout  = true;
@@ -2018,12 +2016,16 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                     return false;
                 }
 
-                if (!primaryRenderer->readBufferToDumb(STATE.buffer, NEWAQBUF,
-                                                       (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1)) {
-                    backend->backend->log(AQ_LOG_ERROR, "drm: sink-only CPU copy failed");
+                auto blitResult = primaryRenderer->blit(STATE.buffer, NEWAQBUF, nullptr,
+                                                        (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+                if (!blitResult.success) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: sink-only: primary blit into dumb buffer failed");
                     return false;
                 }
-                state->setExplicitInFence(-1);
+                if (blitResult.syncFD.has_value() && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE))
+                    state->setExplicitInFence(blitResult.syncFD.value());
+                else
+                    state->setExplicitInFence(-1);
 
                 drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr);
             }
