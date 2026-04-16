@@ -149,8 +149,9 @@ namespace Aquamarine {
         CLibinputTabletTool(Hyprutils::Memory::CSharedPointer<CLibinputDevice> dev, libinput_tablet_tool* tool);
         virtual ~CLibinputTabletTool();
 
-        virtual libinput_device*   getLibinputHandle();
-        virtual const std::string& getName();
+        virtual libinput_device*      getLibinputHandle();
+        virtual libinput_tablet_tool* getLibinputTool();
+        virtual const std::string&    getName();
 
       private:
         Hyprutils::Memory::CWeakPointer<CLibinputDevice> device;

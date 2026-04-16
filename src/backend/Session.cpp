@@ -689,7 +689,7 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
                 case LIBINPUT_SWITCH_LID: hlDevice->switchy->type = ISwitch::AQ_SWITCH_TYPE_LID; break;
                 case LIBINPUT_SWITCH_TABLET_MODE: hlDevice->switchy->type = ISwitch::AQ_SWITCH_TYPE_TABLET_MODE; break;
                 default: break;
-            }  
+            }
 
             hlDevice->switchy->events.fire.emit(ISwitch::SFireEvent{
                 .timeMs = (uint32_t)(libinput_event_switch_get_time_usec(se) / 1000),
@@ -1064,6 +1064,10 @@ libinput_device* Aquamarine::CLibinputTabletTool::getLibinputHandle() {
     if (!device)
         return nullptr;
     return device->device;
+}
+
+libinput_tablet_tool* Aquamarine::CLibinputTabletTool::getLibinputTool() {
+    return libinputTool;
 }
 
 const std::string& Aquamarine::CLibinputTabletTool::getName() {

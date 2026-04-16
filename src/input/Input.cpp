@@ -20,6 +20,10 @@ libinput_device* Aquamarine::ITabletTool::getLibinputHandle() {
     return nullptr;
 }
 
+libinput_tablet_tool* Aquamarine::ITabletTool::getLibinputTool() {
+    return nullptr;
+}
+
 libinput_device* Aquamarine::ITablet::getLibinputHandle() {
     return nullptr;
 }
