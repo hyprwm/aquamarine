@@ -292,9 +292,9 @@ namespace Aquamarine {
             events.destroy.emit();
         }
 
-        virtual libinput_device*   getLibinputHandle();
+        virtual libinput_device*      getLibinputHandle();
         virtual libinput_tablet_tool* getLibinputTool();
-        virtual const std::string& getName() = 0;
+        virtual const std::string&    getName() = 0;
 
         enum eTabletToolType : uint32_t {
             AQ_TABLET_TOOL_TYPE_INVALID = 0,
