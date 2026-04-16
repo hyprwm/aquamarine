@@ -601,44 +601,53 @@ bool Aquamarine::CDRMBackend::initResources() {
 }
 
 bool Aquamarine::CDRMBackend::shouldBlit() {
-    return primary;
+    return primary && !sinkOnly;
 }
 
 bool Aquamarine::CDRMBackend::initMgpu() {
     SP<CGBMAllocator> newAllocator;
     if (primary || backend->primaryAllocator->type() != AQ_ALLOCATOR_TYPE_GBM) {
-        newAllocator            = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
-        rendererState.allocator = newAllocator;
-    } else {
-        newAllocator            = ((CGBMAllocator*)backend->primaryAllocator.get())->self.lock();
-        rendererState.allocator = newAllocator;
+        int newFd = backend->reopenDRMNode(gpu->fd);
+        if (newFd >= 0)
+            newAllocator = CGBMAllocator::create(newFd, backend);
+    } else
+        newAllocator = ((CGBMAllocator*)backend->primaryAllocator.get())->self.lock();
+
+    if (newAllocator) {
+        auto r = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
+        if (r) {
+            rendererState.allocator      = newAllocator;
+            rendererState.renderer       = r;
+            rendererState.renderer->self = r;
+            sinkOnly                     = false;
+            buildGlFormats(r->formats);
+            return true;
+        }
     }
 
-    if (!rendererState.allocator) {
-        backend->log(AQ_LOG_ERROR, "drm: initMgpu: no allocator");
-        return false;
+    if (primary) {
+        backend->log(AQ_LOG_DEBUG, std::format("drm: initMgpu: {} has no EGL-capable rendering, scanning out primary buffers directly", gpuName));
+        rendererState.allocator.reset();
+        rendererState.renderer.reset();
+        sinkOnly  = true;
+        glFormats = primary->glFormats;
+        return true;
     }
 
-    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
-
-    if (!rendererState.renderer) {
-        backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
-        return false;
-    }
-
-    rendererState.renderer->self = rendererState.renderer;
-
-    buildGlFormats(rendererState.renderer->formats);
-
-    return true;
+    backend->log(AQ_LOG_ERROR, "drm: initMgpu: no allocator/renderer");
+    rendererState.allocator.reset();
+    rendererState.renderer.reset();
+    return false;
 }
 
 bool Aquamarine::CDRMBackend::updateSecondaryRendererState() {
     if (!backend->ready)
         return true;
 
+    const auto haveRenderState = [this] { return sinkOnly || (rendererState.allocator && rendererState.renderer); };
+
     if (!primary) {
-        if (rendererState.renderer && rendererState.allocator)
+        if (haveRenderState())
             return true;
 
         return initMgpu();
@@ -648,12 +657,15 @@ bool Aquamarine::CDRMBackend::updateSecondaryRendererState() {
         std::ranges::any_of(connectors, [](const auto& c) { return c->status == DRM_MODE_CONNECTED && c->output && c->output->state && c->output->state->state().enabled; });
 
     if (hasEnabledOutputs) {
-        if (rendererState.renderer && rendererState.allocator)
+        if (haveRenderState())
             return true;
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: Initializing secondary renderer on {}, has enabled outputs", gpu->path));
         return initMgpu();
     }
+
+    if (sinkOnly)
+        return true;
 
     if (!rendererState.renderer && !rendererState.allocator)
         return true;
@@ -794,8 +806,6 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     gpuName = drmName;
 
     auto drmVerName = drmVer->name ? drmVer->name : "unknown";
-    if (std::string_view(drmVerName) == "evdi")
-        primary = {};
 
     backend->log(AQ_LOG_DEBUG,
                  std::format("drm: Starting backend for {}, with driver {}{}", drmName ? drmName : "unknown", drmVerName,
@@ -1967,8 +1977,57 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 state->setExplicitInFence(-1);
 
             drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
-        } else
-            drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
+        } else {
+            if (!(backend->sinkOnly && backend->sinkCpuCopy))
+                drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
+
+            if (!drmFB && backend->sinkOnly && backend->dumbAllocator) {
+                if (!backend->sinkCpuCopy) {
+                    backend->backend->log(AQ_LOG_DEBUG,
+                                          std::format("drm: sink-only: direct KMS import of primary buffer failed on {}, switching to dumb-buffer CPU copy", backend->gpuName));
+                    backend->sinkCpuCopy = true;
+                }
+
+                SP<CDRMRenderer> primaryRenderer = backend->primary ? backend->primary->rendererState.renderer : nullptr;
+                if (!primaryRenderer) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: sink-only CPU copy requires a primary renderer");
+                    return false;
+                }
+
+                if (!mgpu.swapchain)
+                    mgpu.swapchain = CSwapchain::create(backend->dumbAllocator, backend.lock());
+
+                auto bufDma  = STATE.buffer->dmabuf();
+                auto OPTIONS = mgpu.swapchain->currentOptions();
+                OPTIONS.size = STATE.buffer->size;
+                if (OPTIONS.format == DRM_FORMAT_INVALID)
+                    OPTIONS.format = bufDma.format;
+                if (OPTIONS.length == 0)
+                    OPTIONS.length = 2;
+                OPTIONS.multigpu = false;
+                OPTIONS.cursor   = false;
+                OPTIONS.scanout  = true;
+                if (!mgpu.swapchain->reconfigure(OPTIONS)) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: sink-only CPU copy: mgpu swapchain reconfigure failed");
+                    return false;
+                }
+
+                auto NEWAQBUF = mgpu.swapchain->next(nullptr);
+                if (!NEWAQBUF) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: sink-only CPU copy: no dumb buffer from swapchain");
+                    return false;
+                }
+
+                if (!primaryRenderer->readBufferToDumb(STATE.buffer, NEWAQBUF,
+                                                       (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1)) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: sink-only CPU copy failed");
+                    return false;
+                }
+                state->setExplicitInFence(-1);
+
+                drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr);
+            }
+        }
 
         if (!drmFB) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
@@ -2107,6 +2166,12 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         SP<CDRMFB> fb;
 
         if (backend->primary) {
+            if (backend->sinkOnly) {
+                TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: sink-only backend, no cursor plane"));
+                setCursorVisible(false);
+                return false;
+            }
+
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires cursor blit, blitting"));
 
             if (!backend->rendererState.renderer || !backend->rendererState.allocator) {

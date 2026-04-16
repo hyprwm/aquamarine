@@ -926,6 +926,75 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
     proc.eglDestroyImageKHR(egl.display, rboImage);
 }
 
+bool CDRMRenderer::readBufferToDumb(SP<IBuffer> from, SP<IBuffer> toDumb, int waitFD) {
+    if (!from || !toDumb)
+        return false;
+
+    const auto& fromDma = from->dmabuf();
+    const auto& toDma   = toDumb->dmabuf();
+    if (!fromDma.success || !toDma.success)
+        return false;
+
+    if (fromDma.size != toDma.size) {
+        backend->log(AQ_LOG_ERROR, std::format("EGL (readBufferToDumb): size mismatch from {} to {}", fromDma.size, toDma.size));
+        return false;
+    }
+
+    if (!(toDumb->caps() & BUFFER_CAPABILITY_DATAPTR)) {
+        backend->log(AQ_LOG_ERROR, "EGL (readBufferToDumb): destination has no data ptr capability");
+        return false;
+    }
+
+    if (waitFD >= 0 && !CFileDescriptor::isReadable(waitFD)) {
+        CEglContextGuard eglContext(*this);
+        waitOnSync(waitFD);
+    }
+
+    const int W = (int)fromDma.size.x;
+    const int H = (int)fromDma.size.y;
+
+    std::vector<uint8_t> intermediate((size_t)W * H * 4);
+    readBuffer(from, intermediate);
+
+    auto [dst, fmt, len] = toDumb->beginDataPtr(0);
+    if (!dst) {
+        backend->log(AQ_LOG_ERROR, "EGL (readBufferToDumb): beginDataPtr returned null");
+        return false;
+    }
+
+    const size_t dstStride = toDma.strides.at(0);
+
+    switch (fmt) {
+        case DRM_FORMAT_XRGB8888:
+        case DRM_FORMAT_ARGB8888: {
+            for (int y = 0; y < H; ++y) {
+                const uint8_t* src = intermediate.data() + (size_t)y * W * 4;
+                uint8_t*       d   = dst + (size_t)y * dstStride;
+                for (int x = 0; x < W; ++x) {
+                    d[x * 4 + 0] = src[x * 4 + 2];
+                    d[x * 4 + 1] = src[x * 4 + 1];
+                    d[x * 4 + 2] = src[x * 4 + 0];
+                    d[x * 4 + 3] = src[x * 4 + 3];
+                }
+            }
+            break;
+        }
+        case DRM_FORMAT_XBGR8888:
+        case DRM_FORMAT_ABGR8888: {
+            for (int y = 0; y < H; ++y)
+                memcpy(dst + (size_t)y * dstStride, intermediate.data() + (size_t)y * W * 4, (size_t)W * 4);
+            break;
+        }
+        default:
+            backend->log(AQ_LOG_ERROR, std::format("EGL (readBufferToDumb): unsupported destination format {}", fourccToName(fmt)));
+            toDumb->endDataPtr();
+            return false;
+    }
+
+    toDumb->endDataPtr();
+    return true;
+}
+
 CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
     CEglContextGuard eglContext(*this);
 
