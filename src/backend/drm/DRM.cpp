@@ -720,9 +720,10 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
     }
 
     for (size_t i = 0; i < crtcs.size(); ++i) {
+        const auto& crtc = crtcs.at(i);
         bool taken = false;
         for (auto const& c : connectors) {
-            if (c->crtc != crtcs.at(i))
+            if (c->crtc != crtc)
                 continue;
 
             if (c->status != DRM_MODE_CONNECTED || c->tilingRedundant)
@@ -753,8 +754,8 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             }
 
             backend->log(AQ_LOG_DEBUG,
-                         std::format("drm: connected slot {} crtc {} assigned to {}{}", i, crtcs.at(i)->id, c->szName, c->crtc ? std::format(" (old {})", c->crtc->id) : ""));
-            c->crtc  = crtcs.at(i);
+                         std::format("drm: connected slot {} crtc {} assigned to {}{}", i, crtc->id, c->szName, c->crtc ? std::format(" (old {})", c->crtc->id) : ""));
+            c->crtc  = crtc;
             assigned = true;
             changed.emplace_back(c);
             std::erase(recheck, c);
@@ -762,7 +763,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
         }
 
         if (!assigned)
-            backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} unassigned", i, crtcs.at(i)->id));
+            backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} unassigned", i, crtc->id));
     }
 
     for (auto const& c : connectors) {
