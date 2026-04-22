@@ -83,7 +83,10 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
         return;
     }
 
-    backend->addTimer(NEXT_FRAME_TIME, [this, NEXT_FRAME_TIME]() {
+    backend->addTimer(NEXT_FRAME_TIME, [this, weak = self, NEXT_FRAME_TIME]() {
+        if (!weak)
+            return;
+
         if (framecb && *framecb)
             (*framecb)();
         
