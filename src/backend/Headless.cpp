@@ -84,7 +84,7 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
     }
 
     backend->addTimer(NEXT_FRAME_TIME, [this, NEXT_FRAME_TIME]() {
-        if (framecb)
+        if (framecb && *framecb)
             (*framecb)();
         
         lastFrame = NEXT_FRAME_TIME;
