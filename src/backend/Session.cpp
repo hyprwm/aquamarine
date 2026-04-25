@@ -1,5 +1,6 @@
 #include <aquamarine/backend/Backend.hpp>
 #include <fcntl.h>
+#include "Shared.hpp"
 
 extern "C" {
 #include <libseat.h>
@@ -210,9 +211,9 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
 
 SP<CSessionDevice> Aquamarine::CSessionDevice::openIfKMS(SP<CSession> session_, const std::string& path_) {
     auto dev = makeShared<CSessionDevice>(session_, path_);
-    if (!dev->supportsKMS())
-        return nullptr;
-    return dev;
+    if (envEnabled("AQ_NO_KMS_REQUIREMENT") || dev->supportsKMS())
+        return dev;
+    return nullptr;
 }
 
 SP<CSession> Aquamarine::CSession::attempt(Hyprutils::Memory::CSharedPointer<CBackend> backend_) {
