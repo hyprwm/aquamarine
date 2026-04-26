@@ -1,5 +1,6 @@
 #include "aquamarine/output/Output.hpp"
 #include <algorithm>
+#include <array>
 #include <aquamarine/backend/DRM.hpp>
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <aquamarine/backend/drm/Atomic.hpp>
@@ -18,6 +19,7 @@
 #include <system_error>
 #include <unordered_set>
 #include <sys/mman.h>
+#include <sys/timerfd.h>
 #include <fcntl.h>
 
 extern "C" {
@@ -1030,7 +1032,15 @@ bool Aquamarine::CDRMBackend::start() {
 }
 
 std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CDRMBackend::pollFDs() {
-    return {makeShared<SPollFD>(gpu->fd, [this]() { dispatchEvents(); })};
+    std::vector<SP<SPollFD>> fds;
+    fds.emplace_back(makeShared<SPollFD>(gpu->fd, [this]() { dispatchEvents(); }));
+
+    for (auto const& conn : connectors) {
+        if (conn->output && conn->output->dpmsRetry.pollFD)
+            fds.emplace_back(conn->output->dpmsRetry.pollFD);
+    }
+
+    return fds;
 }
 
 int Aquamarine::CDRMBackend::drmFD() {
@@ -1696,6 +1706,8 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     output->swapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary, .scanoutOutput = output}); // mark the swapchain for scanout
     output->needsFrame = true;
     backend->backend->events.newOutput.emit(SP<IOutput>(output));
+    if (output->dpmsRetry.fd >= 0)
+        backend->backend->events.pollFDsChanged.emit();
     output->scheduleFrame(IOutput::AQ_SCHEDULE_NEW_CONNECTOR);
 }
 
@@ -1784,6 +1796,37 @@ Aquamarine::CDRMOutput::~CDRMOutput() {
         backend->backend->removeIdleEvent(frameIdle);
     connector->isPageFlipPending   = false;
     connector->frameEventScheduled = false;
+
+    if (dpmsRetry.fd >= 0)
+        close(dpmsRetry.fd);
+}
+
+void Aquamarine::CDRMOutput::armDpmsRetryTimer() {
+    if (dpmsRetry.fd < 0)
+        return;
+
+    constexpr std::array<int, 3> BACKOFFS_MS = {100, 250, 500};
+    const int                    delayMs     = BACKOFFS_MS[std::min(dpmsRetry.retryCount, (int)BACKOFFS_MS.size() - 1)];
+
+    backend->log(AQ_LOG_DEBUG, std::format("atomic drm: DPMS ON commit failed, scheduling retry {} in {}ms", dpmsRetry.retryCount + 1, delayMs));
+
+    itimerspec ts = {};
+    ts.it_value.tv_sec  = delayMs / 1000;
+    ts.it_value.tv_nsec = (delayMs % 1000) * 1000000L;
+
+    if (timerfd_settime(dpmsRetry.fd, 0, &ts, nullptr) < 0)
+        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to arm DPMS retry timer: {}", strerror(errno)));
+
+    dpmsRetry.retryCount++;
+}
+
+void Aquamarine::CDRMOutput::disarmDpmsRetryTimer() {
+    dpmsRetry.retryCount = 0;
+    if (dpmsRetry.fd < 0)
+        return;
+
+    itimerspec ts = {};
+    timerfd_settime(dpmsRetry.fd, 0, &ts, nullptr);
 }
 
 void Aquamarine::CDRMOutput::releaseMgpuResources() {
@@ -2255,6 +2298,27 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
             return;
         events.frame.emit();
     });
+
+    dpmsRetry.fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (dpmsRetry.fd < 0)
+        backend_->log(AQ_LOG_ERROR, std::format("drm: Failed to create DPMS retry timerfd: {}", strerror(errno)));
+    else {
+        dpmsRetry.pollFD = makeShared<SPollFD>(dpmsRetry.fd, [this]() {
+            uint64_t expirations = 0;
+            read(dpmsRetry.fd, &expirations, sizeof(expirations));
+
+            if (dpmsRetry.retryCount >= 3) {
+                disarmDpmsRetryTimer();
+                backend->log(AQ_LOG_WARNING,
+                             "atomic drm: DPMS ON failed after retries; monitor may stay black. "
+                             "Workaround: `hyprctl dispatch dpms off && sleep 1 && hyprctl dispatch dpms on`");
+                return;
+            }
+
+            backend->log(AQ_LOG_DEBUG, std::format("atomic drm: DPMS retry timer fired, sending .frame (retry {}/3)", dpmsRetry.retryCount));
+            events.frame.emit();
+        });
+    }
 }
 
 SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, bool* isNew) {

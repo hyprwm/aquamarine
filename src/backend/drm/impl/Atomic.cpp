@@ -458,7 +458,19 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     if (!data.blocking && !data.test)
         flags |= DRM_MODE_ATOMIC_NONBLOCK;
 
-    const bool ok = request.commit(flags);
+    // Some sinks (Pascal @ high refresh, AMD w/ GFXOFF) drop the first commit coming out of DPMS off.
+    // If this is a DPMS ON wake and the commit fails, arm a timer to send a .frame
+    // event so the compositor retries the commit after the sink has had time to wake up.
+    const auto& STATE        = connector->output->state->state();
+    const bool  isDpmsOnWake = !data.test && data.modeset && STATE.enabled && !connector->output->enabledState;
+    const bool  ok           = request.commit(flags);
+
+    if (!ok && isDpmsOnWake) {
+        connector->output->armDpmsRetryTimer();
+    } else if (ok && isDpmsOnWake && connector->output->dpmsRetry.retryCount > 0) {
+        backend->log(AQ_LOG_DEBUG, std::format("atomic drm: DPMS ON succeeded after {} retries", connector->output->dpmsRetry.retryCount));
+        connector->output->disarmDpmsRetryTimer();
+    }
 
     if (ok) {
         request.apply(data);

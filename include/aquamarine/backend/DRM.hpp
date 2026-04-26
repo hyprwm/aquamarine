@@ -219,6 +219,8 @@ namespace Aquamarine {
         CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, Hyprutils::Memory::CSharedPointer<SDRMConnector> connector_);
 
         bool                                                         commitState(bool onlyTest = false);
+        void                                                         armDpmsRetryTimer();
+        void                                                         disarmDpmsRetryTimer();
 
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                 backend;
         Hyprutils::Memory::CSharedPointer<SDRMConnector>             connector;
@@ -228,6 +230,12 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
             Hyprutils::Memory::CSharedPointer<CSwapchain> cursorSwapchain;
         } mgpu;
+
+        struct {
+            int    fd           = -1;
+            int    retryCount   = 0;
+            Hyprutils::Memory::CSharedPointer<SPollFD> pollFD;
+        } dpmsRetry;
 
         bool lastCommitNoBuffer = true;
 
