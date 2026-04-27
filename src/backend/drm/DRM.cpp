@@ -1512,39 +1512,21 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
                                                 parsed.chromaticityCoords->blue.y, parsed.chromaticityCoords->white.y, parsed.chromaticityCoords->white.y)));
     }
 
-    auto exts = di_edid_get_extensions(edid);
+    const auto* hdr_static_metadata = di_info_get_hdr_static_metadata(info);
+    if (hdr_static_metadata && (hdr_static_metadata->pq || hdr_static_metadata->hlg)) {
+        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: found HDR pq={} hlg={}", hdr_static_metadata->pq, hdr_static_metadata->hlg)));
+        parsed.hdrMetadata = IOutput::SHDRMetadata{
+            .desiredContentMaxLuminance      = hdr_static_metadata->desired_content_max_luminance,
+            .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance,
+            .desiredContentMinLuminance      = hdr_static_metadata->desired_content_min_luminance,
+            .supportsPQ                      = hdr_static_metadata->pq,
+        };
+    }
 
-    for (; *exts != nullptr; exts++) {
-        auto tag = di_edid_ext_get_tag(*exts);
-        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: checking ext {}", (uint32_t)tag)));
-        if (tag == DI_EDID_EXT_DISPLAYID)
-            backend->backend->log(AQ_LOG_WARNING, "FIXME: support displayid blocks");
-
-        const auto cta = di_edid_ext_get_cta(*exts);
-        if (cta) {
-            TRACE(backend->backend->log(AQ_LOG_TRACE, "EDID: found CTA"));
-            const di_cta_hdr_static_metadata_block* hdr_static_metadata = nullptr;
-            const di_cta_colorimetry_block*         colorimetry         = nullptr;
-            auto                                    blocks              = di_edid_cta_get_data_blocks(cta);
-            for (; *blocks != nullptr; blocks++) {
-                if (!hdr_static_metadata && (hdr_static_metadata = di_cta_data_block_get_hdr_static_metadata(*blocks))) {
-                    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: found HDR {}", hdr_static_metadata->eotfs->pq)));
-                    parsed.hdrMetadata = IOutput::SHDRMetadata{
-                        .desiredContentMaxLuminance      = hdr_static_metadata->desired_content_max_luminance,
-                        .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance,
-                        .desiredContentMinLuminance      = hdr_static_metadata->desired_content_min_luminance,
-                        .supportsPQ                      = hdr_static_metadata->eotfs->pq,
-                    };
-                    continue;
-                }
-                if (!colorimetry && (colorimetry = di_cta_data_block_get_colorimetry(*blocks))) {
-                    TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: found colorimetry {}", colorimetry->bt2020_rgb)));
-                    parsed.supportsBT2020 = colorimetry->bt2020_rgb;
-                    continue;
-                }
-            }
-            break;
-        }
+    const auto* ssc = di_info_get_supported_signal_colorimetry(info);
+    if (ssc) {
+        TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("EDID: found colorimetry bt2020_rgb={}", ssc->bt2020_rgb)));
+        parsed.supportsBT2020 = ssc->bt2020_rgb;
     }
 
     di_info_destroy(info);
