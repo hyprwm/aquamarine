@@ -12,3 +12,7 @@ Unless specified otherwise, a variable is enabled if and only if it's set to `1`
 ### Debugging
 
 `AQ_TRACE` -> Enables trace (very verbose) logging
+
+### Plugins
+
+`AQ_LIBINPUT_PLUGINS_ENABLE` -> (Requires libinput 1.30+) Enable loading internal and Lua plugins for libinput. See https://wayland.freedesktop.org/libinput/doc/latest/lua-plugins.html for more information.
