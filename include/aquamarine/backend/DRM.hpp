@@ -312,7 +312,8 @@ namespace Aquamarine {
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
         Hyprutils::Memory::CSharedPointer<CDRMFB>      pendingCursorFB;
 
-        bool                                           isPageFlipPending = false;
+        bool                                           isPageFlipPending   = false;
+        uint64_t                                       pageFlipPendingAtMs = 0; // CLOCK_BOOTTIME ms when isPageFlipPending was set
         SDRMPageFlip                                   pendingPageFlip;
         bool                                           frameEventScheduled = false;
         bool                                           isFrameRunning      = false;

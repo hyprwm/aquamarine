@@ -378,6 +378,27 @@ bool Aquamarine::CDRMBackend::sessionActive() {
 void Aquamarine::CDRMBackend::restoreAfterVT() {
     backend->log(AQ_LOG_DEBUG, "drm: Restoring after VT switch");
 
+    // Clear stale page-flip bookkeeping for all connectors.
+    // During S3 suspend the display hardware powers off, so any pending
+    // page-flip completion events are lost. The handlePF() callback that
+    // normally clears these flags will never fire. Without this reset,
+    // commitState() rejects every frame with "Cannot commit when a
+    // page-flip is awaiting" and scheduleFrame() returns early, leaving
+    // outputs permanently black after resume.
+    //
+    // For VT switch this is also safe: pending events from the old session
+    // are still queued in the fd buffer and will fire handlePF() after
+    // restore, but isPageFlipPending is already false so the = false
+    // assignment is a harmless no-op.
+    for (auto const& c : connectors) {
+        if (c->isPageFlipPending || c->isFrameRunning) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Clearing stale page-flip state for {}", c->szName));
+            c->isPageFlipPending   = false;
+            c->isFrameRunning      = false;
+            c->frameEventScheduled = false;
+        }
+    }
+
     recheckOutputs();
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
@@ -710,6 +731,12 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             continue;
         }
 
+        // disabled outputs release their CRTCs so active outputs get priority
+        if (c->crtc && c->status == DRM_MODE_CONNECTED && c->output && !c->output->enabledState) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: {} is disabled, releasing crtc {}", c->szName, c->crtc->id));
+            c->crtc.reset();
+        }
+
         if (c->crtc && c->status == DRM_MODE_CONNECTED) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Skipping connector {}, has crtc {} and is connected", c->szName, c->crtc->id));
             continue;
@@ -739,12 +766,16 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
         bool assigned = false;
 
-        // try to use a connected connector
+        // try to use a connected, enabled connector
         for (auto const& c : recheck) {
             if (!(c->possibleCrtcs & (1 << i)))
                 continue;
 
             if (c->status != DRM_MODE_CONNECTED)
+                continue;
+
+            // Pass 1 only assigns to enabled connectors
+            if (c->output && !c->output->enabledState)
                 continue;
 
             // deactivate old output
@@ -766,11 +797,38 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} unassigned", i, crtc->id));
     }
 
+    // Pass 2: assign remaining CRTCs to disabled connectors as backup slots
+    for (size_t i = 0; i < crtcs.size(); ++i) {
+        bool taken = false;
+        for (auto const& c : connectors) {
+            if (c->crtc == crtcs.at(i)) {
+                taken = true;
+                break;
+            }
+        }
+        if (taken)
+            continue;
+
+        for (auto const& c : recheck) {
+            if (!(c->possibleCrtcs & (1 << i)))
+                continue;
+            if (c->status != DRM_MODE_CONNECTED)
+                continue;
+
+            backend->log(AQ_LOG_DEBUG, std::format("drm: backup slot {} crtc {} assigned to disabled {}", i, crtcs.at(i)->id, c->szName));
+            c->crtc = crtcs.at(i);
+            std::erase(recheck, c);
+            break;
+        }
+    }
+
     for (auto const& c : connectors) {
         if (c->status == DRM_MODE_CONNECTED)
             continue;
 
-        backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} is not connected{}", c->szName, c->crtc ? std::format(", removing old crtc {}", c->crtc->id) : ""));
+        if (c->crtc)
+            backend->log(AQ_LOG_DEBUG, std::format("drm: {} is not connected, clearing stale crtc {}", c->szName, c->crtc->id));
+        c->crtc.reset();
     }
 
     // tell the user to re-assign a valid mode etc, if needed
@@ -896,6 +954,11 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
     // now that crtcs are assigned, connect outputs
     for (const auto& conn : connectors) {
         if (conn->status == DRM_MODE_CONNECTED && !conn->output && !conn->tilingRedundant) {
+            if (!conn->crtc) {
+                backend->log(AQ_LOG_DEBUG, std::format("drm: {} has no CRTC, deferring connection", conn->szName));
+                continue;
+            }
+
             backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
 
             auto drmConn = drmModeGetConnector(gpu->fd, conn->id);
@@ -1740,13 +1803,27 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     if (output->state->state().committed & COutputState::AQ_OUTPUT_STATE_MODE)
         refresh = calculateRefresh(data.modeInfo);
 
-    output->enabledState = output->state->state().enabled;
+    const bool wasEnabled = output->enabledState;
+    output->enabledState  = output->state->state().enabled;
 
     if (!output->enabledState)
         releaseFBReferences();
 
     if (!backend->updateSecondaryRendererState())
         backend->backend->log(AQ_LOG_ERROR, std::format("drm: Failed to update renderer state for {} on applyCommit", szName));
+
+    if (wasEnabled != output->enabledState) {
+        auto bk = backend.lock();
+        if (bk) {
+            bk->backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} enabledState changed {} -> {}", szName, wasEnabled, output->enabledState));
+            auto weak = bk->self;
+            bk->backend->addIdleEvent(makeShared<std::function<void(void)>>([weak] {
+                auto b = weak.lock();
+                if (b)
+                    b->recheckOutputs();
+            }));
+        }
+    }
 }
 
 void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
@@ -1898,8 +1975,30 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
 
         if (STATE.enabled && (NEEDS_RECONFIG || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) && connector->isPageFlipPending) {
-            backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
-            return false;
+            // Check if the pending page-flip is stale (>500ms — well beyond
+            // any vblank interval, even at low refresh rates). Stale flips
+            // occur after S3/S4 suspend when page-flip completion events are
+            // lost because the display hardware was powered off.
+            struct timespec ts;
+            clock_gettime(CLOCK_BOOTTIME, &ts);
+            uint64_t nowMs     = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
+            bool     staleFlip = (nowMs - connector->pageFlipPendingAtMs) > 500;
+
+            if (NEEDS_RECONFIG && staleFlip) {
+                // A blocking modeset uses DRM_MODE_ATOMIC_ALLOW_MODESET which
+                // fully resets the CRTC, implicitly cancelling any stale
+                // page-flip at the kernel level. Clear the stale userspace
+                // bookkeeping to match.
+                backend->backend->log(AQ_LOG_DEBUG,
+                                      std::format("drm: Clearing stale page-flip state for {} during modeset (pending for {}ms)", name,
+                                                  nowMs - connector->pageFlipPendingAtMs));
+                connector->isPageFlipPending   = false;
+                connector->isFrameRunning      = false;
+                connector->frameEventScheduled = false;
+            } else {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
+                return false;
+            }
         }
 
         if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
