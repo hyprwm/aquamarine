@@ -178,6 +178,14 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
     auto*            devices = udev_enumerate_get_list_entry(enumerate);
     udev_list_entry* entry   = nullptr;
 
+    // Some platforms expose render-capable and KMS-capable DRM devices as
+    // separate physical devices with different udev parents (Apple Silicon,
+    // various split-IP-block ARM SoCs, DisplayLink USB displays paired with a
+    // GPU on another bus, etc.). When that's the case the same-parent search
+    // finds nothing; remember any other render node we see and use it as a
+    // fallback. Equivalent to what wlroots does for the same scenarios.
+    std::string fallbackDevnode;
+
     udev_list_entry_foreach(entry, devices) {
         const auto* path = udev_list_entry_get_name(entry);
         auto        dev  = udev_device_new_from_syspath(session->udevHandle, path);
@@ -202,7 +210,20 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
             break;
         }
 
+        if (fallbackDevnode.empty())
+            fallbackDevnode = devnode;
+
         udev_device_unref(dev);
+    }
+
+    if (renderNodeFd < 0 && !fallbackDevnode.empty()) {
+        renderNodeFd = open(fallbackDevnode.c_str(), O_RDWR | O_CLOEXEC);
+        if (renderNodeFd < 0)
+            session->backend->log(AQ_LOG_WARNING,
+                                  std::format("drm: Failed to open fallback render node {} for {}", fallbackDevnode, this->path));
+        else
+            session->backend->log(AQ_LOG_WARNING,
+                                  std::format("drm: No same-parent render node for {}, falling back to {}", this->path, fallbackDevnode));
     }
 
     udev_enumerate_unref(enumerate);
