@@ -205,6 +205,69 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
         udev_device_unref(dev);
     }
 
+    // Re-add the pre-35fa4a9 first-renderD fallback for the case where
+    // parent-syspath matching fails. Required on split-node platforms
+    // like Apple Silicon, where the GPU and KMS device sit under
+    // different parent platform devices and the match never succeeds.
+    // Without this, DRM.cpp's renderer attach falls back to gpu->fd
+    // (the KMS device fd); on apple-drm that fd has no GL/EGL driver,
+    // so Mesa is forced to llvmpipe and the desktop runs in software.
+    //
+    // We only fall back when there is exactly one renderD on the
+    // system. Multi-renderD configs (eGPU + iGPU, evdi, capture
+    // devices) can't be disambiguated from this layer; picking the
+    // wrong one is what regressed PR #237 per #260 (hyprpaper SIGABRT
+    // on eglQueryDeviceStringEXT). Counting first lets Asahi succeed
+    // while leaving multi-renderD systems unchanged from upstream.
+    //
+    // Refs hyprwm/aquamarine#260 (M1/M2 reports), PR #237 (unconditional
+    // for non-standard buses, reverted by 8ed71bb), commit 2455556b
+    // (last known-good on M-series Asahi per the #260 thread).
+    if (renderNodeFd < 0) {
+        int renderDCount = 0;
+        udev_list_entry* countEntry = nullptr;
+        udev_list_entry_foreach(countEntry, devices) {
+            const auto* path = udev_list_entry_get_name(countEntry);
+            auto        dev  = udev_device_new_from_syspath(session->udevHandle, path);
+            if (!dev)
+                continue;
+            const auto* devnode = udev_device_get_devnode(dev);
+            const auto* devtype = udev_device_get_devtype(dev);
+            if (devnode && devtype && strcmp(devtype, "drm_minor") == 0 && strstr(devnode, "renderD"))
+                ++renderDCount;
+            udev_device_unref(dev);
+        }
+
+        if (renderDCount == 1) {
+            udev_list_entry* fbEntry = nullptr;
+            udev_list_entry_foreach(fbEntry, devices) {
+                const auto* fbPath = udev_list_entry_get_name(fbEntry);
+                auto        fbDev  = udev_device_new_from_syspath(session->udevHandle, fbPath);
+                if (!fbDev)
+                    continue;
+                const auto* fbDevnode = udev_device_get_devnode(fbDev);
+                const auto* fbDevtype = udev_device_get_devtype(fbDev);
+                if (!fbDevnode || !fbDevtype || strcmp(fbDevtype, "drm_minor") != 0 || !strstr(fbDevnode, "renderD")) {
+                    udev_device_unref(fbDev);
+                    continue;
+                }
+                renderNodeFd = open(fbDevnode, O_RDWR | O_CLOEXEC);
+                if (renderNodeFd >= 0) {
+                    session->backend->log(AQ_LOG_WARNING,
+                        std::format("drm: No matching render node for {}, falling back to sole renderD on the system: {}",
+                            parentSyspath ? parentSyspath : "(unknown)", fbDevnode));
+                    udev_device_unref(fbDev);
+                    break;
+                }
+                udev_device_unref(fbDev);
+            }
+        } else if (renderDCount > 1) {
+            session->backend->log(AQ_LOG_WARNING,
+                std::format("drm: No matching render node for {}, refusing to guess among {} renderD candidates; leaving renderer to fall through to KMS fd (may force software rendering; set AQ_DRM_DEVICES to disambiguate)",
+                    parentSyspath ? parentSyspath : "(unknown)", renderDCount));
+        }
+    }
+
     udev_enumerate_unref(enumerate);
 }
 
