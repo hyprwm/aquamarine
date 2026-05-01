@@ -1,5 +1,8 @@
 #include <aquamarine/backend/Backend.hpp>
+#include <cerrno>
+#include <cstdlib>
 #include <fcntl.h>
+#include <vector>
 
 extern "C" {
 #include <libseat.h>
@@ -165,68 +168,110 @@ void Aquamarine::CSessionDevice::resolveMatchingRenderNode(udev_device* cardDevi
     if (!cardDevice)
         return;
 
-    auto*       parentDevice  = udev_device_get_parent(cardDevice);
-    const char* parentSyspath = parentDevice ? udev_device_get_syspath(parentDevice) : nullptr;
-
-    auto*       enumerate = udev_enumerate_new(session->udevHandle);
-    if (!enumerate)
-        return;
-
-    udev_enumerate_add_match_subsystem(enumerate, "drm");
-    udev_enumerate_scan_devices(enumerate);
-
-    auto*            devices = udev_enumerate_get_list_entry(enumerate);
-    udev_list_entry* entry   = nullptr;
-
-    // Some platforms expose render-capable and KMS-capable DRM devices as
-    // separate physical devices with different udev parents (Apple Silicon,
-    // various split-IP-block ARM SoCs, DisplayLink USB displays paired with a
-    // GPU on another bus, etc.). When that's the case the same-parent search
-    // finds nothing; remember any other render node we see and use it as a
-    // fallback. Equivalent to what wlroots does for the same scenarios.
-    std::string fallbackDevnode;
-
-    udev_list_entry_foreach(entry, devices) {
-        const auto* path = udev_list_entry_get_name(entry);
-        auto        dev  = udev_device_new_from_syspath(session->udevHandle, path);
-        if (!dev)
-            continue;
-
-        const auto* devnode = udev_device_get_devnode(dev);
-        const auto* devtype = udev_device_get_devtype(dev);
-
-        if (!devnode || !devtype || strcmp(devtype, "drm_minor") != 0 || !strstr(devnode, "renderD")) {
-            udev_device_unref(dev);
-            continue;
+    // Stage 1: explicit AQ_RENDER_NODE override.
+    if (const char* overridePath = getenv("AQ_RENDER_NODE"); overridePath && overridePath[0] != '\0') {
+        int fd = open(overridePath, O_RDWR | O_CLOEXEC);
+        if (fd >= 0) {
+            renderNodeFd = fd;
+            session->backend->log(AQ_LOG_DEBUG, std::format("drm: Using AQ_RENDER_NODE override {} for {}", overridePath, this->path));
+            return;
         }
+        session->backend->log(AQ_LOG_ERROR, std::format("drm: AQ_RENDER_NODE={} set but open() failed: {}", overridePath, strerror(errno)));
+    }
 
-        auto* devParent = udev_device_get_parent(dev);
-        if (devParent && parentSyspath && strcmp(udev_device_get_syspath(devParent), parentSyspath) == 0) {
-            renderNodeFd = open(devnode, O_RDWR | O_CLOEXEC);
-            if (renderNodeFd < 0)
-                session->backend->log(AQ_LOG_WARNING, std::format("drm: Failed to open matching render node {}", devnode));
+    // Stage 2: kernel pairing via libdrm.
+    const char* cardDevnode = udev_device_get_devnode(cardDevice);
+    if (!cardDevnode) {
+        session->backend->log(AQ_LOG_WARNING, std::format("drm: cardDevice has no devnode for {}", this->path));
+        return;
+    }
 
-            udev_device_unref(dev);
+    struct stat cardStat{};
+    if (stat(cardDevnode, &cardStat) != 0) {
+        session->backend->log(AQ_LOG_WARNING, std::format("drm: stat({}) failed: {}", cardDevnode, strerror(errno)));
+        return;
+    }
+    const dev_t cardRdev = cardStat.st_rdev;
+
+    int deviceCount = drmGetDevices2(0, nullptr, 0);
+    if (deviceCount <= 0) {
+        session->backend->log(AQ_LOG_DEBUG, std::format("drm: drmGetDevices2 returned {}", deviceCount));
+        session->backend->log(AQ_LOG_WARNING, std::format("drm: Could not resolve a render node for {}; rendering may fail", this->path));
+        return;
+    }
+
+    std::vector<drmDevicePtr> devices(deviceCount);
+    int                       got = drmGetDevices2(0, devices.data(), deviceCount);
+    if (got < 0) {
+        session->backend->log(AQ_LOG_WARNING, std::format("drm: drmGetDevices2 failed: {}", strerror(-got)));
+        session->backend->log(AQ_LOG_WARNING, std::format("drm: Could not resolve a render node for {}; rendering may fail", this->path));
+        return;
+    }
+
+    int cardIndex   = -1;
+    int cardBusType = -1;
+
+    for (int i = 0; i < got; ++i) {
+        drmDevicePtr d = devices[i];
+        if (!(d->available_nodes & (1 << DRM_NODE_PRIMARY)))
+            continue;
+
+        struct stat ds{};
+        if (stat(d->nodes[DRM_NODE_PRIMARY], &ds) != 0)
+            continue;
+        if (ds.st_rdev != cardRdev)
+            continue;
+
+        cardIndex   = i;
+        cardBusType = d->bustype;
+
+        if (d->available_nodes & (1 << DRM_NODE_RENDER)) {
+            const char* rpath = d->nodes[DRM_NODE_RENDER];
+            int         rfd   = open(rpath, O_RDWR | O_CLOEXEC);
+            if (rfd >= 0) {
+                renderNodeFd = rfd;
+                session->backend->log(AQ_LOG_DEBUG, std::format("drm: Matched render node {} for {} via drmGetDevices2", rpath, this->path));
+                drmFreeDevices(devices.data(), got);
+                return;
+            }
+            session->backend->log(AQ_LOG_WARNING, std::format("drm: open() failed for kernel-matched render node {}: {}", rpath, strerror(errno)));
+        }
+        break;
+    }
+
+    if (cardIndex < 0)
+        session->backend->log(AQ_LOG_WARNING, std::format("drm: cardX {} not found in drmGetDevices2 result", this->path));
+
+    // Stage 3: bus-type-scoped fallback. Only fires for DRM_BUS_PLATFORM
+    // cardX devices; PCI is never substituted to avoid handing EGL the wrong
+    // renderer on multi-GPU systems.
+    if (cardIndex >= 0 && cardBusType == DRM_BUS_PLATFORM) {
+        for (int i = 0; i < got; ++i) {
+            if (i == cardIndex)
+                continue;
+            drmDevicePtr d = devices[i];
+            if (d->bustype != DRM_BUS_PLATFORM)
+                continue;
+            if (!(d->available_nodes & (1 << DRM_NODE_RENDER)))
+                continue;
+
+            const char* rpath = d->nodes[DRM_NODE_RENDER];
+            int         rfd   = open(rpath, O_RDWR | O_CLOEXEC);
+            if (rfd >= 0) {
+                renderNodeFd = rfd;
+                session->backend->log(AQ_LOG_WARNING,
+                                      std::format("drm: No kernel-paired render node for {}, falling back to platform-bus render node {}", this->path, rpath));
+                drmFreeDevices(devices.data(), got);
+                return;
+            }
+            session->backend->log(AQ_LOG_WARNING, std::format("drm: Platform-bus fallback open() failed for {}: {}", rpath, strerror(errno)));
             break;
         }
-
-        if (fallbackDevnode.empty())
-            fallbackDevnode = devnode;
-
-        udev_device_unref(dev);
     }
 
-    if (renderNodeFd < 0 && !fallbackDevnode.empty()) {
-        renderNodeFd = open(fallbackDevnode.c_str(), O_RDWR | O_CLOEXEC);
-        if (renderNodeFd < 0)
-            session->backend->log(AQ_LOG_WARNING,
-                                  std::format("drm: Failed to open fallback render node {} for {}", fallbackDevnode, this->path));
-        else
-            session->backend->log(AQ_LOG_WARNING,
-                                  std::format("drm: No same-parent render node for {}, falling back to {}", this->path, fallbackDevnode));
-    }
-
-    udev_enumerate_unref(enumerate);
+    // Stage 4, give up
+    drmFreeDevices(devices.data(), got);
+    session->backend->log(AQ_LOG_WARNING, std::format("drm: Could not resolve a render node for {}; rendering may fail", this->path));
 }
 
 SP<CSessionDevice> Aquamarine::CSessionDevice::openIfKMS(SP<CSession> session_, const std::string& path_) {
