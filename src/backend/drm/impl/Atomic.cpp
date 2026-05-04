@@ -137,60 +137,38 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
     conn = connector;
-    if (enable) {
-        drmModeModeInfo* currentMode = connector->getCurrentMode();
-        bool             modeDiffers = true;
-        if (currentMode) {
-            modeDiffers = memcmp(currentMode, &data.modeInfo, sizeof(drmModeModeInfo)) != 0;
-            free(currentMode);
-        }
 
-        if (modeDiffers)
-            addConnectorModeset(connector, data);
-
-        // Setup HDR
-        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1))
-            add(connector->id, connector->props.values.max_bpc, getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format));
-
-        if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB)
-            add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
-
-        if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
-            add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
-    } else
-        addConnectorModeset(connector, data);
+    addConnectorModeset(connector, data);
 
     addConnectorCursor(connector, data);
 
     add(connector->id, connector->props.values.crtc_id, enable ? connector->crtc->id : 0);
 
-    if (enable && connector->props.values.content_type)
-        add(connector->id, connector->props.values.content_type, STATE.contentType);
-
-    add(connector->crtc->id, connector->crtc->props.values.active, enable);
-
     if (enable) {
+        if (connector->props.values.content_type && STATE.committed & COutputState::AQ_OUTPUT_CONTENT_TYPE)
+            add(connector->id, connector->props.values.content_type, STATE.contentType);
+
         if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
             add(connector->crtc->id, connector->crtc->props.values.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
-        if (connector->crtc->props.values.gamma_lut && data.atomic.gammad)
+        if (connector->crtc->props.values.gamma_lut && data.atomic.gammad && STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT)
             add(connector->crtc->id, connector->crtc->props.values.gamma_lut, data.atomic.gammaLut);
 
-        if (connector->crtc->props.values.degamma_lut && data.atomic.degammad)
+        if (connector->crtc->props.values.degamma_lut && data.atomic.degammad && STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT)
             add(connector->crtc->id, connector->crtc->props.values.degamma_lut, data.atomic.degammaLut);
 
-        if (connector->crtc->props.values.ctm && data.atomic.ctmd)
+        if (connector->crtc->props.values.ctm && data.atomic.ctmd && STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM)
             add(connector->crtc->id, connector->crtc->props.values.ctm, data.atomic.ctmBlob);
 
-        if (connector->crtc->props.values.vrr_enabled)
+        if (connector->crtc->props.values.vrr_enabled && STATE.committed & COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC)
             add(connector->crtc->id, connector->crtc->props.values.vrr_enabled, (uint64_t)STATE.adaptiveSync);
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {});
 
-        if (connector->output->supportsExplicit && STATE.explicitInFence >= 0)
+        if (connector->output->supportsExplicit && STATE.explicitInFence >= 0 && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE)
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.in_fence_fd, STATE.explicitInFence);
 
-        if (connector->crtc->primary->props.values.fb_damage_clips)
+        if (connector->crtc->primary->props.values.fb_damage_clips && STATE.committed & COutputState::AQ_OUTPUT_STATE_DAMAGE)
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.fb_damage_clips, data.atomic.fbDamage);
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
@@ -204,14 +182,30 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
     const auto& STATE  = connector->output->state->state();
     const bool  enable = STATE.enabled && data.mainFB;
 
-    data.atomic.blobbed = true;
-
     if (enable) {
+        // Setup HDR
+        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1))
+            add(connector->id, connector->props.values.max_bpc, getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format));
+
+        if (connector->props.values.Colorspace && STATE.committed & COutputState::AQ_OUTPUT_STATE_WCG) {
+            if (connector->colorspace.values.BT2020_RGB)
+                add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
+            else
+                add(connector->id, connector->props.values.Colorspace, connector->colorspace.values.Default);
+        }
+
+        if (connector->props.values.hdr_output_metadata && data.atomic.hdrd && STATE.committed & COutputState::AQ_OUTPUT_STATE_HDR)
+            add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
+
+        data.atomic.blobbed = true;
         add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
+        add(connector->crtc->id, connector->crtc->props.values.active, 1);
         if (connector->props.values.link_status)
             add(connector->id, connector->props.values.link_status, DRM_MODE_LINK_STATUS_GOOD);
-    } else
-        add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
+    } else {
+        add(connector->crtc->id, connector->crtc->props.values.mode_id, 0);
+        add(connector->crtc->id, connector->crtc->props.values.active, 0);
+    }
 }
 
 void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
