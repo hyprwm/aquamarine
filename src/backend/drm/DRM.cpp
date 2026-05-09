@@ -399,6 +399,30 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         }
     }
 
+    // detect EDID changes on already-connected connectors. dock/MST hubs can swap
+    // which physical port a connector is wired to across hibernate/resume; the
+    // kernel re-reads the new EDID, but recheckOutputs() will skip the connector
+    // (status is still CONNECTED, output is still alive) and never re-parse it,
+    // leaving stale make/model/parsedEDID. force a disconnect on mismatch so
+    // recheckOutputs() will reconnect and re-emit a fresh newOutput. (see #259)
+    for (auto const& c : connectors) {
+        if (!c->output || c->edidBlob.empty() || !c->props.values.edid)
+            continue;
+
+        size_t   freshLen  = 0;
+        uint8_t* freshData = (uint8_t*)getDRMPropBlob(gpu->fd, c->id, c->props.values.edid, &freshLen);
+        if (!freshData)
+            continue;
+
+        const bool changed = freshLen != c->edidBlob.size() || std::memcmp(freshData, c->edidBlob.data(), freshLen) != 0;
+        free(freshData);
+
+        if (changed) {
+            backend->log(AQ_LOG_DEBUG, std::format("drm: EDID changed for {} during resume, forcing reconnect", c->szName));
+            c->disconnect();
+        }
+    }
+
     recheckOutputs();
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
@@ -1729,7 +1753,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     auto                 parsedEDID = parseEDID(edid);
 
     free(edidData);
-    edid = {};
+    edidBlob = std::move(edid);
 
     // TODO: subconnectors
 
