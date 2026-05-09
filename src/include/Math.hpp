@@ -1,7 +1,5 @@
 #pragma once
 
-// FIXME: migrate this to utils
-
 // includes box and vector as well
 #include <hyprutils/math/Region.hpp>
 
