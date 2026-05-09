@@ -261,6 +261,16 @@ namespace Aquamarine {
             bool     degammad   = false;
             bool     ctmd       = false;
             bool     hdrd       = false; // true if hdr blob needs updating or clearing
+
+            // staged connector property values for this commit. on a successful non-test
+            // commit these are copied into SDRMConnector::atomic so subsequent page-flips
+            // can skip re-emitting unchanged values (some displays, notably samsung TVs,
+            // renegotiate the avi infoframe whenever connector_state appears in a commit,
+            // causing per-frame blanking, see #265).
+            uint64_t maxBpc      = 0;
+            uint64_t colorspace  = 0;
+            uint16_t contentType = 0;
+            uint32_t crtcID      = 0;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
@@ -325,6 +335,14 @@ namespace Aquamarine {
 
         struct {
             bool vrrEnabled = false;
+
+            // last connector_state values successfully committed to the kernel. used
+            // to skip re-emitting unchanged values on page-flips (see #265).
+            uint64_t maxBpc      = 0;
+            uint64_t colorspace  = 0;
+            uint16_t contentType = 0;
+            uint32_t crtcID      = 0;
+            bool     propsCached = false;
         } atomic;
 
         union UDRMConnectorProps {
