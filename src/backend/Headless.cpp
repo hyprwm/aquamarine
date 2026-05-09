@@ -175,7 +175,19 @@ std::vector<SDRMFormat> Aquamarine::CHeadlessBackend::getCursorFormats() {
 }
 
 bool Aquamarine::CHeadlessBackend::createOutput(const std::string& name) {
-    auto output = SP<CHeadlessOutput>(new CHeadlessOutput(name.empty() ? std::format("HEADLESS-{}", ++outputIDCounter) : name, self.lock()));
+    std::string outputName = name;
+    if (outputName.empty()) {
+        // skip past any auto-name slots already claimed by an explicit createOutput,
+        // so we never hand out a duplicate HEADLESS-N (see #185).
+        do {
+            outputName = std::format("HEADLESS-{}", ++outputIDCounter);
+        } while (std::ranges::any_of(outputs, [&outputName](const auto& o) { return o->name == outputName; }));
+    } else if (std::ranges::any_of(outputs, [&outputName](const auto& o) { return o->name == outputName; })) {
+        backend->log(AQ_LOG_ERROR, std::format("headless: refusing to create output {}, name already in use", outputName));
+        return false;
+    }
+
+    auto output = SP<CHeadlessOutput>(new CHeadlessOutput(outputName, self.lock()));
     outputs.emplace_back(output);
     output->modes.emplace_back(SP<SOutputMode>(new SOutputMode(Vector2D{1920, 1080}, 60000, true)));
     output->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());

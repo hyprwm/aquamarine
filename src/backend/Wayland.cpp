@@ -145,7 +145,19 @@ int Aquamarine::CWaylandBackend::drmRenderNodeFD() {
 }
 
 bool Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
-    auto o  = outputs.emplace_back(SP<CWaylandOutput>(new CWaylandOutput(szName.empty() ? std::format("WAYLAND-{}", ++lastOutputID) : szName, self)));
+    std::string name = szName;
+    if (name.empty()) {
+        // skip past any auto-name slots already claimed by an explicit createOutput,
+        // so we never hand out a duplicate WAYLAND-N (see #185).
+        do {
+            name = std::format("WAYLAND-{}", ++lastOutputID);
+        } while (std::ranges::any_of(outputs, [&name](const auto& o) { return o->name == name; }));
+    } else if (std::ranges::any_of(outputs, [&name](const auto& o) { return o->name == name; })) {
+        backend->log(AQ_LOG_ERROR, std::format("Wayland: refusing to create output {}, name already in use", name));
+        return false;
+    }
+
+    auto o  = outputs.emplace_back(SP<CWaylandOutput>(new CWaylandOutput(name, self)));
     o->self = o;
     if (backend->ready)
         o->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
