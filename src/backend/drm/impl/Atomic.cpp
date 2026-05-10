@@ -137,6 +137,17 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
     conn = connector;
+
+    // page-flips that don't change connector state must avoid touching connector_state
+    // entirely, otherwise the kernel runs drm_atomic_helper_check_modeset every frame and
+    // some displays (samsung HDMI TVs in particular) renegotiate the avi infoframe,
+    // causing per-frame blanking. cache the last-applied values and only emit on a
+    // modeset, on the first commit, or when a value actually changes. (see #265)
+    const bool     forceConnProps = data.modeset || !connector->atomic.propsCached;
+    const uint32_t newCrtcID      = enable ? connector->crtc->id : 0;
+    uint64_t       newMaxBpc = 0, newColorspace = 0;
+    uint16_t       newContentType = 0;
+
     if (enable) {
         drmModeModeInfo* currentMode = connector->getCurrentMode();
         bool             modeDiffers = true;
@@ -149,11 +160,17 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             addConnectorModeset(connector, data);
 
         // Setup HDR
-        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1))
-            add(connector->id, connector->props.values.max_bpc, getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format));
+        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1)) {
+            newMaxBpc = getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format);
+            if (forceConnProps || connector->atomic.maxBpc != newMaxBpc)
+                add(connector->id, connector->props.values.max_bpc, newMaxBpc);
+        }
 
-        if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB)
-            add(connector->id, connector->props.values.Colorspace, STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default);
+        if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB) {
+            newColorspace = STATE.wideColorGamut ? connector->colorspace.values.BT2020_RGB : connector->colorspace.values.Default;
+            if (forceConnProps || connector->atomic.colorspace != newColorspace)
+                add(connector->id, connector->props.values.Colorspace, newColorspace);
+        }
 
         if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
             add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
@@ -162,10 +179,19 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
     addConnectorCursor(connector, data);
 
-    add(connector->id, connector->props.values.crtc_id, enable ? connector->crtc->id : 0);
+    if (forceConnProps || connector->atomic.crtcID != newCrtcID)
+        add(connector->id, connector->props.values.crtc_id, newCrtcID);
 
-    if (enable && connector->props.values.content_type)
-        add(connector->id, connector->props.values.content_type, STATE.contentType);
+    if (enable && connector->props.values.content_type) {
+        newContentType = STATE.contentType;
+        if (forceConnProps || connector->atomic.contentType != newContentType)
+            add(connector->id, connector->props.values.content_type, newContentType);
+    }
+
+    data.atomic.maxBpc       = newMaxBpc;
+    data.atomic.colorspace   = newColorspace;
+    data.atomic.contentType  = newContentType;
+    data.atomic.crtcID       = newCrtcID;
 
     add(connector->crtc->id, connector->crtc->props.values.active, enable);
 
@@ -462,11 +488,21 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 
     if (ok) {
         request.apply(data);
-        if (!data.test && data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
-            connector->isPageFlipPending = true;
-            struct timespec ts;
-            clock_gettime(CLOCK_BOOTTIME, &ts);
-            connector->pageFlipPendingAtMs = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
+        if (!data.test) {
+            // remember which connector_state values the kernel last accepted so the
+            // next page-flip can skip emitting unchanged ones (see #265).
+            connector->atomic.maxBpc      = data.atomic.maxBpc;
+            connector->atomic.colorspace  = data.atomic.colorspace;
+            connector->atomic.contentType = data.atomic.contentType;
+            connector->atomic.crtcID      = data.atomic.crtcID;
+            connector->atomic.propsCached = true;
+
+            if (data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
+                connector->isPageFlipPending = true;
+                struct timespec ts;
+                clock_gettime(CLOCK_BOOTTIME, &ts);
+                connector->pageFlipPendingAtMs = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
+            }
         }
     } else
         request.rollback(data);
