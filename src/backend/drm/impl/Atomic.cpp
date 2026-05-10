@@ -395,10 +395,15 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         return false;
     };
 
-    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT)
+    // re-send gamma/degamma on modeset so a previous compositor's lut does not
+    // bleed into our session. an empty STATE.gammaLut produces a zero blob, which
+    // clears the kernel state. only ride the modeset path when the prop actually
+    // exists, otherwise we'd log a spurious "no gamma_lut prop" error per modeset.
+    // (see #127)
+    if ((data.modeset && connector->crtc->props.values.gamma_lut) || (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT))
         data.atomic.gammad = prepareGammaBlob(connector->crtc->props.values.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut);
 
-    if (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT)
+    if ((data.modeset && connector->crtc->props.values.degamma_lut) || (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT))
         data.atomic.degammad = prepareGammaBlob(connector->crtc->props.values.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
 
     if (data.ctm.has_value() && (data.modeset || (STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM))) {

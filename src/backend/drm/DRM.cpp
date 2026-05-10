@@ -2126,7 +2126,12 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     else
         data.calculateMode(connector);
 
-    if ((data.modeset && STATE.ctm != Mat3x3()) || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM))
+    // always re-send CTM on modeset, identity included, otherwise a stale matrix
+    // left by a previous compositor (e.g. kwin's color management) survives our
+    // session. prepareConnector builds a real identity blob when STATE.ctm is
+    // identity, so we never send blob_id=0 (which some drivers mishandle, see #256).
+    // (see #127)
+    if (data.modeset || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM))
         data.ctm = STATE.ctm;
 
     bool ok = connector->commitState(data);
