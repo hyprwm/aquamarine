@@ -322,6 +322,12 @@ namespace Aquamarine {
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
         Hyprutils::Memory::CSharedPointer<CDRMFB>      pendingCursorFB;
 
+        // raw EDID bytes last seen on this connector. used by restoreAfterVT to detect
+        // dock/MST port swaps that re-route a different display to the same connector
+        // across hibernate/resume, since recheckOutputs skips connected connectors and
+        // never re-parses EDID for them. (see #259)
+        std::vector<uint8_t>                           edidBlob;
+
         bool                                           isPageFlipPending   = false;
         uint64_t                                       pageFlipPendingAtMs = 0; // CLOCK_BOOTTIME ms when isPageFlipPending was set
         SDRMPageFlip                                   pendingPageFlip;
