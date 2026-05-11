@@ -1,5 +1,6 @@
 #include <aquamarine/backend/Backend.hpp>
 #include <fcntl.h>
+#include "dependency_versions.hpp"
 
 extern "C" {
 #include <libseat.h>
@@ -271,6 +272,15 @@ SP<CSession> Aquamarine::CSession::attempt(Hyprutils::Memory::CSharedPointer<CBa
         session->backend->log(AQ_LOG_ERROR, "libinput: failed to create a new context");
         return nullptr;
     }
+
+#if HAS_SUPPORT_LIBINPUT_PLUGINS
+    if (getenv("AQ_LIBINPUT_PLUGINS_ENABLE")) {
+        libinput_plugin_system_append_default_paths(session->libinputHandle);
+        auto plugin_flags = libinput_plugin_system_flags::LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE;
+        if (libinput_plugin_system_load_plugins(session->libinputHandle, plugin_flags) < 0)
+            session->backend->log(AQ_LOG_ERROR, "libinput: failed to load system plugins");
+    }
+#endif
 
     if (libinput_udev_assign_seat(session->libinputHandle, session->seatName.c_str())) {
         session->backend->log(AQ_LOG_ERROR, "libinput: failed to assign a seat");

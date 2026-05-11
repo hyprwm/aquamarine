@@ -37,6 +37,16 @@ pkg_check_modules(
   libdisplay-info
   hwdata)
 
+if (${deps_libinput_VERSION} VERSION_GREATER_EQUAL "1.3.0")
+  message(STATUS "Plugin support for libinput is enabled.")
+  set(libinput_SUPPORT_PLUGINS 1)
+else()
+  message(STATUS "Plugin support for libinput is NOT enabled.")
+  set(libinput_SUPPORT_PLUGINS 0)
+endif()
+
+configure_file(data/dependency_versions.hpp.in dependency_versions.hpp @ONLY)
+
 configure_file(aquamarine.pc.in aquamarine.pc @ONLY)
 
 set(CMAKE_CXX_STANDARD 23)
