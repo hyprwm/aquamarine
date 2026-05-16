@@ -103,7 +103,7 @@ namespace Aquamarine {
         return strcmp(key, elem->name);
     }
 
-    static bool scanProperties(int fd, uint32_t id, uint32_t type, uint32_t* result, const prop_info* info, size_t info_len) {
+    static bool scanProperties(int fd, uint32_t id, uint32_t type, uint32_t* result, const prop_info* info, size_t info_len, std::vector<uint32_t>& unknownProperies) {
         drmModeObjectProperties* props = drmModeObjectGetProperties(fd, id, type);
         if (!props)
             return false;
@@ -116,6 +116,8 @@ namespace Aquamarine {
             const prop_info* p = (prop_info*)bsearch(prop->name, info, info_len, sizeof(info[0]), comparePropInfo);
             if (p)
                 result[p->index] = prop->prop_id;
+            else
+                unknownProperies.push_back(prop->prop_id);
 
             drmModeFreeProperty(prop);
         }
@@ -140,8 +142,8 @@ namespace Aquamarine {
         return true;
     }
 
-    bool getDRMConnectorProps(int fd, uint32_t id, SDRMConnector::UDRMConnectorProps* out) {
-        return scanProperties(fd, id, DRM_MODE_OBJECT_CONNECTOR, out->props, connector_info, sizeof(connector_info) / sizeof(connector_info[0]));
+    bool getDRMConnectorProps(int fd, uint32_t id, SDRMConnector::UDRMConnectorProps* out, std::vector<uint32_t>& unknownProperies) {
+        return scanProperties(fd, id, DRM_MODE_OBJECT_CONNECTOR, out->props, connector_info, sizeof(connector_info) / sizeof(connector_info[0]), unknownProperies);
     }
 
     bool getDRMConnectorColorspace(int fd, uint32_t id, SDRMConnector::UDRMConnectorColorspace* out) {
@@ -152,12 +154,12 @@ namespace Aquamarine {
         return scanPropertyEnum(fd, id, out->props, broadcast_rgb_info, sizeof(broadcast_rgb_info) / sizeof(broadcast_rgb_info[0]));
     }
 
-    bool getDRMCRTCProps(int fd, uint32_t id, SDRMCRTC::UDRMCRTCProps* out) {
-        return scanProperties(fd, id, DRM_MODE_OBJECT_CRTC, out->props, crtc_info, sizeof(crtc_info) / sizeof(crtc_info[0]));
+    bool getDRMCRTCProps(int fd, uint32_t id, SDRMCRTC::UDRMCRTCProps* out, std::vector<uint32_t>& unknownProperies) {
+        return scanProperties(fd, id, DRM_MODE_OBJECT_CRTC, out->props, crtc_info, sizeof(crtc_info) / sizeof(crtc_info[0]), unknownProperies);
     }
 
-    bool getDRMPlaneProps(int fd, uint32_t id, SDRMPlane::UDRMPlaneProps* out) {
-        return scanProperties(fd, id, DRM_MODE_OBJECT_PLANE, out->props, plane_info, sizeof(plane_info) / sizeof(plane_info[0]));
+    bool getDRMPlaneProps(int fd, uint32_t id, SDRMPlane::UDRMPlaneProps* out, std::vector<uint32_t>& unknownProperies) {
+        return scanProperties(fd, id, DRM_MODE_OBJECT_PLANE, out->props, plane_info, sizeof(plane_info) / sizeof(plane_info[0]), unknownProperies);
     }
 
     bool getDRMPlaneColorRange(int fd, uint32_t id, SDRMPlane::UDRMPlanePropsColorRange* out) {

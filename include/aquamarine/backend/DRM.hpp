@@ -4,7 +4,9 @@
 #include "../allocator/Swapchain.hpp"
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
+#include <cstdint>
 #include <hyprutils/memory/WeakPtr.hpp>
+#include <vector>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
 #include <optional>
@@ -143,7 +145,8 @@ namespace Aquamarine {
             } values;
             uint32_t props[18] = {0};
         };
-        UDRMPlaneProps props;
+        UDRMPlaneProps        props;
+        std::vector<uint32_t> unknownProperies;
 
         union UDRMPlanePropsColorRange {
             struct {
@@ -198,7 +201,8 @@ namespace Aquamarine {
             } values;
             uint32_t props[9] = {0};
         };
-        UDRMCRTCProps props;
+        UDRMCRTCProps         props;
+        std::vector<uint32_t> unknownProperies;
     };
 
     class CDRMOutput : public IOutput {
@@ -384,7 +388,8 @@ namespace Aquamarine {
             } values;
             uint32_t props[15] = {0};
         };
-        UDRMConnectorProps props;
+        UDRMConnectorProps    props;
+        std::vector<uint32_t> unknownProperies;
 
         union UDRMConnectorColorspace {
             struct {

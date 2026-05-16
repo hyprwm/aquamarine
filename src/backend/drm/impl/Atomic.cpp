@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstring>
 #include <drm_mode.h>
+#include <vector>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <sys/mman.h>
@@ -193,10 +194,10 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->id, connector->props.values.content_type, newContentType);
     }
 
-    data.atomic.maxBpc       = newMaxBpc;
-    data.atomic.colorspace   = newColorspace;
-    data.atomic.contentType  = newContentType;
-    data.atomic.crtcID       = newCrtcID;
+    data.atomic.maxBpc      = newMaxBpc;
+    data.atomic.colorspace  = newColorspace;
+    data.atomic.contentType = newContentType;
+    data.atomic.crtcID      = newCrtcID;
 
     add(connector->crtc->id, connector->crtc->props.values.active, enable);
 
@@ -334,6 +335,36 @@ void Aquamarine::CDRMAtomicRequest::rollbackBlob(uint32_t* current, uint32_t nex
     if (*current == next)
         return;
     destroyBlob(next);
+}
+
+void Aquamarine::CDRMAtomicRequest::resetProps(uint32_t id, const std::vector<uint32_t>& props) {
+    for (auto prop : props) {
+        add(id, prop, 0);
+    }
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+    if (!connector)
+        return;
+    resetProps(connector->id, connector->unknownProperies);
+    resetUnknownProps(connector->crtc);
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMCRTC> crtc) {
+    if (!crtc)
+        return;
+    resetProps(crtc->id, crtc->unknownProperies);
+    resetUnknownProps(crtc->primary);
+    resetUnknownProps(crtc->cursor);
+    for (const auto& plane : crtc->planes) {
+        resetUnknownProps(plane);
+    }
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane) {
+    if (!plane)
+        return;
+    resetProps(plane->id, plane->unknownProperies);
 }
 
 void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {

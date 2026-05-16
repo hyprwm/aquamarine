@@ -596,7 +596,7 @@ bool Aquamarine::CDRMBackend::initResources() {
 
         CRTC->legacy.gammaSize = drmCRTC->gamma_size;
 
-        if (!getDRMCRTCProps(gpu->fd, CRTC->id, &CRTC->props)) {
+        if (!getDRMCRTCProps(gpu->fd, CRTC->id, &CRTC->props, CRTC->unknownProperies)) {
             backend->log(AQ_LOG_ERROR, std::format("drm: getDRMCRTCProps for crtc {} failed", CRTC->id));
             return false;
         }
@@ -1328,7 +1328,7 @@ Hyprutils::Memory::CWeakPointer<IBackendImplementation> Aquamarine::CDRMBackend:
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     id = plane->plane_id;
 
-    if (!getDRMPlaneProps(backend->gpu->fd, id, &props))
+    if (!getDRMPlaneProps(backend->gpu->fd, id, &props, unknownProperies))
         return false;
 
     if (!getDRMProp(backend->gpu->fd, id, props.values.type, &type))
@@ -1452,7 +1452,7 @@ SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* c
 bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
     pendingPageFlip.connector = self.lock();
 
-    if (!getDRMConnectorProps(backend->gpu->fd, id, &props))
+    if (!getDRMConnectorProps(backend->gpu->fd, id, &props, unknownProperies))
         return false;
     if (props.values.Colorspace)
         getDRMConnectorColorspace(backend->gpu->fd, props.values.Colorspace, &colorspace);
