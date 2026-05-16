@@ -326,8 +326,16 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {}, STATE.colorRange);
         int i = 0;
         for (const auto& state : connector->output->state->state().planeStates) {
-            const auto& plane = connector->crtc->planes.at(i);
-            // TODO
+            if (state.updated) {
+                const auto& plane = connector->crtc->planes.at(i);
+                if (state.enabled) {
+                    // TODO
+                    // planeProps(plane, , 0, {});
+                    // add(plane->id, plane->props.values.fb_damage_clips, );
+                } else
+                    planeProps(plane, nullptr, 0, {});
+            }
+            i++;
         }
 
         if (connector->output->supportsExplicit && (data.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) && STATE.explicitInFence >= 0)
