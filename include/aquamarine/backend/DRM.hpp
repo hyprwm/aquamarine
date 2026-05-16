@@ -459,6 +459,8 @@ namespace Aquamarine {
         std::vector<SDRMFormat>                                       glFormats;
 
         Hyprutils::Memory::CSharedPointer<CDRMDumbAllocator>          dumbAllocator;
+        bool                                                          sinkOnly    = false;
+        bool                                                          sinkCpuCopy = false;
 
         bool                                                          atomic = false;
 
