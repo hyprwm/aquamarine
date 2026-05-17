@@ -2437,11 +2437,17 @@ std::optional<Aquamarine::IOutput::SPlaneData> Aquamarine::CDRMOutput::getOverla
         return {};
     const auto& overlay = connector->crtc->planes.back();
     ASSERT(overlay->type == DRM_PLANE_TYPE_OVERLAY);
+    if (!overlaySwapchain) {
+        auto primaryBackend = backend->primary ? backend->primary : backend;
+        swapchain           = CSwapchain::create(backend->backend->primaryAllocator, primaryBackend.lock());
+        overlaySwapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary, .scanoutOutput = self});
+    }
     return Aquamarine::IOutput::SPlaneData{
         .renderFormats = overlay->formats,
         .type          = AQ_PLANE_GENERIC,
         .id            = overlay->id,
         .index         = (uint32_t)(connector->crtc->planes.size() - 1),
+        .swapchain     = overlaySwapchain,
     };
 }
 

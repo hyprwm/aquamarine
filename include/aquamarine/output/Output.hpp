@@ -183,10 +183,11 @@ namespace Aquamarine {
         };
 
         struct SPlaneData {
-            std::vector<SDRMFormat> renderFormats; // empty if unknown / not specified -> use getRenderFormats()
-            ePlaneType              type  = AQ_PLANE_UNKNOWN;
-            uint32_t                id    = 0;
-            uint32_t                index = 0;
+            std::vector<SDRMFormat>                       renderFormats; // empty if unknown / not specified -> use getRenderFormats()
+            ePlaneType                                    type  = AQ_PLANE_UNKNOWN;
+            uint32_t                                      id    = 0;
+            uint32_t                                      index = 0;
+            Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
         };
 
         virtual bool                                                      commit()           = 0;
@@ -222,6 +223,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<COutputState>             state = Hyprutils::Memory::makeShared<COutputState>();
 
         Hyprutils::Memory::CSharedPointer<CSwapchain>               swapchain;
+        Hyprutils::Memory::CSharedPointer<CSwapchain>               overlaySwapchain;
 
         //
 
