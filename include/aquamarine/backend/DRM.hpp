@@ -450,6 +450,8 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<CDRMRenderer> renderer; // may be null if creation fails
         } rendererState;
 
+        bool                                                          rendererRequired = true;
+
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
 
         std::vector<Hyprutils::Memory::CSharedPointer<SDRMCRTC>>      crtcs;

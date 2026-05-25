@@ -626,6 +626,9 @@ bool Aquamarine::CDRMBackend::shouldBlit() {
 }
 
 bool Aquamarine::CDRMBackend::initMgpu() {
+    if (!rendererRequired)
+        return true;
+
     SP<CGBMAllocator> newAllocator;
     if (primary || backend->primaryAllocator->type() != AQ_ALLOCATOR_TYPE_GBM) {
         newAllocator            = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
@@ -853,8 +856,11 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     gpuName = drmName;
 
     auto drmVerName = drmVer->name ? drmVer->name : "unknown";
-    if (std::string_view(drmVerName) == "evdi")
+    if (std::string_view(drmVerName) == "evdi") {
+        // DisplayLink/evdi exposes KMS without a usable EGL renderer.
         primary = {};
+        rendererRequired = false;
+    }
 
     backend->log(AQ_LOG_DEBUG,
                  std::format("drm: Starting backend for {}, with driver {}{}", drmName ? drmName : "unknown", drmVerName,
@@ -1171,7 +1177,7 @@ void Aquamarine::CDRMBackend::onReady() {
 
     // init a drm renderer to gather gl formats.
     // if we are secondary, initMgpu will have done that
-    if (!primary) {
+    if (!primary && rendererRequired) {
         auto a = CGBMAllocator::create(backend->reopenDRMNode(gpu->fd), backend);
         if (!a)
             backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
