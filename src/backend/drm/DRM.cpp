@@ -408,11 +408,9 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
     // restore, but isPageFlipPending is already false so the = false
     // assignment is a harmless no-op.
     for (auto const& c : connectors) {
-        if (c->isPageFlipPending || c->isFrameRunning) {
+        if (c->sched.flipInFlight() || c->sched.frameRunning()) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Clearing stale page-flip state for {}", c->szName));
-            c->isPageFlipPending   = false;
-            c->isFrameRunning      = false;
-            c->frameEventScheduled = false;
+            c->sched.invalidate();
         }
     }
 
@@ -1142,7 +1140,7 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
     if (!pageFlip || !pageFlip->connector)
         return;
 
-    pageFlip->connector->isPageFlipPending = false;
+    pageFlip->connector->sched.onFlipComplete();
 
     const auto& BACKEND = pageFlip->connector->backend;
 
@@ -1154,7 +1152,7 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
     }
 
     if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState)
-        pageFlip->connector->isFrameRunning = true;
+        pageFlip->connector->sched.setFrameRunning(true);
 
     pageFlip->connector->onPresent();
 
@@ -1171,13 +1169,13 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
     });
 
     if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState) {
-        if (pageFlip->connector->frameEventScheduled) {
-            pageFlip->connector->isFrameRunning = false;
+        if (pageFlip->connector->sched.frameScheduled()) {
+            pageFlip->connector->sched.setFrameRunning(false);
             return; // we got a idleFrame waiting before this pf was committed.
         }
 
         pageFlip->connector->output->events.frame.emit();
-        pageFlip->connector->isFrameRunning = false;
+        pageFlip->connector->sched.setFrameRunning(false);
     }
 }
 
@@ -1899,8 +1897,8 @@ void Aquamarine::SDRMConnector::onPresent() {
 Aquamarine::CDRMOutput::~CDRMOutput() {
     if (backend && backend->backend)
         backend->backend->removeIdleEvent(frameIdle);
-    connector->isPageFlipPending   = false;
-    connector->frameEventScheduled = false;
+    connector->sched.onFlipComplete();
+    connector->sched.setFrameScheduled(false);
 }
 
 void Aquamarine::CDRMOutput::releaseMgpuResources() {
@@ -2014,7 +2012,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Disabling output {}", name));
         }
 
-        if (STATE.enabled && (NEEDS_RECONFIG || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) && connector->isPageFlipPending) {
+        if (STATE.enabled && (NEEDS_RECONFIG || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) && connector->sched.flipInFlight()) {
             // Check if the pending page-flip is stale (>500ms — well beyond
             // any vblank interval, even at low refresh rates). Stale flips
             // occur after S3/S4 suspend when page-flip completion events are
@@ -2022,7 +2020,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             struct timespec ts;
             clock_gettime(CLOCK_BOOTTIME, &ts);
             uint64_t nowMs     = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
-            bool     staleFlip = (nowMs - connector->pageFlipPendingAtMs) > 500;
+            bool     staleFlip = (nowMs - connector->sched.pendingAtMs()) > 500;
 
             if (NEEDS_RECONFIG && staleFlip) {
                 // A blocking modeset uses DRM_MODE_ATOMIC_ALLOW_MODESET which
@@ -2030,10 +2028,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 // page-flip at the kernel level. Clear the stale userspace
                 // bookkeeping to match.
                 backend->backend->log(AQ_LOG_DEBUG,
-                                      std::format("drm: Clearing stale page-flip state for {} during modeset (pending for {}ms)", name, nowMs - connector->pageFlipPendingAtMs));
-                connector->isPageFlipPending   = false;
-                connector->isFrameRunning      = false;
-                connector->frameEventScheduled = false;
+                                      std::format("drm: Clearing stale page-flip state for {} during modeset (pending for {}ms)", name,
+                                                  nowMs - connector->sched.pendingAtMs()));
+                connector->sched.invalidate();
             } else {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
                 return false;
@@ -2325,13 +2322,13 @@ void Aquamarine::CDRMOutput::moveCursor(const Vector2D& coord, bool skipSchedule
 void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
     TRACE(backend->backend->log(AQ_LOG_TRACE,
                                 std::format("CDRMOutput::scheduleFrame: reason {}, needsFrame {}, isPageFlipPending {}, frameEventScheduled {}", (uint32_t)reason, needsFrame,
-                                            connector->isPageFlipPending, connector->frameEventScheduled)));
+                                            connector->sched.flipInFlight(), connector->sched.frameScheduled())));
     needsFrame = true;
 
-    if (connector->isPageFlipPending || connector->isFrameRunning || connector->frameEventScheduled || !enabledState)
+    if (!connector->sched.canSchedule() || !enabledState)
         return;
 
-    connector->frameEventScheduled = true;
+    connector->sched.setFrameScheduled(true);
 
     backend->backend->addIdleEvent(frameIdle);
 }
@@ -2389,11 +2386,11 @@ std::vector<SDRMFormat> Aquamarine::CDRMOutput::getRenderFormats() {
 }
 
 bool Aquamarine::CDRMOutput::pendingPageFlip() {
-    return connector->isPageFlipPending;
+    return connector->sched.flipInFlight();
 }
 
 bool Aquamarine::CDRMOutput::pendingIdleFrame() {
-    return connector->frameEventScheduled;
+    return connector->sched.frameScheduled();
 }
 
 int Aquamarine::CDRMOutput::getConnectorID() {
@@ -2405,17 +2402,16 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
     name = name_;
 
     frameIdle = makeShared<std::function<void(void)>>([this, backend = backend_]() {
-        connector->frameEventScheduled = false;
-
-        if (connector->isPageFlipPending || connector->isFrameRunning)
+        connector->sched.setFrameScheduled(false);
+        if (connector->sched.flipInFlight() || connector->sched.frameRunning())
             return;
 
         events.frame.emit();
 
         // above frame scheduled, and then committed, remove the idle frame. the pageflip will emit the frame.
-        if (backend && backend->backend && connector->frameEventScheduled && connector->isPageFlipPending) {
+        if (backend && backend->backend && connector->sched.frameScheduled() && connector->sched.flipInFlight()) {
             backend->backend->removeIdleEvent(frameIdle);
-            connector->frameEventScheduled = false;
+            connector->sched.setFrameScheduled(false);
         }
     });
 }

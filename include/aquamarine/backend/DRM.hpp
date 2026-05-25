@@ -4,6 +4,7 @@
 #include "../allocator/Swapchain.hpp"
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
+#include "drm/FrameScheduler.hpp"
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
@@ -325,11 +326,8 @@ namespace Aquamarine {
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
         Hyprutils::Memory::CSharedPointer<CDRMFB>      pendingCursorFB;
 
-        bool                                           isPageFlipPending   = false;
-        uint64_t                                       pageFlipPendingAtMs = 0; // CLOCK_BOOTTIME ms when isPageFlipPending was set
         SDRMPageFlip                                   pendingPageFlip;
-        bool                                           frameEventScheduled = false;
-        bool                                           isFrameRunning      = false;
+        CFrameScheduler                                sched;
 
         // the current state is invalid and won't commit, don't try to modeset.
         bool                                           commitTainted = false;
