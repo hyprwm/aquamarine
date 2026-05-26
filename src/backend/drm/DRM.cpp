@@ -1844,8 +1844,10 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     const bool wasEnabled = output->enabledState;
     output->enabledState  = output->state->state().enabled;
 
-    if (!output->enabledState)
+    if (!output->enabledState) {
         releaseFBReferences();
+        sched.invalidate();
+    }
 
     if (!backend->updateSecondaryRendererState())
         backend->backend->log(AQ_LOG_ERROR, std::format("drm: Failed to update renderer state for {} on applyCommit", szName));
@@ -2013,23 +2015,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
 
         if (STATE.enabled && (NEEDS_RECONFIG || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) && connector->sched.flipInFlight()) {
-            // Check if the pending page-flip is stale (>500ms — well beyond
-            // any vblank interval, even at low refresh rates). Stale flips
-            // occur after S3/S4 suspend when page-flip completion events are
-            // lost because the display hardware was powered off.
-            struct timespec ts;
-            clock_gettime(CLOCK_BOOTTIME, &ts);
-            uint64_t nowMs     = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
-            bool     staleFlip = (nowMs - connector->sched.pendingAtMs()) > 500;
-
-            if (NEEDS_RECONFIG && staleFlip) {
-                // A blocking modeset uses DRM_MODE_ATOMIC_ALLOW_MODESET which
-                // fully resets the CRTC, implicitly cancelling any stale
-                // page-flip at the kernel level. Clear the stale userspace
-                // bookkeeping to match.
-                backend->backend->log(AQ_LOG_DEBUG,
-                                      std::format("drm: Clearing stale page-flip state for {} during modeset (pending for {}ms)", name,
-                                                  nowMs - connector->sched.pendingAtMs()));
+            if (NEEDS_RECONFIG) {
+                // ALLOW_MODESET resets the CRTC and cancels the in-flight flip; no
+                // completion event will arrive, so clear the userspace state.
+                backend->backend->log(AQ_LOG_DEBUG, std::format("drm: page-flip on {} cancelled by modeset, clearing flip state", name));
                 connector->sched.invalidate();
             } else {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
