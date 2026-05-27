@@ -52,6 +52,10 @@ static void libseatLog(libseat_log_level level, const char* fmt, va_list args) {
     static char string[1024];
     vsnprintf(string, sizeof(string), fmt, args);
 
+    // remove trailing newlines
+    for (int len = strlen(string); len > 0 && string[len - 1] == '\n'; --len)
+        string[len - 1] = '\0';
+
     backendInUse->log(logLevelFromLibseat(level), std::format("[libseat] {}", string));
 }
 
@@ -61,6 +65,10 @@ static void libinputLog(libinput*, libinput_log_priority level, const char* fmt,
 
     static char string[1024];
     vsnprintf(string, sizeof(string), fmt, args);
+
+    // remove trailing newlines
+    for (int len = strlen(string); len > 0 && string[len - 1] == '\n'; --len)
+        string[len - 1] = '\0';
 
     backendInUse->log(logLevelFromLibinput(level), std::format("[libinput] {}", string));
 }
