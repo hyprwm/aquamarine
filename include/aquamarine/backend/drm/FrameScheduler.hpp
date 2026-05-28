@@ -56,4 +56,21 @@ namespace Aquamarine {
         bool m_frameScheduled = false;
         bool m_frameRunning   = false;
     };
+
+    // RAII pair for isFrameRunning: set on ctor, cleared on every exit path so a
+    // reentrant emit handler cannot strand it.
+    class CFrameRunningGuard {
+      public:
+        explicit CFrameRunningGuard(CFrameScheduler& s) : m_s(s) {
+            m_s.setFrameRunning(true);
+        }
+        ~CFrameRunningGuard() {
+            m_s.setFrameRunning(false);
+        }
+        CFrameRunningGuard(const CFrameRunningGuard&)            = delete;
+        CFrameRunningGuard& operator=(const CFrameRunningGuard&) = delete;
+
+      private:
+        CFrameScheduler& m_s;
+    };
 }

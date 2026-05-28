@@ -1151,8 +1151,9 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         return;
     }
 
-    if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState)
-        pageFlip->connector->sched.setFrameRunning(true);
+    // hold isFrameRunning around the emit (RAII pair, so reentrant enable/disable
+    // can't strand it).
+    CFrameRunningGuard frameRunning(pageFlip->connector->sched);
 
     pageFlip->connector->onPresent();
 
@@ -1185,13 +1186,14 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
     }
 
     if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState) {
-        if (pageFlip->connector->sched.frameScheduled()) {
-            pageFlip->connector->sched.setFrameRunning(false);
-            return; // we got a idleFrame waiting before this pf was committed.
-        }
+        // An idle frame is already queued and will emit events.frame; emitting
+        // here too would double-fire — the wl event loop gives no ordering
+        // guarantee between the idle callback and this pf handler (#325). Let the
+        // idle frame win; the RAII guard clears frameRunning on this return.
+        if (pageFlip->connector->sched.frameScheduled())
+            return;
 
         pageFlip->connector->output->events.frame.emit();
-        pageFlip->connector->sched.setFrameRunning(false);
     }
 }
 
