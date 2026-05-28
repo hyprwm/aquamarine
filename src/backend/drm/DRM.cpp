@@ -1168,6 +1168,22 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         .flags     = flags,
     });
 
+    // Drain BEFORE frame.emit: frame.emit triggers the compositor's next commit,
+    // which would race the drain and hit -EBUSY.
+    if (pageFlip->connector->nextCommit) {
+        if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState
+            && !pageFlip->connector->sched.flipInFlight()) {
+            SDRMConnectorCommitData draining = std::move(*pageFlip->connector->nextCommit);
+            pageFlip->connector->nextCommit.reset();
+            if (!pageFlip->connector->commitState(draining))
+                BACKEND->log(AQ_LOG_ERROR, std::format("drm: drain of coalesced commit failed for {}", pageFlip->connector->szName));
+        } else {
+            // Session inactive, output disabled, or a reentrant present.emit
+            // handler already submitted a newer flip — stash is obsolete, drop it.
+            pageFlip->connector->releaseStashedCommit();
+        }
+    }
+
     if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState) {
         if (pageFlip->connector->sched.frameScheduled()) {
             pageFlip->connector->sched.setFrameRunning(false);
@@ -1826,6 +1842,20 @@ bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
     return ok;
 }
 
+void Aquamarine::SDRMConnector::releaseStashedCommit() {
+    if (!nextCommit)
+        return;
+    if (nextCommit->mainFB) {
+        nextCommit->mainFB->buffer->lockedByBackend = false;
+        nextCommit->mainFB->buffer->events.backendRelease.emit();
+    }
+    if (crtc && crtc->cursor && nextCommit->cursorFB) {
+        nextCommit->cursorFB->buffer->lockedByBackend = false;
+        nextCommit->cursorFB->buffer->events.backendRelease.emit();
+    }
+    nextCommit.reset();
+}
+
 void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data) {
     crtc->primary->back = data.mainFB;
     if (crtc->cursor && data.cursorFB)
@@ -1847,6 +1877,7 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     if (!output->enabledState) {
         releaseFBReferences();
         sched.invalidate();
+        releaseStashedCommit();
     }
 
     if (!backend->updateSecondaryRendererState())
@@ -2014,16 +2045,12 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Disabling output {}", name));
         }
 
-        if (STATE.enabled && (NEEDS_RECONFIG || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) && connector->sched.flipInFlight()) {
-            if (NEEDS_RECONFIG) {
-                // ALLOW_MODESET resets the CRTC and cancels the in-flight flip; no
-                // completion event will arrive, so clear the userspace state.
-                backend->backend->log(AQ_LOG_DEBUG, std::format("drm: page-flip on {} cancelled by modeset, clearing flip state", name));
-                connector->sched.invalidate();
-            } else {
-                backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
-                return false;
-            }
+        if (STATE.enabled && NEEDS_RECONFIG && connector->sched.flipInFlight()) {
+            // ALLOW_MODESET resets the CRTC and cancels the in-flight flip; no
+            // completion event will arrive, so clear the userspace state.
+            backend->backend->log(AQ_LOG_DEBUG, std::format("drm: page-flip on {} cancelled by modeset, clearing flip state", name));
+            connector->sched.invalidate();
+            connector->releaseStashedCommit();
         }
 
         if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
@@ -2156,6 +2183,22 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     // Once a real CTM commit succeeds, ordinary identity modesets can skip the blob.
     if (shouldSubmitCTM(connector, STATE, data.modeset))
         data.ctm = STATE.ctm;
+
+    // A second flip while one is pending returns -EBUSY; stash the commit
+    // in a latest-wins slot, drained by handlePF on flip completion.
+    if (!onlyTest && !data.modeset && connector->sched.flipInFlight()) {
+        if (data.mainFB)
+            data.mainFB->buffer->lockedByBackend = true;
+        if (connector->crtc->cursor && data.cursorFB)
+            data.cursorFB->buffer->lockedByBackend = true;
+        connector->releaseStashedCommit();
+        connector->nextCommit = std::move(data);
+        events.commit.emit();
+        state->onCommit();
+        lastCommitNoBuffer = false;
+        needsFrame         = false;
+        return true;
+    }
 
     bool ok = connector->commitState(data);
 

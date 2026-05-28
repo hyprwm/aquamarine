@@ -328,6 +328,12 @@ namespace Aquamarine {
 
         SDRMPageFlip                                   pendingPageFlip;
         CFrameScheduler                                sched;
+        // Latest-wins coalesce slot: a buffer-only commit that races an in-flight
+        // page-flip is stashed here (the kernel would return -EBUSY on a second flip)
+        // and drained from handlePF once the pending flip completes. A newer stashed
+        // commit replaces an older one; the displaced buffer is released.
+        std::optional<SDRMConnectorCommitData>         nextCommit;
+        void                                           releaseStashedCommit();
 
         // the current state is invalid and won't commit, don't try to modeset.
         bool                                           commitTainted = false;
