@@ -1,33 +1,41 @@
 #pragma once
 
+#include <hyprutils/signal/Signal.hpp>
+
 namespace Aquamarine {
-    // Per-connector page-flip / frame scheduling state for the DRM backend.
+    // Per-output frame scheduling state, shared by the DRM and Wayland backends.
     //
-    // Wraps the flip-flags that previously lived directly on SDRMConnector
-    // (isPageFlipPending, frameEventScheduled, isFrameRunning) behind named methods,
-    // so a single owner holds the page-flip/frame lifecycle.
+    // Both backends produce an end-of-frame event — DRM from the kernel page-flip
+    // completion, Wayland from wl_callback.done on a wl_surface.frame. This class
+    // models that lifecycle uniformly and fires frameReady on completion.
     class CFrameScheduler {
       public:
-        // a page-flip was submitted to the kernel with a completion event requested.
-        void onFlipSubmitted() {
+        // a frame was submitted to the host with a completion event requested.
+        // DRM: page-flip submitted with PAGE_FLIP_EVENT. Wayland: sendCommit followed
+        // by a wl_surface.frame whose done is wired to onFrameComplete.
+        void onFrameSubmitted() {
             m_pending = true;
         }
 
-        // the kernel delivered the page-flip completion event.
-        void onFlipComplete() {
+        // the host delivered the frame completion event.
+        // DRM: kernel page-flip handler. Wayland: wl_callback.done.
+        // State-only — clears m_pending. The backend fires frameReady explicitly
+        // at the right point in its handler (preserving the present-before-frame
+        // ordering on DRM).
+        void onFrameComplete() {
             m_pending = false;
         }
 
-        // the in-flight flip (if any) is void and no completion event will arrive;
-        // reset the flip/frame bookkeeping.
+        // the in-flight frame (if any) is void and no completion event will arrive;
+        // reset the frame bookkeeping.
         void invalidate() {
             m_pending        = false;
             m_frameRunning   = false;
             m_frameScheduled = false;
         }
 
-        // is a page-flip in flight on this connector's CRTC?
-        bool flipInFlight() const {
+        // is a frame in flight awaiting completion?
+        bool frameInFlight() const {
             return m_pending;
         }
 
@@ -37,7 +45,7 @@ namespace Aquamarine {
         }
 
         // State accessors. setFrameScheduled / frameScheduled() drive the idle-frame
-        // loop; setFrameRunning / frameRunning() guard event emission in handlePF.
+        // loop; setFrameRunning / frameRunning() guard event emission on completion.
         bool frameScheduled() const {
             return m_frameScheduled;
         }
@@ -50,6 +58,9 @@ namespace Aquamarine {
         void setFrameRunning(bool v) {
             m_frameRunning = v;
         }
+
+        // Fires from onFrameComplete. The output wires this to events.frame.emit.
+        Hyprutils::Signal::CSignalT<> frameReady;
 
       private:
         bool m_pending        = false;

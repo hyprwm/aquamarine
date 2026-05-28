@@ -137,7 +137,7 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
         return false;
     }
 
-    connector->sched.onFlipSubmitted();
+    connector->sched.onFrameSubmitted();
 
     return true;
 }

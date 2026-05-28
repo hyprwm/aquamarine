@@ -4,7 +4,7 @@
 #include "../allocator/Swapchain.hpp"
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
-#include "drm/FrameScheduler.hpp"
+#include "FrameScheduler.hpp"
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
@@ -227,6 +227,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                 backend;
         Hyprutils::Memory::CSharedPointer<SDRMConnector>             connector;
         Hyprutils::Memory::CSharedPointer<std::function<void(void)>> frameIdle;
+        Hyprutils::Signal::CHyprSignalListener                       frameReadyListener;
 
         struct {
             Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
