@@ -2315,6 +2315,11 @@ size_t Aquamarine::CDRMOutput::getGammaSize() {
         return 0;
     }
 
+    if (!connector->crtc) {
+        backend->log(AQ_LOG_ERROR, "Can't get gamma size: no crtc");
+        return 0;
+    }
+
     uint64_t size = 0;
     if (!getDRMProp(backend->gpu->fd, connector->crtc->id, connector->crtc->props.values.gamma_lut_size, &size)) {
         backend->log(AQ_LOG_ERROR, "Couldn't get the gamma_size prop");
@@ -2327,6 +2332,11 @@ size_t Aquamarine::CDRMOutput::getGammaSize() {
 size_t Aquamarine::CDRMOutput::getDeGammaSize() {
     if (!backend->atomic) {
         backend->log(AQ_LOG_ERROR, "No support for gamma on the legacy iface");
+        return 0;
+    }
+
+    if (!connector->crtc) {
+        backend->log(AQ_LOG_ERROR, "Can't get degamma size: no crtc");
         return 0;
     }
 
