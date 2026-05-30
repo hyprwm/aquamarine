@@ -737,6 +737,11 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
         return false;
     }
 
+#ifdef DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE
+    if (drmSetClientCap(gpu->fd, DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE, 1))
+        backend->log(AQ_LOG_WARNING, std::format("drm: DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE unsupported"));
+#endif
+
     drmProps.supportsAsyncCommit = drmGetCap(gpu->fd, DRM_CAP_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
     drmProps.supportsTimelines   = drmGetCap(gpu->fd, DRM_CAP_SYNCOBJ_TIMELINE, &cap) == 0 && cap == 1;
 
@@ -1661,6 +1666,15 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 
     if (props.values.color_range)
         getDRMPlaneColorRange(backend->gpu->fd, props.values.color_range, &colorRange);
+
+    for (const auto& id : unknownProperies) {
+        drmModePropertyRes* prop = drmModeGetProperty(backend->gpu->fd, id);
+        if (!prop)
+            continue;
+
+        backend->backend->log(AQ_LOG_DEBUG, std::format("drm: unknown prop {} ({})", id, prop->name));
+        drmModeFreeProperty(prop);
+    }
 
     if (!getDRMProp(backend->gpu->fd, id, props.values.type, &type))
         return false;
