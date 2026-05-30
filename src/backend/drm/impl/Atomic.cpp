@@ -160,7 +160,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             addConnectorModeset(connector, data);
 
         // Setup HDR
-        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1)) {
+        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1) && !connector->maxBpcFailed) {
             newMaxBpc = getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format);
             if (forceConnProps || connector->atomic.maxBpc != newMaxBpc)
                 add(connector->id, connector->props.values.max_bpc, newMaxBpc);
@@ -489,7 +489,46 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     if (!data.blocking && !data.test)
         flags |= DRM_MODE_ATOMIC_NONBLOCK;
 
-    const bool ok = request.commit(flags);
+    bool ok = request.commit(flags);
+
+    // If the commit failed and max_bpc was set, retry without it. Some drivers
+    // (notably amdgpu on eDP panels) reject atomic commits that touch max_bpc.
+    if (!ok && data.atomic.maxBpc && !connector->maxBpcFailed) {
+        request.rollback(data);
+
+        connector->maxBpcFailed = true;
+        connector->backend->backend->log(AQ_LOG_WARNING, "drm: atomic commit failed with max_bpc set, retrying without max_bpc");
+
+        // Re-prepare and rebuild the request without max_bpc (addConnector
+        // checks maxBpcFailed and will skip the max_bpc property).
+        data.atomic.maxBpc = 0;
+
+        CDRMAtomicRequest request2(backend);
+        request2.addConnector(connector, data);
+
+        ok = request2.commit(flags);
+
+        if (ok) {
+            request2.apply(data);
+            if (!data.test) {
+                connector->atomic.maxBpc      = data.atomic.maxBpc;
+                connector->atomic.colorspace  = data.atomic.colorspace;
+                connector->atomic.contentType = data.atomic.contentType;
+                connector->atomic.crtcID      = data.atomic.crtcID;
+                connector->atomic.propsCached = true;
+
+                if (data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
+                    connector->isPageFlipPending = true;
+                    struct timespec ts;
+                    clock_gettime(CLOCK_BOOTTIME, &ts);
+                    connector->pageFlipPendingAtMs = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
+                }
+            }
+        } else
+            request2.rollback(data);
+
+        return ok;
+    }
 
     if (ok) {
         request.apply(data);

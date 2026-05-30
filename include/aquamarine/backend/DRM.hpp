@@ -331,6 +331,10 @@ namespace Aquamarine {
         // the current state is invalid and won't commit, don't try to modeset.
         bool                                           commitTainted = false;
 
+        // set when an atomic commit with max_bpc fails; skips max_bpc on future
+        // commits for this connector (works around buggy drivers, e.g. amdgpu eDP).
+        bool                                           maxBpcFailed = false;
+
         Hyprutils::Memory::CSharedPointer<SOutputMode> fallbackMode;
 
         struct {
