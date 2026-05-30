@@ -1714,6 +1714,9 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
     }
 
+    // max_bpc-less retry is per-sink and must not persist across hotplugs.
+    maxBpcFailed = false;
+
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Connecting connector {}, {}", szName, crtc ? std::format("CRTC ID {}", crtc->id) : "no CRTC"));
 
     output            = SP<CDRMOutput>(new CDRMOutput(szName, backend, self.lock()));
