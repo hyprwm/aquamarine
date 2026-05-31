@@ -2453,7 +2453,7 @@ std::optional<Aquamarine::IOutput::SPlaneData> Aquamarine::CDRMOutput::getOverla
     ASSERT(overlay->type == DRM_PLANE_TYPE_OVERLAY);
     if (!overlaySwapchain) {
         auto primaryBackend = backend->primary ? backend->primary : backend;
-        swapchain           = CSwapchain::create(backend->backend->primaryAllocator, primaryBackend.lock());
+        overlaySwapchain    = CSwapchain::create(backend->backend->primaryAllocator, primaryBackend.lock());
         overlaySwapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary, .scanoutOutput = self});
     }
     return Aquamarine::IOutput::SPlaneData{
