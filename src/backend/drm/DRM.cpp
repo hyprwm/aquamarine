@@ -42,6 +42,19 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
+static bool shouldSubmitCTM(SP<SDRMConnector> connector, const COutputState::SInternalState& state, bool modeset) {
+    if (state.committed & COutputState::AQ_OUTPUT_STATE_CTM)
+        return true;
+
+    if (!modeset)
+        return false;
+
+    if (!(state.ctm == Mat3x3::identity()))
+        return true;
+
+    return connector->crtc->props.values.ctm && !connector->crtc->atomic.ctmStateKnown;
+}
+
 Aquamarine::CDRMBackend::CDRMBackend(SP<CBackend> backend_) : backend(backend_) {
     listeners.sessionActivate = backend->session->events.changeActive.listen([this] {
         if (backend->session->active) {
@@ -428,10 +441,15 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             continue;
         }
 
+        c->crtc->atomic.ctmStateKnown = false;
+
         if (MODE->modeInfo.has_value())
             data.modeInfo = *MODE->modeInfo;
         else
             data.calculateMode(c);
+
+        if (shouldSubmitCTM(c, STATE, data.modeset))
+            data.ctm = STATE.ctm;
 
         if (STATE.buffer) {
             SP<CDRMFB> drmFB;
@@ -2132,12 +2150,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     else
         data.calculateMode(connector);
 
-    // always re-send CTM on modeset, identity included, otherwise a stale matrix
-    // left by a previous compositor (e.g. kwin's color management) survives our
-    // session. prepareConnector builds a real identity blob when STATE.ctm is
-    // identity, so we never send blob_id=0 (which some drivers mishandle, see #256).
-    // (see #127)
-    if (data.modeset || (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_CTM))
+    // Re-send CTM when it changes, when preserving a non-identity CTM over a modeset,
+    // or when we need one identity blob to clear unknown kernel state from before us.
+    // Once a real CTM commit succeeds, ordinary identity modesets can skip the blob.
+    if (shouldSubmitCTM(connector, STATE, data.modeset))
         data.ctm = STATE.ctm;
 
     bool ok = connector->commitState(data);

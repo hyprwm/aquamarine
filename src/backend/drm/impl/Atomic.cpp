@@ -406,7 +406,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
     if ((data.modeset && connector->crtc->props.values.degamma_lut) || (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT))
         data.atomic.degammad = prepareGammaBlob(connector->crtc->props.values.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
 
-    if (data.ctm.has_value() && (data.modeset || (STATE.committed & COutputState::AQ_OUTPUT_STATE_CTM))) {
+    if (data.ctm.has_value()) {
         if (!connector->crtc->props.values.ctm)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit ctm: no ctm prop support");
         else {
@@ -501,6 +501,8 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
             connector->atomic.contentType = data.atomic.contentType;
             connector->atomic.crtcID      = data.atomic.crtcID;
             connector->atomic.propsCached = true;
+            if (data.atomic.ctmd)
+                connector->crtc->atomic.ctmStateKnown = true;
 
             if (data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
                 connector->isPageFlipPending = true;
@@ -531,7 +533,14 @@ bool Aquamarine::CDRMAtomicImpl::reset() {
         request.planeProps(plane, nullptr, 0, {});
     }
 
-    return request.commit(DRM_MODE_ATOMIC_ALLOW_MODESET);
+    const bool ok = request.commit(DRM_MODE_ATOMIC_ALLOW_MODESET);
+    if (ok) {
+        for (auto const& crtc : backend->crtcs) {
+            crtc->atomic.ctmStateKnown = false;
+        }
+    }
+
+    return ok;
 }
 
 bool Aquamarine::CDRMAtomicImpl::moveCursor(SP<SDRMConnector> connector, bool skipSchedule) {
