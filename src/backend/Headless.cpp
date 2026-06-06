@@ -17,16 +17,6 @@ using namespace Hyprutils::Math;
 Aquamarine::CHeadlessOutput::CHeadlessOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CHeadlessBackend> backend_) : backend(backend_) {
     name = name_;
 
-    framecb = makeShared<std::function<void()>>([this, weak = self]() {
-        if (!weak)
-            return;
-
-        frameScheduled = false;
-        // not sure about removing this since framecb might be called outside of scheduleFrames no?!
-        lastFrame = std::chrono::steady_clock::now();
-        events.frame.emit();
-    });
-
     lastFrame = std::chrono::steady_clock::now();
 }
 
@@ -63,6 +53,18 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
                                 std::format("CHeadlessOutput::scheduleFrame: reason {}, needsFrame {}, frameScheduled {}", (uint32_t)reason, needsFrame, frameScheduled)));
 
     needsFrame = true;
+
+    if (!framecb) {
+        framecb = makeShared<std::function<void()>>([this, weak = self]() {
+            if (!weak)
+                return;
+
+            frameScheduled = false;
+            // not sure about removing this since framecb might be called outside of scheduleFrames no?!
+            lastFrame = std::chrono::steady_clock::now();
+            events.frame.emit();
+        });
+    }
 
     if (frameScheduled)
         return;
