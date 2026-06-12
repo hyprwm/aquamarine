@@ -475,8 +475,15 @@ void CDRMRenderer::initContext() {
         attrs.push_back(EGL_CONTEXT_RELEASE_BEHAVIOR_NONE_KHR); // or _FLUSH_KHR
     }
 
-    attrs.push_back(EGL_CONTEXT_OPENGL_DEBUG);
-    attrs.push_back(Aquamarine::isTrace() ? EGL_TRUE : EGL_FALSE);
+    if (Aquamarine::isTrace()) {
+        if (major > 1 || (major == 1 && minor >= 5)) {
+            attrs.push_back(EGL_CONTEXT_OPENGL_DEBUG);
+            attrs.push_back(EGL_TRUE);
+        } else if (EGLEXTENSIONS.contains("EGL_KHR_create_context")) {
+            attrs.push_back(EGL_CONTEXT_FLAGS_KHR);
+            attrs.push_back(EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR);
+        }
+    }
 
     auto attrsNoVer = attrs;
 
