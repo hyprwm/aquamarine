@@ -61,8 +61,28 @@ wl_shm_format shmFormatFromDRM(uint32_t drmFormat) {
 }
 
 Aquamarine::CWaylandBackend::~CWaylandBackend() {
-    if (drmState.fd >= 0)
+    outputs.clear();
+    keyboards.clear();
+    pointers.clear();
+    idleCallbacks.clear();
+
+    waylandState.dmabufFeedback.reset();
+    waylandState.dmabuf.reset();
+    waylandState.shm.reset();
+    waylandState.compositor.reset();
+    waylandState.xdg.reset();
+    waylandState.seat.reset();
+    waylandState.registry.reset();
+
+    if (waylandState.display) {
+        wl_display_disconnect(waylandState.display);
+        waylandState.display = nullptr;
+    }
+
+    if (drmState.fd >= 0) {
         close(drmState.fd);
+        drmState.fd = -1;
+    }
 }
 
 eBackendType Aquamarine::CWaylandBackend::type() {
