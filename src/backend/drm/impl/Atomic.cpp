@@ -88,8 +88,8 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
         TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: disabling plane {}", plane->id)));
         add(plane->id, plane->props.values.fb_id, 0);
         add(plane->id, plane->props.values.crtc_id, 0);
-        add(plane->id, plane->props.values.crtc_x, (uint64_t)pos.x);
-        add(plane->id, plane->props.values.crtc_y, (uint64_t)pos.y);
+        add(plane->id, plane->props.values.crtc_x, (uint64_t)(int64_t)pos.x);
+        add(plane->id, plane->props.values.crtc_y, (uint64_t)(int64_t)pos.y);
         return;
     }
 
@@ -117,8 +117,8 @@ void Aquamarine::CDRMAtomicRequest::planePropsPos(Hyprutils::Memory::CSharedPoin
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: pos blobs: crtc_x {}, crtc_y {}", plane->props.values.crtc_x, plane->props.values.crtc_y)));
 
-    add(plane->id, plane->props.values.crtc_x, (uint64_t)pos.x);
-    add(plane->id, plane->props.values.crtc_y, (uint64_t)pos.y);
+    add(plane->id, plane->props.values.crtc_x, (uint64_t)(int64_t)pos.x);
+    add(plane->id, plane->props.values.crtc_y, (uint64_t)(int64_t)pos.y);
 }
 
 void Aquamarine::CDRMAtomicRequest::setConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
