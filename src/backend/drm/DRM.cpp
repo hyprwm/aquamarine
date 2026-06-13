@@ -19,7 +19,7 @@
 #include <unordered_set>
 #include <sys/mman.h>
 #include <fcntl.h>
-
+#include <unistd.h>
 extern "C" {
 #include <libseat.h>
 #include <libudev.h>
@@ -92,10 +92,11 @@ static int gpuNumBuiltinPanels(const SP<CSessionDevice> gpu) {
     int num = 0;
     for (int i = 0; i < resources->count_connectors; ++i) {
         auto drmConn = drmModeGetConnector(gpu->fd, resources->connectors[i]);
-        if (!drmConn || drmConn->connection != DRM_MODE_CONNECTED)
+        if (!drmConn)
             continue;
 
-        if (drmConn->connector_type == DRM_MODE_CONNECTOR_LVDS || drmConn->connector_type == DRM_MODE_CONNECTOR_eDP || drmConn->connector_type == DRM_MODE_CONNECTOR_DSI)
+        if (drmConn->connection == DRM_MODE_CONNECTED &&
+            (drmConn->connector_type == DRM_MODE_CONNECTOR_LVDS || drmConn->connector_type == DRM_MODE_CONNECTOR_eDP || drmConn->connector_type == DRM_MODE_CONNECTOR_DSI))
             num++;
 
         drmModeFreeConnector(drmConn);
@@ -115,8 +116,8 @@ static std::vector<SP<CSessionDevice>> scanGPUs(SP<CBackend> backend) {
     }
 
     if (!udev_enumerate_get_list_entry(enumerate)) {
-        // TODO: wait for them.
         backend->log(AQ_LOG_ERROR, "drm: No gpus in scanGPUs.");
+        udev_enumerate_unref(enumerate);
         return {};
     }
 
@@ -464,8 +465,8 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             }
 
             if (!drmFB) {
-                backend->log(AQ_LOG_DEBUG, std::format("drm: Buffer unavailable for crtc {} restore ({}), requesting re-render",
-                                                       c->crtc->id, shouldBlit() ? "multi-gpu" : "import failed"));
+                backend->log(AQ_LOG_DEBUG,
+                             std::format("drm: Buffer unavailable for crtc {} restore ({}), requesting re-render", c->crtc->id, shouldBlit() ? "multi-gpu" : "import failed"));
                 noMode.emplace_back(c);
                 continue;
             }
@@ -594,6 +595,8 @@ bool Aquamarine::CDRMBackend::initResources() {
 
     if (crtcs.size() > 32) {
         backend->log(AQ_LOG_CRITICAL, "drm: Cannot support more than 32 CRTCs");
+        drmModeFreeResources(resources);
+        crtcs.clear();
         return false;
     }
 
@@ -601,6 +604,8 @@ bool Aquamarine::CDRMBackend::initResources() {
     auto planeResources = drmModeGetPlaneResources(gpu->fd);
     if (!planeResources) {
         backend->log(AQ_LOG_ERROR, std::format("drm: drmModeGetPlaneResources failed"));
+        drmModeFreeResources(resources);
+        crtcs.clear();
         return false;
     }
 
@@ -611,6 +616,7 @@ bool Aquamarine::CDRMBackend::initResources() {
         auto plane = drmModeGetPlane(gpu->fd, id);
         if (!plane) {
             backend->log(AQ_LOG_ERROR, std::format("drm: drmModeGetPlane for plane {} failed", id));
+            drmModeFreePlaneResources(planeResources);
             drmModeFreeResources(resources);
             crtcs.clear();
             planes.clear();
@@ -620,9 +626,13 @@ bool Aquamarine::CDRMBackend::initResources() {
         auto aqPlane     = makeShared<SDRMPlane>();
         aqPlane->backend = self;
         aqPlane->self    = aqPlane;
-        if (!aqPlane->init((drmModePlane*)plane)) {
+        if (!aqPlane->init(plane)) {
             backend->log(AQ_LOG_ERROR, std::format("drm: aqPlane->init for plane {} failed", id));
+
+            drmModeFreePlane(plane);
+            drmModeFreePlaneResources(planeResources);
             drmModeFreeResources(resources);
+
             crtcs.clear();
             planes.clear();
             return false;
@@ -768,8 +778,8 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
     }
 
     for (size_t i = 0; i < crtcs.size(); ++i) {
-        const auto& crtc = crtcs.at(i);
-        bool taken = false;
+        const auto& crtc  = crtcs.at(i);
+        bool        taken = false;
         for (auto const& c : connectors) {
             if (c->crtc != crtc)
                 continue;
@@ -871,12 +881,12 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     auto drmName = drmGetDeviceNameFromFd2(gpu->fd);
     auto drmVer  = drmGetVersion(gpu->fd);
 
-    gpuName = drmName;
+    gpuName = drmName ? drmName : "unknown";
 
-    auto drmVerName = drmVer->name ? drmVer->name : "unknown";
+    auto drmVerName = drmVer && drmVer->name ? drmVer->name : "unknown";
     if (std::string_view(drmVerName) == "evdi") {
         // DisplayLink/evdi exposes KMS without a usable EGL renderer.
-        primary = {};
+        primary          = {};
         rendererRequired = false;
     }
 
@@ -884,8 +894,10 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
                  std::format("drm: Starting backend for {}, with driver {}{}", drmName ? drmName : "unknown", drmVerName,
                              (primary ? std::format(" with primary {}", primary->gpu->path) : "")));
 
-    drmFreeVersion(drmVer);
+    free(drmName);
 
+    if (drmVer)
+        drmFreeVersion(drmVer);
     listeners.gpuChange = gpu->events.change.listen([this](const CSessionDevice::SChangeEvent& E) {
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
@@ -1034,6 +1046,7 @@ void Aquamarine::CDRMBackend::scanConnectors() {
             if (!conn->init(drmConn)) {
                 backend->log(AQ_LOG_ERROR, std::format("drm: Connector id {} failed initializing", connectorID));
                 connectors.pop_back();
+                drmModeFreeConnector(drmConn);
                 continue;
             }
         } else {
@@ -1287,6 +1300,7 @@ int Aquamarine::CDRMBackend::getNonMasterFD() {
 
     if (drmIsMaster(fd) && drmDropMaster(fd) < 0) {
         backend->log(AQ_LOG_ERROR, "drm: couldn't drop master from duped fd");
+        close(fd);
         return -1;
     }
 
@@ -1581,6 +1595,9 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
     model  = mod ? mod : "";
     serial = ser ? ser : "";
 
+    free(mod);
+    free(ser);
+
     parsed.make   = make;
     parsed.model  = model;
     parsed.serial = serial;
@@ -1789,8 +1806,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
 void Aquamarine::SDRMConnector::disconnect() {
     if (!output) {
         if (backend && backend->backend)
-            backend->backend->log(AQ_LOG_DEBUG,
-                std::format("drm: Not disconnecting connector {} because it's already disconnected", szName));
+            backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Not disconnecting connector {} because it's already disconnected", szName));
         return;
     }
 
@@ -2014,8 +2030,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 // page-flip at the kernel level. Clear the stale userspace
                 // bookkeeping to match.
                 backend->backend->log(AQ_LOG_DEBUG,
-                                      std::format("drm: Clearing stale page-flip state for {} during modeset (pending for {}ms)", name,
-                                                  nowMs - connector->pageFlipPendingAtMs));
+                                      std::format("drm: Clearing stale page-flip state for {} during modeset (pending for {}ms)", name, nowMs - connector->pageFlipPendingAtMs));
                 connector->isPageFlipPending   = false;
                 connector->isFrameRunning      = false;
                 connector->frameEventScheduled = false;
