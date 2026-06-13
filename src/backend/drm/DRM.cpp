@@ -37,6 +37,9 @@ extern "C" {
 #include "hwdata.hpp"
 #include "Renderer.hpp"
 
+#include <hyprutils/utils/ScopeGuard.hpp>
+using Hyprutils::Utils::CScopeGuard;
+
 using namespace Aquamarine;
 using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
@@ -561,9 +564,20 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
 bool Aquamarine::CDRMBackend::initResources() {
     auto resources = drmModeGetResources(gpu->fd);
     if (!resources) {
-        backend->log(AQ_LOG_ERROR, std::format("drm: drmModeGetResources failed"));
+        backend->log(AQ_LOG_ERROR, "drm: drmModeGetResources failed");
         return false;
     }
+
+    CScopeGuard resourcesGuard([resources] { drmModeFreeResources(resources); });
+
+    bool        success = false;
+
+    CScopeGuard rollbackGuard([&] {
+        if (!success) {
+            crtcs.clear();
+            planes.clear();
+        }
+    });
 
     backend->log(AQ_LOG_DEBUG, std::format("drm: found {} CRTCs", resources->count_crtcs));
 
@@ -575,18 +589,15 @@ bool Aquamarine::CDRMBackend::initResources() {
         auto drmCRTC = drmModeGetCrtc(gpu->fd, CRTC->id);
         if (!drmCRTC) {
             backend->log(AQ_LOG_ERROR, std::format("drm: drmModeGetCrtc for crtc {} failed", CRTC->id));
-            drmModeFreeResources(resources);
-            crtcs.clear();
             return false;
         }
 
+        CScopeGuard crtcGuard([drmCRTC] { drmModeFreeCrtc(drmCRTC); });
+
         CRTC->legacy.gammaSize = drmCRTC->gamma_size;
-        drmModeFreeCrtc(drmCRTC);
 
         if (!getDRMCRTCProps(gpu->fd, CRTC->id, &CRTC->props)) {
             backend->log(AQ_LOG_ERROR, std::format("drm: getDRMCRTCProps for crtc {} failed", CRTC->id));
-            drmModeFreeResources(resources);
-            crtcs.clear();
             return false;
         }
 
@@ -595,57 +606,41 @@ bool Aquamarine::CDRMBackend::initResources() {
 
     if (crtcs.size() > 32) {
         backend->log(AQ_LOG_CRITICAL, "drm: Cannot support more than 32 CRTCs");
-        drmModeFreeResources(resources);
-        crtcs.clear();
         return false;
     }
 
-    // initialize planes
     auto planeResources = drmModeGetPlaneResources(gpu->fd);
     if (!planeResources) {
-        backend->log(AQ_LOG_ERROR, std::format("drm: drmModeGetPlaneResources failed"));
-        drmModeFreeResources(resources);
-        crtcs.clear();
+        backend->log(AQ_LOG_ERROR, "drm: drmModeGetPlaneResources failed");
         return false;
     }
 
-    backend->log(AQ_LOG_DEBUG, std::format("drm: found {} planes", planeResources->count_planes));
+    CScopeGuard planeResourcesGuard([planeResources] { drmModeFreePlaneResources(planeResources); });
 
     for (uint32_t i = 0; i < planeResources->count_planes; ++i) {
-        auto id    = planeResources->planes[i];
-        auto plane = drmModeGetPlane(gpu->fd, id);
+        const auto id = planeResources->planes[i];
+
+        auto       plane = drmModeGetPlane(gpu->fd, id);
         if (!plane) {
             backend->log(AQ_LOG_ERROR, std::format("drm: drmModeGetPlane for plane {} failed", id));
-            drmModeFreePlaneResources(planeResources);
-            drmModeFreeResources(resources);
-            crtcs.clear();
-            planes.clear();
             return false;
         }
 
-        auto aqPlane     = makeShared<SDRMPlane>();
-        aqPlane->backend = self;
-        aqPlane->self    = aqPlane;
+        CScopeGuard planeGuard([plane] { drmModeFreePlane(plane); });
+
+        auto        aqPlane = makeShared<SDRMPlane>();
+        aqPlane->backend    = self;
+        aqPlane->self       = aqPlane;
+
         if (!aqPlane->init(plane)) {
             backend->log(AQ_LOG_ERROR, std::format("drm: aqPlane->init for plane {} failed", id));
-
-            drmModeFreePlane(plane);
-            drmModeFreePlaneResources(planeResources);
-            drmModeFreeResources(resources);
-
-            crtcs.clear();
-            planes.clear();
             return false;
         }
 
         planes.emplace_back(aqPlane);
-
-        drmModeFreePlane(plane);
     }
 
-    drmModeFreePlaneResources(planeResources);
-    drmModeFreeResources(resources);
-
+    success = true;
     return true;
 }
 
