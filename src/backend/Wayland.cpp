@@ -570,6 +570,10 @@ bool Aquamarine::CWaylandOutput::pendingPageFlip() {
     return false;
 }
 
+bool Aquamarine::CWaylandOutput::pendingIdleFrame() {
+    return frameScheduled;
+}
+
 bool Aquamarine::CWaylandOutput::destroy() {
     events.destroy.emit();
     waylandState.surface->sendAttach(nullptr, 0, 0);

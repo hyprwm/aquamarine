@@ -155,13 +155,13 @@ namespace Aquamarine {
         } legacy;
 
         struct {
-            bool     ownModeID     = false;
-            uint32_t modeID        = 0;
-            uint32_t gammaLut      = 0;
-            uint32_t ctm           = 0;
-            uint32_t hdr           = 0;
+            bool     ownModeID = false;
+            uint32_t modeID    = 0;
+            uint32_t gammaLut  = 0;
+            uint32_t ctm       = 0;
+            uint32_t hdr       = 0;
             // true once a real commit has made the kernel CTM match our state.
-            bool     ctmStateKnown = false;
+            bool ctmStateKnown = false;
         } atomic;
 
         Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
@@ -205,6 +205,7 @@ namespace Aquamarine {
         virtual size_t                                                    getDeGammaSize();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
         virtual bool                                                      pendingPageFlip();
+        virtual bool                                                      pendingIdleFrame();
         void                                                              releaseMgpuResources();
 
         int                                                               getConnectorID();
