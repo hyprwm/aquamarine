@@ -44,6 +44,10 @@ bool Aquamarine::CHeadlessOutput::pendingPageFlip() {
     return false;
 }
 
+bool Aquamarine::CHeadlessOutput::pendingIdleFrame() {
+    return frameScheduled;
+}
+
 Hyprutils::Memory::CSharedPointer<IBackendImplementation> Aquamarine::CHeadlessOutput::getBackend() {
     return backend.lock();
 }

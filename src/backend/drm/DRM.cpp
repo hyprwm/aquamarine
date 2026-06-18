@@ -1171,6 +1171,11 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
     });
 
     if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState) {
+        if (pageFlip->connector->frameEventScheduled) {
+            pageFlip->connector->isFrameRunning = false;
+            return; // we got a idleFrame waiting before this pf was committed.
+        }
+
         pageFlip->connector->output->events.frame.emit();
         pageFlip->connector->isFrameRunning = false;
     }
@@ -2387,6 +2392,10 @@ bool Aquamarine::CDRMOutput::pendingPageFlip() {
     return connector->isPageFlipPending;
 }
 
+bool Aquamarine::CDRMOutput::pendingIdleFrame() {
+    return connector->frameEventScheduled;
+}
+
 int Aquamarine::CDRMOutput::getConnectorID() {
     return connector->id;
 }
@@ -2395,11 +2404,19 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
     backend(backend_), connector(connector_) {
     name = name_;
 
-    frameIdle = makeShared<std::function<void(void)>>([this]() {
+    frameIdle = makeShared<std::function<void(void)>>([this, backend = backend_]() {
         connector->frameEventScheduled = false;
+
         if (connector->isPageFlipPending || connector->isFrameRunning)
             return;
+
         events.frame.emit();
+
+        // above frame scheduled, and then committed, remove the idle frame. the pageflip will emit the frame.
+        if (backend && backend->backend && connector->frameEventScheduled && connector->isPageFlipPending) {
+            backend->backend->removeIdleEvent(frameIdle);
+            connector->frameEventScheduled = false;
+        }
     });
 }
 
