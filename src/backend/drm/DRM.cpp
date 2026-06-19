@@ -1169,21 +1169,10 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         .flags     = flags,
     });
 
-    // Drain BEFORE frame.emit: frame.emit triggers the compositor's next commit,
-    // which would race the drain and hit -EBUSY.
-    if (pageFlip->connector->nextCommit) {
-        if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState
-            && !pageFlip->connector->sched.frameInFlight()) {
-            SDRMConnectorCommitData draining = std::move(*pageFlip->connector->nextCommit);
-            pageFlip->connector->nextCommit.reset();
-            if (!pageFlip->connector->commitState(draining))
-                BACKEND->log(AQ_LOG_ERROR, std::format("drm: drain of coalesced commit failed for {}", pageFlip->connector->szName));
-        } else {
-            // Session inactive, output disabled, or a reentrant present.emit
-            // handler already submitted a newer flip — stash is obsolete, drop it.
-            pageFlip->connector->releaseStashedCommit();
-        }
-    }
+    // Drain any buffer-only commit stashed while this flip was in flight, BEFORE
+    // frame.emit — frame.emit triggers the compositor's next commit, which would
+    // otherwise race the drain and hit -EBUSY.
+    pageFlip->connector->drainStashedCommit();
 
     if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState) {
         // An idle frame is already queued and will emit events.frame; emitting
@@ -1844,17 +1833,43 @@ bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
     return ok;
 }
 
+void Aquamarine::SDRMConnector::drainStashedCommit() {
+    if (!nextCommit)
+        return;
+
+    // Can the stashed buffer be submitted now? Only with a live session, an
+    // enabled output, and no newer flip already in flight. The last case arises
+    // when a reentrant present.emit (in handlePF, just before this call) drove a
+    // fresh commit that submitted directly and re-armed the flip — our stash is
+    // now stale and would clobber that newer frame (-EBUSY), so drop it instead.
+    const bool canDrain = backend->sessionActive() && output->enabledState && !sched.frameInFlight();
+    if (!canDrain) {
+        releaseCommitBuffers(*nextCommit); // stash guaranteed present here; no re-guard
+        nextCommit.reset();
+        return;
+    }
+
+    SDRMConnectorCommitData draining = std::move(*nextCommit);
+    nextCommit.reset();
+    if (!commitState(draining))
+        backend->log(AQ_LOG_ERROR, std::format("drm: drain of coalesced commit failed for {}", szName));
+}
+
+void Aquamarine::SDRMConnector::releaseCommitBuffers(SDRMConnectorCommitData& commit) {
+    if (commit.mainFB) {
+        commit.mainFB->buffer->lockedByBackend = false;
+        commit.mainFB->buffer->events.backendRelease.emit();
+    }
+    if (crtc && crtc->cursor && commit.cursorFB) {
+        commit.cursorFB->buffer->lockedByBackend = false;
+        commit.cursorFB->buffer->events.backendRelease.emit();
+    }
+}
+
 void Aquamarine::SDRMConnector::releaseStashedCommit() {
     if (!nextCommit)
         return;
-    if (nextCommit->mainFB) {
-        nextCommit->mainFB->buffer->lockedByBackend = false;
-        nextCommit->mainFB->buffer->events.backendRelease.emit();
-    }
-    if (crtc && crtc->cursor && nextCommit->cursorFB) {
-        nextCommit->cursorFB->buffer->lockedByBackend = false;
-        nextCommit->cursorFB->buffer->events.backendRelease.emit();
-    }
+    releaseCommitBuffers(*nextCommit);
     nextCommit.reset();
 }
 

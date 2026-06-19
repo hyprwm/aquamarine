@@ -335,6 +335,13 @@ namespace Aquamarine {
         // commit replaces an older one; the displaced buffer is released.
         std::optional<SDRMConnectorCommitData>         nextCommit;
         void                                           releaseStashedCommit();
+        // Releases the buffers held by a commit; does not touch nextCommit. Shared
+        // by releaseStashedCommit() and drainStashedCommit()'s drop path.
+        void                                           releaseCommitBuffers(SDRMConnectorCommitData& commit);
+        // Drain the coalesce slot (submit the stashed commit, or drop it if a
+        // newer flip is already in flight / the output went away). Called from
+        // handlePF once the pending flip completes.
+        void                                           drainStashedCommit();
 
         // the current state is invalid and won't commit, don't try to modeset.
         bool                                           commitTainted = false;
