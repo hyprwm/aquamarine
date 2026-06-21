@@ -647,16 +647,16 @@ bool Aquamarine::CDRMBackend::initResources() {
 
     success = true;
 
-    for (const auto& crtc : crtcs) {}
+    //for (const auto& crtc : crtcs) {}
 
-    drmModeFreePlaneResources(planeResources);
-    drmModeFreeResources(resources);
+    //drmModeFreePlaneResources(planeResources);
+    //drmModeFreeResources(resources);
 
     return success;
 }
 
 bool Aquamarine::CDRMBackend::shouldBlit() {
-    return primary;
+    return (bool)primary;
 }
 
 bool Aquamarine::CDRMBackend::initMgpu() {
