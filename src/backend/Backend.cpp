@@ -240,7 +240,7 @@ int Aquamarine::CBackend::drmRenderNodeFD() {
 }
 
 bool Aquamarine::CBackend::hasSession() {
-    return session;
+    return !!session;
 }
 
 std::vector<SDRMFormat> Aquamarine::CBackend::getPrimaryRenderFormats() {
