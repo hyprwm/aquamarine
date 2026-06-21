@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 #include <optional>
 #include <hyprutils/signal/Signal.hpp>
@@ -58,6 +59,16 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_WCG                = (1 << 13),
             AQ_OUTPUT_STATE_CURSOR_SHAPE       = (1 << 14),
             AQ_OUTPUT_STATE_CURSOR_POS         = (1 << 15),
+            AQ_OUTPUT_STATE_PLANE_STATE        = (1 << 16),
+        };
+
+        struct SPlaneState {
+            bool                                       updated = false;
+
+            bool                                       enabled = false;
+            Hyprutils::Math::CRegion                   damage;
+            Hyprutils::Math::CBox                      geometry;
+            Hyprutils::Memory::CSharedPointer<IBuffer> buffer;
         };
 
         struct SInternalState {
@@ -79,6 +90,7 @@ namespace Aquamarine {
             bool                                           wideColorGamut = false;
             hdr_output_metadata                            hdrMetadata;
             uint16_t                                       contentType = DRM_MODE_CONTENT_TYPE_GRAPHICS;
+            std::vector<SPlaneState>                       planeStates;
         };
 
         const SInternalState& state();
@@ -101,6 +113,11 @@ namespace Aquamarine {
         void                  setWideColorGamut(bool wcg);
         void                  setHDRMetadata(const hdr_output_metadata& metadata);
         void                  setContentType(const uint16_t drmContentType);
+
+        void                  setPlaneEnabled(uint32_t planeIdx, bool enabled);
+        void                  setPlaneBuffer(uint32_t planeIdx, Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
+        void                  setPlaneGeometry(uint32_t planeIdx, const Hyprutils::Math::CBox& box);
+        void                  addPlaneDamage(uint32_t planeIdx, const Hyprutils::Math::CRegion& region);
 
       private:
         SInternalState internalState;
@@ -158,6 +175,21 @@ namespace Aquamarine {
             bool                               supportsBT2020 = false;
         };
 
+        enum ePlaneType : uint32_t {
+            AQ_PLANE_UNKNOWN = 0,
+            AQ_PLANE_PRIMARY,
+            AQ_PLANE_GENERIC,
+            AQ_PLANE_CURSOR,
+        };
+
+        struct SPlaneData {
+            std::vector<SDRMFormat>                       renderFormats; // empty if unknown / not specified -> use getRenderFormats()
+            ePlaneType                                    type  = AQ_PLANE_UNKNOWN;
+            uint32_t                                      id    = 0;
+            uint32_t                                      index = 0;
+            Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
+        };
+
         virtual bool                                                      commit()           = 0;
         virtual bool                                                      test()             = 0;
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend()       = 0;
@@ -173,6 +205,8 @@ namespace Aquamarine {
         virtual bool                                                      destroy(); // not all backends allow this!!!
         virtual bool                                                      pendingPageFlip()  = 0;
         virtual bool                                                      pendingIdleFrame() = 0;
+        virtual std::vector<SPlaneData>                                   getPlanes();
+        virtual std::optional<SPlaneData>                                 getOverlayPlane();
 
         std::string                                                       name, description, make, model, serial;
         SParsedEDID                                                       parsedEDID;
@@ -189,6 +223,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<COutputState>             state = Hyprutils::Memory::makeShared<COutputState>();
 
         Hyprutils::Memory::CSharedPointer<CSwapchain>               swapchain;
+        Hyprutils::Memory::CSharedPointer<CSwapchain>               overlaySwapchain;
 
         //
 

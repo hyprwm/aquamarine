@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstring>
 #include <drm_mode.h>
+#include <vector>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <sys/mman.h>
@@ -107,6 +108,8 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
     add(plane->id, plane->props.values.crtc_h, (uint32_t)fb->buffer->size.y);
     add(plane->id, plane->props.values.fb_id, fb->id);
     add(plane->id, plane->props.values.crtc_id, crtc);
+    if (plane->props.values.color_range && plane->colorRange.values.full)
+        add(plane->id, plane->props.values.color_range, plane->colorRange.values.full);
     planePropsPos(plane, pos);
 }
 
@@ -172,6 +175,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
                 add(connector->id, connector->props.values.Colorspace, newColorspace);
         }
 
+        if (connector->props.values.BroadcastRGB && connector->broadcastRGB.values.Full)
+            add(connector->id, connector->props.values.BroadcastRGB, connector->broadcastRGB.values.Full);
+
         if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
             add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
     } else
@@ -188,10 +194,10 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->id, connector->props.values.content_type, newContentType);
     }
 
-    data.atomic.maxBpc       = newMaxBpc;
-    data.atomic.colorspace   = newColorspace;
-    data.atomic.contentType  = newContentType;
-    data.atomic.crtcID       = newCrtcID;
+    data.atomic.maxBpc      = newMaxBpc;
+    data.atomic.colorspace  = newColorspace;
+    data.atomic.contentType = newContentType;
+    data.atomic.crtcID      = newCrtcID;
 
     add(connector->crtc->id, connector->crtc->props.values.active, enable);
 
@@ -212,6 +218,19 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->crtc->id, connector->crtc->props.values.vrr_enabled, (uint64_t)STATE.adaptiveSync);
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {});
+        int i = 0;
+        for (const auto& state : connector->output->state->state().planeStates) {
+            if (state.updated) {
+                const auto& plane = connector->crtc->planes.at(i);
+                if (state.enabled) {
+                    // TODO
+                    // planeProps(plane, , 0, {});
+                    // add(plane->id, plane->props.values.fb_damage_clips, );
+                } else
+                    planeProps(plane, nullptr, 0, {});
+            }
+            i++;
+        }
 
         if (connector->output->supportsExplicit && STATE.explicitInFence >= 0)
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.in_fence_fd, STATE.explicitInFence);
@@ -220,6 +239,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.fb_damage_clips, data.atomic.fbDamage);
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
+        for (const auto& plane : connector->crtc->planes) {
+            planeProps(plane, nullptr, 0, {});
+        }
     }
 }
 
@@ -313,6 +335,36 @@ void Aquamarine::CDRMAtomicRequest::rollbackBlob(uint32_t* current, uint32_t nex
     if (*current == next)
         return;
     destroyBlob(next);
+}
+
+void Aquamarine::CDRMAtomicRequest::resetProps(uint32_t id, const std::vector<uint32_t>& props) {
+    for (auto prop : props) {
+        add(id, prop, 0);
+    }
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+    if (!connector)
+        return;
+    resetProps(connector->id, connector->unknownProperies);
+    resetUnknownProps(connector->crtc);
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMCRTC> crtc) {
+    if (!crtc)
+        return;
+    resetProps(crtc->id, crtc->unknownProperies);
+    resetUnknownProps(crtc->primary);
+    resetUnknownProps(crtc->cursor);
+    for (const auto& plane : crtc->planes) {
+        resetUnknownProps(plane);
+    }
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane) {
+    if (!plane)
+        return;
+    resetProps(plane->id, plane->unknownProperies);
 }
 
 void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {

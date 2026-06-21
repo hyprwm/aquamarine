@@ -47,6 +47,14 @@ bool Aquamarine::IOutput::destroy() {
     return false;
 }
 
+std::vector<Aquamarine::IOutput::SPlaneData> Aquamarine::IOutput::getPlanes() {
+    return {{.renderFormats = {}, .type = AQ_PLANE_PRIMARY}};
+}
+
+std::optional<Aquamarine::IOutput::SPlaneData> Aquamarine::IOutput::getOverlayPlane() {
+    return {};
+}
+
 const Aquamarine::COutputState::SInternalState& Aquamarine::COutputState::state() {
     return internalState;
 }
@@ -142,7 +150,52 @@ void Aquamarine::COutputState::setContentType(const uint16_t drmContentType) {
     internalState.contentType = drmContentType;
 }
 
+void Aquamarine::COutputState::setPlaneEnabled(uint32_t planeIdx, bool enabled) {
+    if (planeIdx >= internalState.planeStates.size())
+        return;
+
+    internalState.planeStates.at(planeIdx).enabled = enabled;
+    internalState.planeStates.at(planeIdx).updated = true;
+
+    internalState.committed |= AQ_OUTPUT_STATE_PLANE_STATE;
+}
+
+void Aquamarine::COutputState::setPlaneBuffer(uint32_t planeIdx, Hyprutils::Memory::CSharedPointer<IBuffer> buffer) {
+    if (planeIdx >= internalState.planeStates.size())
+        return;
+
+    internalState.planeStates.at(planeIdx).buffer  = buffer;
+    internalState.planeStates.at(planeIdx).updated = true;
+
+    internalState.committed |= AQ_OUTPUT_STATE_PLANE_STATE;
+}
+
+void Aquamarine::COutputState::setPlaneGeometry(uint32_t planeIdx, const Hyprutils::Math::CBox& box) {
+    if (planeIdx >= internalState.planeStates.size())
+        return;
+
+    internalState.planeStates.at(planeIdx).geometry = box;
+    internalState.planeStates.at(planeIdx).updated  = true;
+
+    internalState.committed |= AQ_OUTPUT_STATE_PLANE_STATE;
+}
+
+void Aquamarine::COutputState::addPlaneDamage(uint32_t planeIdx, const Hyprutils::Math::CRegion& region) {
+    if (planeIdx >= internalState.planeStates.size())
+        return;
+
+    internalState.planeStates.at(planeIdx).damage.add(region);
+    internalState.planeStates.at(planeIdx).updated = true;
+
+    internalState.committed |= AQ_OUTPUT_STATE_PLANE_STATE;
+}
+
 void Aquamarine::COutputState::onCommit() {
     internalState.committed = 0;
     internalState.damage.clear();
+
+    for (auto& p : internalState.planeStates) {
+        p.damage.clear();
+        p.updated = false;
+    }
 }
