@@ -9,6 +9,10 @@ Unless specified otherwise, a variable is enabled if and only if it's set to `1`
 `AQ_MGPU_NO_EXPLICIT` -> Disables explicit syncing on mgpu buffers
 `AQ_NO_MODIFIERS` -> Disables modifiers for DRM buffers
 
+### Input
+
+`AQ_LIBINPUT_NO_PLUGINS` -> Disables libinput plugin loading
+
 ### Debugging
 
 `AQ_TRACE` -> Enables trace (very verbose) logging
