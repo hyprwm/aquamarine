@@ -13,51 +13,31 @@ namespace Aquamarine {
         // a frame was submitted to the host with a completion event requested.
         // DRM: page-flip submitted with PAGE_FLIP_EVENT. Wayland: sendCommit followed
         // by a wl_surface.frame whose done is wired to onFrameComplete.
-        void onFrameSubmitted() {
-            m_pending = true;
-        }
+        void onFrameSubmitted();
 
         // the host delivered the frame completion event.
         // DRM: kernel page-flip handler. Wayland: wl_callback.done.
         // State-only — clears m_pending. The backend fires frameReady explicitly
         // at the right point in its handler (preserving the present-before-frame
         // ordering on DRM).
-        void onFrameComplete() {
-            m_pending = false;
-        }
+        void onFrameComplete();
 
         // the in-flight frame (if any) is void and no completion event will arrive;
         // reset the frame bookkeeping.
-        void invalidate() {
-            m_pending        = false;
-            m_frameRunning   = false;
-            m_frameScheduled = false;
-        }
+        void invalidate();
 
         // is a frame in flight awaiting completion?
-        bool frameInFlight() const {
-            return m_pending;
-        }
+        bool frameInFlight() const;
 
         // may a new frame be scheduled? (does not consider output enabled state)
-        bool canSchedule() const {
-            return !m_pending && !m_frameRunning && !m_frameScheduled;
-        }
+        bool canSchedule() const;
 
         // State accessors. setFrameScheduled / frameScheduled() drive the idle-frame
         // loop; setFrameRunning / frameRunning() guard event emission on completion.
-        bool frameScheduled() const {
-            return m_frameScheduled;
-        }
-        void setFrameScheduled(bool v) {
-            m_frameScheduled = v;
-        }
-        bool frameRunning() const {
-            return m_frameRunning;
-        }
-        void setFrameRunning(bool v) {
-            m_frameRunning = v;
-        }
+        bool frameScheduled() const;
+        void setFrameScheduled(bool v);
+        bool frameRunning() const;
+        void setFrameRunning(bool v);
 
         // Fires from onFrameComplete. The output wires this to events.frame.emit.
         Hyprutils::Signal::CSignalT<> frameReady;
@@ -72,12 +52,8 @@ namespace Aquamarine {
     // reentrant emit handler cannot strand it.
     class CFrameRunningGuard {
       public:
-        explicit CFrameRunningGuard(CFrameScheduler& s) : m_s(s) {
-            m_s.setFrameRunning(true);
-        }
-        ~CFrameRunningGuard() {
-            m_s.setFrameRunning(false);
-        }
+        explicit CFrameRunningGuard(CFrameScheduler& s);
+        ~CFrameRunningGuard();
         CFrameRunningGuard(const CFrameRunningGuard&)            = delete;
         CFrameRunningGuard& operator=(const CFrameRunningGuard&) = delete;
 
