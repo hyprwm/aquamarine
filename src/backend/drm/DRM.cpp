@@ -1169,21 +1169,12 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
         .flags     = flags,
     });
 
-    // Drain any buffer-only commit stashed while this flip was in flight, BEFORE
-    // frame.emit — frame.emit triggers the compositor's next commit, which would
-    // otherwise race the drain and hit -EBUSY.
-    pageFlip->connector->drainStashedCommit();
-
-    if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState) {
-        // An idle frame is already queued and will emit events.frame; emitting
-        // here too would double-fire — the wl event loop gives no ordering
-        // guarantee between the idle callback and this pf handler (#325). Let the
-        // idle frame win; the RAII guard clears frameRunning on this return.
-        if (pageFlip->connector->sched.frameScheduled())
-            return;
-
+    // Skip if an idle frame is already queued: it emits events.frame itself, and #325 forbids double-firing.
+    if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState && !pageFlip->connector->sched.frameScheduled())
         pageFlip->connector->sched.frameReady.emit();
-    }
+
+    // Drain after the emit: a fresh commit re-arms the flip, so the stash is dropped as stale; otherwise it's submitted.
+    pageFlip->connector->drainStashedCommit();
 }
 
 bool Aquamarine::CDRMBackend::dispatchEvents() {
@@ -1837,14 +1828,10 @@ void Aquamarine::SDRMConnector::drainStashedCommit() {
     if (!nextCommit)
         return;
 
-    // Can the stashed buffer be submitted now? Only with a live session, an
-    // enabled output, and no newer flip already in flight. The last case arises
-    // when a reentrant present.emit (in handlePF, just before this call) drove a
-    // fresh commit that submitted directly and re-armed the flip — our stash is
-    // now stale and would clobber that newer frame (-EBUSY), so drop it instead.
+    // A newer flip in flight means an emit in handlePF already submitted fresher content; the stash is stale, drop it.
     const bool canDrain = backend->sessionActive() && output->enabledState && !sched.frameInFlight();
     if (!canDrain) {
-        releaseCommitBuffers(*nextCommit); // stash guaranteed present here; no re-guard
+        releaseCommitBuffers(*nextCommit);
         nextCommit.reset();
         return;
     }
