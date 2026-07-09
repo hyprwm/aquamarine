@@ -2182,6 +2182,22 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     else
         data.calculateMode(connector);
 
+    // A modeset commit must carry a buffer sized for the new mode: the atomic path
+    // derives the plane geometry from it (and legacy SetCrtc has the same requirement),
+    // so drivers without plane scaling (e.g. virtio-gpu) reject stale-size buffers,
+    // making larger modes unreachable.
+    // If the consumer already reconfigured the swapchain to the new size, attach a fresh buffer from it.
+    bool acquiredModesetBuffer = false;
+    if (data.modeset && data.mainFB && swapchain && data.mainFB->buffer->size != MODE->pixelSize && swapchain->currentOptions().size == MODE->pixelSize) {
+        if (auto newBuf = swapchain->next(nullptr); newBuf) {
+            if (auto newFB = CDRMFB::create(newBuf, backend, nullptr); newFB && !newFB->dead) {
+                data.mainFB           = newFB;
+                acquiredModesetBuffer = true;
+            } else
+                swapchain->rollback();
+        }
+    }
+
     // Re-send CTM when it changes, when preserving a non-identity CTM over a modeset,
     // or when we need one identity blob to clear unknown kernel state from before us.
     // Once a real CTM commit succeeds, ordinary identity modesets can skip the blob.
@@ -2205,6 +2221,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     }
 
     bool ok = connector->commitState(data);
+
+    // a buffer acquired only to validate/attempt the modeset isn't consumed by the
+    // consumer: rewind the swapchain so the acquire cursor stays in sync with it.
+    if (acquiredModesetBuffer && (onlyTest || !ok))
+        swapchain->rollback();
 
     if (!ok && !data.modeset && !connector->commitTainted) {
         // attempt to re-modeset, however, flip a tainted flag if the modesetting fails
