@@ -1,4 +1,5 @@
 #include <aquamarine/backend/Backend.hpp>
+#include <cerrno>
 #include <fcntl.h>
 #include "Shared.hpp"
 
@@ -344,13 +345,28 @@ SP<CSession> Aquamarine::CSession::attempt(Hyprutils::Memory::CSharedPointer<CBa
         return nullptr;
     }
 
+    libinput_log_set_handler(session->libinputHandle, ::libinputLog);
+    libinput_log_set_priority(session->libinputHandle, LIBINPUT_LOG_PRIORITY_DEBUG);
+
+#ifdef AQUAMARINE_HAS_LIBINPUT_PLUGINS
+    if (envEnabled("AQ_LIBINPUT_NO_PLUGINS"))
+        session->backend->log(AQ_LOG_DEBUG, "libinput: plugin loading disabled by AQ_LIBINPUT_NO_PLUGINS");
+    else {
+        libinput_plugin_system_append_default_paths(session->libinputHandle);
+
+        if (int ret = libinput_plugin_system_load_plugins(session->libinputHandle, LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE); ret < 0) {
+            if (ret == -ENOSYS)
+                session->backend->log(AQ_LOG_WARNING, "libinput: plugin support is not available in this libinput build");
+            else
+                session->backend->log(AQ_LOG_WARNING, std::format("libinput: failed to load plugins: {}", strerror(-ret)));
+        }
+    }
+#endif
+
     if (libinput_udev_assign_seat(session->libinputHandle, session->seatName.c_str())) {
         session->backend->log(AQ_LOG_ERROR, "libinput: failed to assign a seat");
         return nullptr;
     }
-
-    libinput_log_set_handler(session->libinputHandle, ::libinputLog);
-    libinput_log_set_priority(session->libinputHandle, LIBINPUT_LOG_PRIORITY_DEBUG);
 
     return session;
 }
