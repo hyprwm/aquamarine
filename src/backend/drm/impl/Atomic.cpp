@@ -127,7 +127,7 @@ void Aquamarine::CDRMAtomicRequest::setConnector(Hyprutils::Memory::CSharedPoint
 
 void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE  = connector->output->state->state();
-    const bool  enable = STATE.enabled && data.mainFB;
+    const bool  enable = data.enabled && data.mainFB;
 
     TRACE(backend->log(AQ_LOG_TRACE,
                        std::format("atomic addConnector blobs: mode_id {}, active {}, crtc_id {}, link_status {}, content_type {}", connector->crtc->props.values.mode_id,
@@ -188,15 +188,15 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->id, connector->props.values.content_type, newContentType);
     }
 
-    data.atomic.maxBpc       = newMaxBpc;
-    data.atomic.colorspace   = newColorspace;
-    data.atomic.contentType  = newContentType;
-    data.atomic.crtcID       = newCrtcID;
+    data.atomic.maxBpc      = newMaxBpc;
+    data.atomic.colorspace  = newColorspace;
+    data.atomic.contentType = newContentType;
+    data.atomic.crtcID      = newCrtcID;
 
     add(connector->crtc->id, connector->crtc->props.values.active, enable);
 
     if (enable) {
-        if (connector->output->supportsExplicit && STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
+        if (connector->output->supportsExplicit && data.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
             add(connector->crtc->id, connector->crtc->props.values.out_fence_ptr, (uintptr_t)&STATE.explicitOutFence);
 
         if (connector->crtc->props.values.gamma_lut && data.atomic.gammad)
@@ -227,8 +227,7 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
     if (!data.modeset)
         return;
 
-    const auto& STATE  = connector->output->state->state();
-    const bool  enable = STATE.enabled && data.mainFB;
+    const bool enable = data.enabled && data.mainFB;
 
     data.atomic.blobbed = true;
 
@@ -244,13 +243,12 @@ void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CShare
     if (!connector->crtc->cursor)
         return;
 
-    const auto& STATE  = connector->output->state->state();
-    const bool  enable = STATE.enabled && data.mainFB;
+    const bool enable = data.enabled && data.mainFB;
 
     if (enable) {
-        if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS) {
-            TRACE(backend->log(AQ_LOG_TRACE, STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE ? "atomic addConnector cursor shape" : "atomic addConnector cursor pos"));
-            if (STATE.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE) {
+        if (data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS) {
+            TRACE(backend->log(AQ_LOG_TRACE, data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE ? "atomic addConnector cursor shape" : "atomic addConnector cursor pos"));
+            if (data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE) {
                 if (!connector->output->cursorVisible)
                     planeProps(connector->crtc->cursor, nullptr, 0, {});
                 else
@@ -350,7 +348,7 @@ Aquamarine::CDRMAtomicImpl::CDRMAtomicImpl(Hyprutils::Memory::CSharedPointer<CDR
 
 bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE  = connector->output->state->state();
-    const bool  enable = STATE.enabled;
+    const bool  enable = data.enabled;
     const auto& MODE   = STATE.mode ? STATE.mode : STATE.customMode;
 
     if (data.modeset) {
@@ -400,10 +398,10 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
     // clears the kernel state. only ride the modeset path when the prop actually
     // exists, otherwise we'd log a spurious "no gamma_lut prop" error per modeset.
     // (see #127)
-    if ((data.modeset && connector->crtc->props.values.gamma_lut) || (STATE.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT))
+    if ((data.modeset && connector->crtc->props.values.gamma_lut) || (data.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT))
         data.atomic.gammad = prepareGammaBlob(connector->crtc->props.values.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut);
 
-    if ((data.modeset && connector->crtc->props.values.degamma_lut) || (STATE.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT))
+    if ((data.modeset && connector->crtc->props.values.degamma_lut) || (data.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT))
         data.atomic.degammad = prepareGammaBlob(connector->crtc->props.values.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
 
     if (data.ctm.has_value()) {
@@ -430,7 +428,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         }
     }
 
-    if ((data.modeset || (STATE.committed & COutputState::AQ_OUTPUT_STATE_HDR)) && data.hdrMetadata.has_value()) {
+    if ((data.modeset || (data.committed & COutputState::AQ_OUTPUT_STATE_HDR)) && data.hdrMetadata.has_value()) {
         if (!connector->props.values.hdr_output_metadata)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit hdr metadata: no HDR_OUTPUT_METADATA prop support");
         else {
@@ -457,12 +455,12 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         }
     }
 
-    if ((STATE.committed & COutputState::AQ_OUTPUT_STATE_DAMAGE) && connector->crtc->primary->props.values.fb_damage_clips && MODE) {
-        if (STATE.damage.empty())
+    if ((data.committed & COutputState::AQ_OUTPUT_STATE_DAMAGE) && connector->crtc->primary->props.values.fb_damage_clips && MODE) {
+        if (data.damage.empty())
             data.atomic.fbDamage = 0;
         else {
             TRACE(connector->backend->backend->log(AQ_LOG_TRACE, std::format("atomic drm: clipping damage to pixel size {}", MODE->pixelSize)));
-            std::vector<pixman_box32_t> rects = STATE.damage.copy().intersect(CBox{{}, MODE->pixelSize}).getRects();
+            std::vector<pixman_box32_t> rects = data.damage.copy().intersect(CBox{{}, MODE->pixelSize}).getRects();
             if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, rects.data(), sizeof(pixman_box32_t) * rects.size(), &data.atomic.fbDamage)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a damage blob");
                 return false;
@@ -504,7 +502,7 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
             if (data.atomic.ctmd)
                 connector->crtc->atomic.ctmStateKnown = true;
 
-            if (data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
+            if (data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
                 connector->sched.onFrameSubmitted();
         }
     } else

@@ -432,6 +432,8 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             .blocking    = true,
             .flags       = 0,
             .test        = false,
+            .enabled     = STATE.enabled,
+            .committed   = STATE.committed,
             .hdrMetadata = STATE.hdrMetadata,
         };
 
@@ -1872,11 +1874,11 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
 
     pendingCursorFB.reset();
 
-    if (output->state->state().committed & COutputState::AQ_OUTPUT_STATE_MODE)
+    if (data.committed & COutputState::AQ_OUTPUT_STATE_MODE)
         refresh = calculateRefresh(data.modeInfo);
 
     const bool wasEnabled = output->enabledState;
-    output->enabledState  = output->state->state().enabled;
+    output->enabledState  = data.enabled;
 
     if (!output->enabledState) {
         releaseFBReferences();
@@ -2173,10 +2175,14 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
         data.hdrMetadata = STATE.hdrMetadata;
 
-    data.blocking = BLOCKING || formatMismatch;
-    data.modeset  = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;
-    data.flags    = flags;
-    data.test     = onlyTest;
+    data.blocking  = BLOCKING || formatMismatch;
+    data.modeset   = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;
+    data.flags     = flags;
+    data.test      = onlyTest;
+    data.enabled   = STATE.enabled;
+    data.committed = COMMITTED;
+    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_DAMAGE)
+        data.damage = STATE.damage.copy();
     if (MODE->modeInfo.has_value())
         data.modeInfo = *MODE->modeInfo;
     else
