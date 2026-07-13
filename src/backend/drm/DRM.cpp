@@ -2393,6 +2393,25 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
 
     connector->sched.setFrameScheduled(true);
 
+    if (!frameIdle) {
+        frameIdle = makeShared<std::function<void(void)>>([this, self_ = self, backend = backend_]() {
+            if (!self)
+                return;
+
+            connector->sched.setFrameScheduled(false);
+            if (connector->sched.frameInFlight() || connector->sched.frameRunning())
+                return;
+
+            connector->sched.frameReady.emit();
+
+            // above frame scheduled, and then committed, remove the idle frame. the pageflip will emit the frame.
+            if (backend && backend->backend && connector->sched.frameScheduled() && connector->sched.frameInFlight()) {
+                backend->backend->removeIdleEvent(frameIdle);
+                connector->sched.setFrameScheduled(false);
+            }
+        });
+    }
+
     backend->backend->addIdleEvent(frameIdle);
 }
 
@@ -2463,20 +2482,6 @@ int Aquamarine::CDRMOutput::getConnectorID() {
 Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, SP<SDRMConnector> connector_) :
     backend(backend_), connector(connector_) {
     name = name_;
-
-    frameIdle = makeShared<std::function<void(void)>>([this, backend = backend_]() {
-        connector->sched.setFrameScheduled(false);
-        if (connector->sched.frameInFlight() || connector->sched.frameRunning())
-            return;
-
-        connector->sched.frameReady.emit();
-
-        // above frame scheduled, and then committed, remove the idle frame. the pageflip will emit the frame.
-        if (backend && backend->backend && connector->sched.frameScheduled() && connector->sched.frameInFlight()) {
-            backend->backend->removeIdleEvent(frameIdle);
-            connector->sched.setFrameScheduled(false);
-        }
-    });
 
     // The scheduler's frameReady signal drives the public events.frame on this output.
     frameReadyListener = connector->sched.frameReady.listen([this]() { events.frame.emit(); });
