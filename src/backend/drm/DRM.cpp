@@ -2216,7 +2216,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         events.commit.emit();
         state->onCommit();
         lastCommitNoBuffer = false;
-        needsFrame         = false;
         return true;
     }
 
