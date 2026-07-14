@@ -2394,7 +2394,7 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
     connector->sched.setFrameScheduled(true);
 
     if (!frameIdle) {
-        frameIdle = makeShared<std::function<void(void)>>([this, self_ = self, backend = backend_]() {
+        frameIdle = makeShared<std::function<void(void)>>([this, self_ = self, backend_ = backend]() {
             if (!self)
                 return;
 
@@ -2405,8 +2405,8 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
             connector->sched.frameReady.emit();
 
             // above frame scheduled, and then committed, remove the idle frame. the pageflip will emit the frame.
-            if (backend && backend->backend && connector->sched.frameScheduled() && connector->sched.frameInFlight()) {
-                backend->backend->removeIdleEvent(frameIdle);
+            if (backend_ && backend_->backend && connector->sched.frameScheduled() && connector->sched.frameInFlight()) {
+                backend_->backend->removeIdleEvent(frameIdle);
                 connector->sched.setFrameScheduled(false);
             }
         });
