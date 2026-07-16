@@ -494,13 +494,14 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     // If the commit failed and max_bpc was set, retry without it. Some drivers
     // (notably amdgpu on eDP panels) reject atomic commits that touch max_bpc.
     if (!ok && data.atomic.maxBpc && !connector->maxBpcFailed) {
-        request.rollback(data);
-
         connector->maxBpcFailed = true;
         connector->backend->backend->log(AQ_LOG_WARNING, "drm: atomic commit failed with max_bpc set, retrying without max_bpc");
 
-        // Re-prepare and rebuild the request without max_bpc (addConnector
-        // checks maxBpcFailed and will skip the max_bpc property).
+        // Re-build the request without max_bpc (addConnector checks maxBpcFailed
+        // and will skip the max_bpc property). The property blobs created in
+        // prepareConnector() are reused as-is, so we must NOT roll back the
+        // original request here or request2 would submit already-destroyed blob
+        // IDs. Blob cleanup is handled by request2.apply()/rollback() below.
         data.atomic.maxBpc = 0;
 
         CDRMAtomicRequest request2(backend);
