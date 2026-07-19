@@ -110,6 +110,9 @@ Hyprutils::Memory::CSharedPointer<CBackend> Aquamarine::CBackend::create(const s
 }
 
 Aquamarine::CBackend::~CBackend() {
+    if (idle.fd >= 0)
+        close(idle.fd);
+
     // Tear down implementations before the logger is destroyed,
     // as backends may log during teardown (e.g. SDRMConnector::disconnect).
     implementations.clear();
@@ -130,7 +133,7 @@ bool Aquamarine::CBackend::start() {
 
     for (size_t i = 0; i < implementations.size(); ++i) {
         const auto& impl = implementations.at(i);
-        const bool ok = impl->start();
+        const bool  ok   = impl->start();
 
         if (!ok) {
             log(AQ_LOG_ERROR, std::format("Requested backend ({}) could not start, enabling fallbacks", backendTypeToName(impl->type())));
@@ -237,7 +240,7 @@ int Aquamarine::CBackend::drmRenderNodeFD() {
 }
 
 bool Aquamarine::CBackend::hasSession() {
-    return session;
+    return !!session;
 }
 
 std::vector<SDRMFormat> Aquamarine::CBackend::getPrimaryRenderFormats() {

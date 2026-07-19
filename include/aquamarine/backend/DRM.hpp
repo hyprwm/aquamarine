@@ -4,6 +4,7 @@
 #include "../allocator/Swapchain.hpp"
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
+#include "FrameScheduler.hpp"
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
@@ -160,6 +161,8 @@ namespace Aquamarine {
             uint32_t gammaLut  = 0;
             uint32_t ctm       = 0;
             uint32_t hdr       = 0;
+            // true once a real commit has made the kernel CTM match our state.
+            bool ctmStateKnown = false;
         } atomic;
 
         Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
@@ -203,6 +206,7 @@ namespace Aquamarine {
         virtual size_t                                                    getDeGammaSize();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
         virtual bool                                                      pendingPageFlip();
+        virtual bool                                                      pendingIdleFrame();
         void                                                              releaseMgpuResources();
 
         int                                                               getConnectorID();
@@ -223,6 +227,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMBackend>                 backend;
         Hyprutils::Memory::CSharedPointer<SDRMConnector>             connector;
         Hyprutils::Memory::CSharedPointer<std::function<void(void)>> frameIdle;
+        Hyprutils::Signal::CHyprSignalListener                       frameReadyListener;
 
         struct {
             Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
@@ -241,10 +246,13 @@ namespace Aquamarine {
 
     struct SDRMConnectorCommitData {
         Hyprutils::Memory::CSharedPointer<CDRMFB> mainFB, cursorFB;
-        bool                                      modeset  = false;
-        bool                                      blocking = false;
-        uint32_t                                  flags    = 0;
-        bool                                      test     = false;
+        bool                                      modeset   = false;
+        bool                                      blocking  = false;
+        uint32_t                                  flags     = 0;
+        bool                                      test      = false;
+        bool                                      enabled   = false;
+        uint32_t                                  committed = 0;
+        Hyprutils::Math::CRegion                  damage;
         drmModeModeInfo                           modeInfo;
         std::optional<Hyprutils::Math::Mat3x3>    ctm;
         std::optional<hdr_output_metadata>        hdrMetadata;
@@ -328,11 +336,21 @@ namespace Aquamarine {
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
         Hyprutils::Memory::CSharedPointer<CDRMFB>      pendingCursorFB;
 
-        bool                                           isPageFlipPending   = false;
-        uint64_t                                       pageFlipPendingAtMs = 0; // CLOCK_BOOTTIME ms when isPageFlipPending was set
         SDRMPageFlip                                   pendingPageFlip;
-        bool                                           frameEventScheduled = false;
-        bool                                           isFrameRunning      = false;
+        CFrameScheduler                                sched;
+        // Latest-wins coalesce slot: a buffer-only commit that races an in-flight
+        // page-flip is stashed here (the kernel would return -EBUSY on a second flip)
+        // and drained from handlePF once the pending flip completes. A newer stashed
+        // commit replaces an older one; the displaced buffer is released.
+        std::optional<SDRMConnectorCommitData> nextCommit;
+        void                                   releaseStashedCommit();
+        // Releases the buffers held by a commit; does not touch nextCommit. Shared
+        // by releaseStashedCommit() and drainStashedCommit()'s drop path.
+        void releaseCommitBuffers(SDRMConnectorCommitData& commit);
+        // Drain the coalesce slot (submit the stashed commit, or drop it if a
+        // newer flip is already in flight / the output went away). Called from
+        // handlePF once the pending flip completes.
+        void drainStashedCommit();
 
         // the current state is invalid and won't commit, don't try to modeset.
         bool                                           commitTainted = false;
@@ -459,6 +477,8 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<IAllocator>   allocator;
             Hyprutils::Memory::CSharedPointer<CDRMRenderer> renderer; // may be null if creation fails
         } rendererState;
+
+        bool                                                          rendererRequired = true;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
 

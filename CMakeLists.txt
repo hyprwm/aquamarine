@@ -61,12 +61,15 @@ file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp" "include/*.hpp")
 file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS "include/*.hpp")
 
 add_library(aquamarine SHARED ${SRCFILES})
+if(deps_libinput_VERSION VERSION_GREATER_EQUAL "1.30")
+  target_compile_definitions(aquamarine PRIVATE AQUAMARINE_HAS_LIBINPUT_PLUGINS)
+endif()
 target_include_directories(
   aquamarine
   PUBLIC "./include"
   PRIVATE "./src" "./src/include" "./protocols" "${CMAKE_BINARY_DIR}")
 set_target_properties(aquamarine PROPERTIES VERSION ${AQUAMARINE_VERSION}
-                                            SOVERSION 10)
+                                            SOVERSION 12)
 target_link_libraries(aquamarine OpenGL::EGL OpenGL::OpenGL PkgConfig::deps)
 
 check_include_file("sys/timerfd.h" HAS_TIMERFD)

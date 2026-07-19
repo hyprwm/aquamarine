@@ -1,6 +1,7 @@
 #pragma once
 
 #include "./Backend.hpp"
+#include "./FrameScheduler.hpp"
 #include "../allocator/Swapchain.hpp"
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
@@ -51,6 +52,7 @@ namespace Aquamarine {
         virtual bool                                                      destroy();
         virtual std::vector<SDRMFormat>                                   getRenderFormats();
         virtual bool                                                      pendingPageFlip();
+        virtual bool                                                      pendingIdleFrame();
 
         Hyprutils::Memory::CWeakPointer<CWaylandOutput>                   self;
 
@@ -61,14 +63,13 @@ namespace Aquamarine {
 
         Hyprutils::Memory::CSharedPointer<CWaylandBuffer> wlBufferFromBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
 
-        void                                              sendFrameAndSetCallback();
         void                                              onFrameDone();
         void                                              onEnter(Hyprutils::Memory::CSharedPointer<CCWlPointer> pointer, uint32_t serial);
 
-        // frame loop
-        bool frameScheduledWhileWaiting = false;
-        bool readyForFrameCallback      = false; // true after attaching a buffer
-        bool frameScheduled             = false;
+        // frame loop — unified scheduler shared with DRM. See CFrameScheduler.
+        CFrameScheduler                                   sched;
+        Hyprutils::Signal::CHyprSignalListener            frameReadyListener;
+        Hyprutils::Memory::CSharedPointer<std::function<void(void)>> frameIdle;
 
         struct {
             std::vector<std::pair<Hyprutils::Memory::CWeakPointer<IBuffer>, Hyprutils::Memory::CSharedPointer<CWaylandBuffer>>> buffers;

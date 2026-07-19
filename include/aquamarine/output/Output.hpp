@@ -75,7 +75,7 @@ namespace Aquamarine {
             uint32_t                                       drmFormat = DRM_FORMAT_INVALID;
             Hyprutils::Memory::CSharedPointer<IBuffer>     buffer;
             int32_t                                        explicitInFence = -1, explicitOutFence = -1;
-            Hyprutils::Math::Mat3x3                        ctm = Hyprutils::Math::Mat3x3::identity();
+            Hyprutils::Math::Mat3x3                        ctm            = Hyprutils::Math::Mat3x3::identity();
             bool                                           wideColorGamut = false;
             hdr_output_metadata                            hdrMetadata;
             uint16_t                                       contentType = DRM_MODE_CONTENT_TYPE_GRAPHICS;
@@ -171,7 +171,8 @@ namespace Aquamarine {
         virtual size_t                                                    getGammaSize();
         virtual size_t                                                    getDeGammaSize();
         virtual bool                                                      destroy(); // not all backends allow this!!!
-        virtual bool                                                      pendingPageFlip() = 0;
+        virtual bool                                                      pendingPageFlip()  = 0;
+        virtual bool                                                      pendingIdleFrame() = 0;
 
         std::string                                                       name, description, make, model, serial;
         SParsedEDID                                                       parsedEDID;
