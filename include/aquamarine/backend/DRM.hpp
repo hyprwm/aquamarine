@@ -271,6 +271,12 @@ namespace Aquamarine {
             uint64_t colorspace  = 0;
             uint16_t contentType = 0;
             uint32_t crtcID      = 0;
+
+            // true if the max_bpc property was actually added to the atomic request
+            // (i.e. not skipped as an unchanged cached value on a page-flip). only when
+            // this is set may a commit failure be attributed to max_bpc and trigger the
+            // max_bpc-less retry / maxBpcFailed workaround (see amdgpu eDP handling).
+            bool maxBpcEmitted = false;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
