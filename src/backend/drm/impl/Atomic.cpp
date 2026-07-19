@@ -6,6 +6,7 @@
 #include <xf86drmMode.h>
 #include <sys/mman.h>
 #include <sstream>
+#include <optional>
 #include "Shared.hpp"
 #include "aquamarine/output/Output.hpp"
 
@@ -107,6 +108,23 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
     add(plane->id, plane->props.values.crtc_h, (uint32_t)fb->buffer->size.y);
     add(plane->id, plane->props.values.fb_id, fb->id);
     add(plane->id, plane->props.values.crtc_id, crtc);
+
+    if (plane->props.values.color_range) {
+        const auto              colorRange = conn && conn->output ? conn->output->state->state().colorRange : AQ_OUTPUT_COLOR_RANGE_AUTO;
+        std::optional<uint32_t> rangeVal;
+        switch (colorRange) {
+            case AQ_OUTPUT_COLOR_RANGE_FULL: rangeVal = plane->colorRange.values.Full_YCbCr; break;
+            case AQ_OUTPUT_COLOR_RANGE_LIMITED: rangeVal = plane->colorRange.values.Limited_YCbCr; break;
+            case AQ_OUTPUT_COLOR_RANGE_AUTO:
+                // https://github.com/NVIDIA/open-gpu-kernel-modules/discussions/1105
+                if (backend->gpuDriver() == AQ_BACKEND_GPU_DRIVER_NVIDIA)
+                    rangeVal = plane->colorRange.values.Full_YCbCr;
+                break;
+        }
+        if (rangeVal)
+            add(plane->id, plane->props.values.color_range, *rangeVal);
+    }
+
     planePropsPos(plane, pos);
 }
 

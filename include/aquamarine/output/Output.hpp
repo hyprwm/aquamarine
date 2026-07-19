@@ -37,6 +37,12 @@ namespace Aquamarine {
         AQ_SUBPIXEL_VERTICAL_BGR,
     };
 
+    enum eOutputColorRange : uint32_t {
+        AQ_OUTPUT_COLOR_RANGE_AUTO = 0, // leave the driver default
+        AQ_OUTPUT_COLOR_RANGE_FULL,     // force full range
+        AQ_OUTPUT_COLOR_RANGE_LIMITED,  // force limited (16-235) range
+    };
+
     class IOutput;
 
     class COutputState {
@@ -79,6 +85,7 @@ namespace Aquamarine {
             bool                                           wideColorGamut = false;
             hdr_output_metadata                            hdrMetadata;
             uint16_t                                       contentType = DRM_MODE_CONTENT_TYPE_GRAPHICS;
+            eOutputColorRange                              colorRange  = AQ_OUTPUT_COLOR_RANGE_AUTO;
         };
 
         const SInternalState& state();
@@ -101,6 +108,7 @@ namespace Aquamarine {
         void                  setWideColorGamut(bool wcg);
         void                  setHDRMetadata(const hdr_output_metadata& metadata);
         void                  setContentType(const uint16_t drmContentType);
+        void                  setColorRange(eOutputColorRange range);
 
       private:
         SInternalState internalState;

@@ -873,13 +873,29 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     gpu     = gpu_;
     primary = primary_;
 
+    auto driverFromName = [](const std::string_view name) {
+        if (name == "i915" || name == "xe")
+            return AQ_BACKEND_GPU_DRIVER_INTEL;
+        if (name == "amdgpu" || name == "radeon")
+            return AQ_BACKEND_GPU_DRIVER_AMD;
+        if (name == "nvidia-drm")
+            return AQ_BACKEND_GPU_DRIVER_NVIDIA;
+        if (name == "nouveau")
+            return AQ_BACKEND_GPU_DRIVER_NOUVEAU;
+        if (name == "evdi")
+            return AQ_BACKEND_GPU_DRIVER_EVDI;
+
+        return AQ_BACKEND_GPU_DRIVER_UNKNOWN;
+    };
+
     auto drmName = drmGetDeviceNameFromFd2(gpu->fd);
     auto drmVer  = drmGetVersion(gpu->fd);
 
     gpuName = drmName ? drmName : "unknown";
 
     auto drmVerName = drmVer && drmVer->name ? drmVer->name : "unknown";
-    if (std::string_view(drmVerName) == "evdi") {
+    driver          = driverFromName(drmVerName);
+    if (driver == AQ_BACKEND_GPU_DRIVER_EVDI) {
         // DisplayLink/evdi exposes KMS without a usable EGL renderer.
         primary          = {};
         rendererRequired = false;
@@ -1136,6 +1152,10 @@ int Aquamarine::CDRMBackend::drmRenderNodeFD() {
     return gpu->renderNodeFd;
 }
 
+eBackendGPUDriver Aquamarine::CDRMBackend::gpuDriver() {
+    return driver;
+}
+
 static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void* data) {
     auto pageFlip = (SDRMPageFlip*)data;
 
@@ -1322,6 +1342,9 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 
     if (!getDRMPlaneProps(backend->gpu->fd, id, &props))
         return false;
+
+    if (props.values.color_range)
+        getDRMPlaneColorRange(backend->gpu->fd, props.values.color_range, &colorRange);
 
     if (!getDRMProp(backend->gpu->fd, id, props.values.type, &type))
         return false;

@@ -142,6 +142,10 @@ void Aquamarine::COutputState::setContentType(const uint16_t drmContentType) {
     internalState.contentType = drmContentType;
 }
 
+void Aquamarine::COutputState::setColorRange(eOutputColorRange range) {
+    internalState.colorRange = range;
+}
+
 void Aquamarine::COutputState::onCommit() {
     internalState.committed = 0;
     internalState.damage.clear();

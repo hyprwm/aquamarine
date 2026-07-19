@@ -140,10 +140,21 @@ namespace Aquamarine {
                 uint32_t hotspot_x;
                 uint32_t hotspot_y;
                 uint32_t in_fence_fd;
+                uint32_t color_range;
             } values;
-            uint32_t props[17] = {0};
+            uint32_t props[18] = {0};
         };
         UDRMPlaneProps props;
+
+        // only valid when color_range != 0
+        union UDRMPlaneColorRange {
+            struct {
+                uint32_t Full_YCbCr;
+                uint32_t Limited_YCbCr;
+            } values;
+            uint32_t props[2] = {0};
+        };
+        UDRMPlaneColorRange colorRange;
     };
 
     struct SDRMCRTC {
@@ -436,6 +447,7 @@ namespace Aquamarine {
         std::vector<FIdleCallback>                                         idleCallbacks;
         std::string                                                        gpuName;
         virtual int                                                        drmRenderNodeFD();
+        virtual eBackendGPUDriver                                          gpuDriver();
 
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
@@ -469,6 +481,7 @@ namespace Aquamarine {
         } rendererState;
 
         bool                                                          rendererRequired = true;
+        eBackendGPUDriver                                             driver           = AQ_BACKEND_GPU_DRIVER_UNKNOWN;
 
         Hyprutils::Memory::CWeakPointer<CBackend>                     backend;
 
