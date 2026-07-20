@@ -1174,9 +1174,6 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
     // Skip if an idle frame is already queued: it emits events.frame itself, and #325 forbids double-firing.
     if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState && !pageFlip->connector->sched.frameScheduled())
         pageFlip->connector->sched.frameReady.emit();
-
-    // Drain after the emit: a fresh commit re-arms the flip, so the stash is dropped as stale; otherwise it's submitted.
-    pageFlip->connector->drainStashedCommit();
 }
 
 bool Aquamarine::CDRMBackend::dispatchEvents() {
@@ -1826,42 +1823,6 @@ bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
     return ok;
 }
 
-void Aquamarine::SDRMConnector::drainStashedCommit() {
-    if (!nextCommit)
-        return;
-
-    // A newer flip in flight means an emit in handlePF already submitted fresher content; the stash is stale, drop it.
-    const bool canDrain = backend->sessionActive() && output->enabledState && !sched.frameInFlight();
-    if (!canDrain) {
-        releaseCommitBuffers(*nextCommit);
-        nextCommit.reset();
-        return;
-    }
-
-    SDRMConnectorCommitData draining = std::move(*nextCommit);
-    nextCommit.reset();
-    if (!commitState(draining))
-        backend->log(AQ_LOG_ERROR, std::format("drm: drain of coalesced commit failed for {}", szName));
-}
-
-void Aquamarine::SDRMConnector::releaseCommitBuffers(SDRMConnectorCommitData& commit) {
-    if (commit.mainFB) {
-        commit.mainFB->buffer->lockedByBackend = false;
-        commit.mainFB->buffer->events.backendRelease.emit();
-    }
-    if (crtc && crtc->cursor && commit.cursorFB) {
-        commit.cursorFB->buffer->lockedByBackend = false;
-        commit.cursorFB->buffer->events.backendRelease.emit();
-    }
-}
-
-void Aquamarine::SDRMConnector::releaseStashedCommit() {
-    if (!nextCommit)
-        return;
-    releaseCommitBuffers(*nextCommit);
-    nextCommit.reset();
-}
-
 void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data) {
     crtc->primary->back = data.mainFB;
     if (crtc->cursor && data.cursorFB)
@@ -1883,7 +1844,6 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     if (!output->enabledState) {
         releaseFBReferences();
         sched.invalidate();
-        releaseStashedCommit();
     }
 
     if (!backend->updateSecondaryRendererState())
@@ -2056,7 +2016,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             // completion event will arrive, so clear the userspace state.
             backend->backend->log(AQ_LOG_DEBUG, std::format("drm: page-flip on {} cancelled by modeset, clearing flip state", name));
             connector->sched.invalidate();
-            connector->releaseStashedCommit();
+        }
+
+        if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && connector->sched.frameInFlight()) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
+            return false;
         }
 
         if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
@@ -2209,21 +2173,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     // Once a real CTM commit succeeds, ordinary identity modesets can skip the blob.
     if (shouldSubmitCTM(connector, STATE, data.modeset))
         data.ctm = STATE.ctm;
-
-    // A second flip while one is pending returns -EBUSY; stash the commit
-    // in a latest-wins slot, drained by handlePF on flip completion.
-    if (!onlyTest && !data.modeset && connector->sched.frameInFlight()) {
-        if (data.mainFB)
-            data.mainFB->buffer->lockedByBackend = true;
-        if (connector->crtc->cursor && data.cursorFB)
-            data.cursorFB->buffer->lockedByBackend = true;
-        connector->releaseStashedCommit();
-        connector->nextCommit = std::move(data);
-        events.commit.emit();
-        state->onCommit();
-        lastCommitNoBuffer = false;
-        return true;
-    }
 
     bool ok = connector->commitState(data);
 
