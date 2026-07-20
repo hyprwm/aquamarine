@@ -37,3 +37,6 @@ build/
 
 protocols/*.cpp
 protocols/*.hpp
+
+.envrc
+.direnv/
