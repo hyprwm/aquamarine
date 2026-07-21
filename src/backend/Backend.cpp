@@ -389,3 +389,7 @@ int Aquamarine::CBackend::reopenDRMNode(int drmFD, bool allowRenderNode) {
 std::vector<SDRMFormat> Aquamarine::IBackendImplementation::getRenderableFormats() {
     return {};
 }
+
+eBackendGPUDriver Aquamarine::IBackendImplementation::gpuDriver() {
+    return AQ_BACKEND_GPU_DRIVER_UNKNOWN;
+}

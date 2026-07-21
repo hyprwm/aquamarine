@@ -57,6 +57,7 @@ static const struct prop_info crtc_info[] = {
 
 static const struct prop_info plane_info[] = {
 #define INDEX(name) (offsetof(SDRMPlane::UDRMPlaneProps, values.name) / sizeof(uint32_t))
+    {.name = "COLOR_RANGE", .index = INDEX(color_range)},
     {.name = "CRTC_H", .index = INDEX(crtc_h)},
     {.name = "CRTC_ID", .index = INDEX(crtc_id)},
     {.name = "CRTC_W", .index = INDEX(crtc_w)},
@@ -74,6 +75,13 @@ static const struct prop_info plane_info[] = {
     {.name = "SRC_Y", .index = INDEX(src_y)},
     {.name = "rotation", .index = INDEX(rotation)},
     {.name = "type", .index = INDEX(type)},
+#undef INDEX
+};
+
+static const struct prop_info colorrange_info[] = {
+#define INDEX(name) (offsetof(SDRMPlane::UDRMPlaneColorRange, values.name) / sizeof(uint32_t))
+    {.name = "YCbCr full range", .index = INDEX(Full_YCbCr)},
+    {.name = "YCbCr limited range", .index = INDEX(Limited_YCbCr)},
 #undef INDEX
 };
 
@@ -137,6 +145,10 @@ namespace Aquamarine {
 
     bool getDRMPlaneProps(int fd, uint32_t id, SDRMPlane::UDRMPlaneProps* out) {
         return scanProperties(fd, id, DRM_MODE_OBJECT_PLANE, out->props, plane_info, sizeof(plane_info) / sizeof(plane_info[0]));
+    }
+
+    bool getDRMPlaneColorRange(int fd, uint32_t id, SDRMPlane::UDRMPlaneColorRange* out) {
+        return scanPropertyEnum(fd, id, out->props, colorrange_info, sizeof(colorrange_info) / sizeof(colorrange_info[0]));
     }
 
     bool getDRMProp(int fd, uint32_t obj, uint32_t prop, uint64_t* ret) {

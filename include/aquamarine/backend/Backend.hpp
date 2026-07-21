@@ -30,6 +30,15 @@ namespace Aquamarine {
         AQ_BACKEND_NULL,
     };
 
+    enum eBackendGPUDriver : uint32_t {
+        AQ_BACKEND_GPU_DRIVER_UNKNOWN = 0,
+        AQ_BACKEND_GPU_DRIVER_INTEL,   // i915, xe
+        AQ_BACKEND_GPU_DRIVER_AMD,     // amdgpu, radeon
+        AQ_BACKEND_GPU_DRIVER_NVIDIA,  // proprietary nvidia-drm
+        AQ_BACKEND_GPU_DRIVER_NOUVEAU, // open source nouveau
+        AQ_BACKEND_GPU_DRIVER_EVDI,    // displayLink virtual driver
+    };
+
     enum eBackendRequestMode : uint32_t {
         /*
             Require the provided backend, will error out if it's not available.
@@ -95,6 +104,7 @@ namespace Aquamarine {
         virtual std::vector<Hyprutils::Memory::CSharedPointer<IAllocator>> getAllocators()   = 0;
         virtual Hyprutils::Memory::CWeakPointer<IBackendImplementation>    getPrimary()      = 0;
         virtual int                                                        drmRenderNodeFD() = 0;
+        virtual eBackendGPUDriver                                          gpuDriver();
     };
 
     class CBackend {
