@@ -499,7 +499,6 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     // on cached page-flips max_bpc is skipped when unchanged, so an unrelated atomic
     // failure must not be misattributed to max_bpc and permanently latch maxBpcFailed.
     if (!ok && data.atomic.maxBpcEmitted && !connector->maxBpcFailed) {
-        connector->maxBpcFailed = true;
         connector->backend->backend->log(AQ_LOG_WARNING, "drm: atomic commit failed with max_bpc set, retrying without max_bpc");
 
         // Re-build the request without max_bpc (addConnector checks maxBpcFailed
@@ -507,6 +506,10 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
         // prepareConnector() are reused as-is, so we must NOT roll back the
         // original request here or request2 would submit already-destroyed blob
         // IDs. Blob cleanup is handled by request2.apply()/rollback() below.
+        // maxBpcFailed is latched here so addConnector omits the property, then
+        // cleared on retry failure so a transient error does not permanently
+        // disable max_bpc for this connector.
+        connector->maxBpcFailed   = true;
         data.atomic.maxBpc        = 0;
         data.atomic.maxBpcEmitted = false;
 
@@ -524,15 +527,13 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
                 connector->atomic.crtcID      = data.atomic.crtcID;
                 connector->atomic.propsCached = true;
 
-                if (data.mainFB && connector->output->state->state().enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
-                    connector->isPageFlipPending = true;
-                    struct timespec ts;
-                    clock_gettime(CLOCK_BOOTTIME, &ts);
-                    connector->pageFlipPendingAtMs = ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL;
-                }
+                if (data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
+                    connector->sched.onFrameSubmitted();
             }
-        } else
+        } else {
+            connector->maxBpcFailed = false;
             request2.rollback(data);
+        }
 
         return ok;
     }
