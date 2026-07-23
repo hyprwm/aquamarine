@@ -526,6 +526,8 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
                 connector->atomic.contentType = data.atomic.contentType;
                 connector->atomic.crtcID      = data.atomic.crtcID;
                 connector->atomic.propsCached = true;
+                if (data.atomic.ctmd)
+                    connector->crtc->atomic.ctmStateKnown = true;
 
                 if (data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
                     connector->sched.onFrameSubmitted();
