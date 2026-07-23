@@ -165,6 +165,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     const uint32_t newCrtcID      = enable ? connector->crtc->id : 0;
     uint64_t       newMaxBpc = 0, newColorspace = 0;
     uint16_t       newContentType = 0;
+    bool           maxBpcEmitted  = false;
 
     if (enable) {
         drmModeModeInfo* currentMode = connector->getCurrentMode();
@@ -178,10 +179,12 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             addConnectorModeset(connector, data);
 
         // Setup HDR
-        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1)) {
+        if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1) && !connector->maxBpcFailed) {
             newMaxBpc = getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format);
-            if (forceConnProps || connector->atomic.maxBpc != newMaxBpc)
+            if (forceConnProps || connector->atomic.maxBpc != newMaxBpc) {
                 add(connector->id, connector->props.values.max_bpc, newMaxBpc);
+                maxBpcEmitted = true;
+            }
         }
 
         if (connector->props.values.Colorspace && connector->colorspace.values.BT2020_RGB) {
@@ -206,11 +209,12 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->id, connector->props.values.content_type, newContentType);
     }
 
-    data.atomic.maxBpc      = newMaxBpc;
-    data.atomic.colorspace  = newColorspace;
-    data.atomic.contentType = newContentType;
-    data.atomic.crtcID      = newCrtcID;
-
+    data.atomic.maxBpc        = newMaxBpc;
+    data.atomic.maxBpcEmitted = maxBpcEmitted;
+    data.atomic.colorspace    = newColorspace;
+    data.atomic.contentType   = newContentType;
+    data.atomic.crtcID        = newCrtcID;
+    
     add(connector->crtc->id, connector->crtc->props.values.active, enable);
 
     if (enable) {
@@ -505,7 +509,54 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     if (!data.blocking && !data.test)
         flags |= DRM_MODE_ATOMIC_NONBLOCK;
 
-    const bool ok = request.commit(flags);
+    bool ok = request.commit(flags);
+
+    // If the commit failed and max_bpc was actually emitted in this request, retry
+    // without it. Some drivers (notably amdgpu on eDP panels) reject atomic commits
+    // that touch max_bpc. Gate on maxBpcEmitted rather than the staged maxBpc value:
+    // on cached page-flips max_bpc is skipped when unchanged, so an unrelated atomic
+    // failure must not be misattributed to max_bpc and permanently latch maxBpcFailed.
+    if (!ok && data.atomic.maxBpcEmitted && !connector->maxBpcFailed) {
+        connector->backend->backend->log(AQ_LOG_WARNING, "drm: atomic commit failed with max_bpc set, retrying without max_bpc");
+
+        // Re-build the request without max_bpc (addConnector checks maxBpcFailed
+        // and will skip the max_bpc property). The property blobs created in
+        // prepareConnector() are reused as-is, so we must NOT roll back the
+        // original request here or request2 would submit already-destroyed blob
+        // IDs. Blob cleanup is handled by request2.apply()/rollback() below.
+        // maxBpcFailed is latched here so addConnector omits the property, then
+        // cleared on retry failure so a transient error does not permanently
+        // disable max_bpc for this connector.
+        connector->maxBpcFailed   = true;
+        data.atomic.maxBpc        = 0;
+        data.atomic.maxBpcEmitted = false;
+
+        CDRMAtomicRequest request2(backend);
+        request2.addConnector(connector, data);
+
+        ok = request2.commit(flags);
+
+        if (ok) {
+            request2.apply(data);
+            if (!data.test) {
+                connector->atomic.maxBpc      = data.atomic.maxBpc;
+                connector->atomic.colorspace  = data.atomic.colorspace;
+                connector->atomic.contentType = data.atomic.contentType;
+                connector->atomic.crtcID      = data.atomic.crtcID;
+                connector->atomic.propsCached = true;
+                if (data.atomic.ctmd)
+                    connector->crtc->atomic.ctmStateKnown = true;
+
+                if (data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
+                    connector->sched.onFrameSubmitted();
+            }
+        } else {
+            connector->maxBpcFailed = false;
+            request2.rollback(data);
+        }
+
+        return ok;
+    }
 
     if (ok) {
         request.apply(data);

@@ -290,6 +290,12 @@ namespace Aquamarine {
             uint64_t colorspace  = 0;
             uint16_t contentType = 0;
             uint32_t crtcID      = 0;
+
+            // true if the max_bpc property was actually added to the atomic request
+            // (i.e. not skipped as an unchanged cached value on a page-flip). only when
+            // this is set may a commit failure be attributed to max_bpc and trigger the
+            // max_bpc-less retry / maxBpcFailed workaround (see amdgpu eDP handling).
+            bool maxBpcEmitted = false;
         } atomic;
 
         void calculateMode(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
@@ -346,6 +352,10 @@ namespace Aquamarine {
 
         // the current state is invalid and won't commit, don't try to modeset.
         bool                                           commitTainted = false;
+
+        // set when an atomic commit with max_bpc fails; skips max_bpc on future
+        // commits for this connector (works around buggy drivers, e.g. amdgpu eDP).
+        bool                                           maxBpcFailed = false;
 
         Hyprutils::Memory::CSharedPointer<SOutputMode> fallbackMode;
 
