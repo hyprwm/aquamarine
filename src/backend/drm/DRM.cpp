@@ -2373,6 +2373,7 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
             if (connector->sched.frameInFlight() || connector->sched.frameRunning())
                 return;
 
+            CFrameRunningGuard frameRunning(connector->sched);
             connector->sched.frameReady.emit();
 
             // above frame scheduled, and then committed, remove the idle frame. the pageflip will emit the frame.
