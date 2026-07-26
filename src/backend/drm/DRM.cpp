@@ -1183,6 +1183,12 @@ static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, un
 
     timespec presented = {.tv_sec = (time_t)tv_sec, .tv_nsec = (long)(tv_usec * 1000)};
 
+    // nvidia-drm registers no vblank counter, unless module options 'nvidia_drm vblank=1' is set.
+    // kernel checks for vblank support and fallbacks to setting seq 0 and the timestamp is a plain ktime_get()
+    // this is not a HW clock, its just a plain software clock fetched from whenever the event was called.
+    if (BACKEND->gpuDriver() == AQ_BACKEND_GPU_DRIVER_NVIDIA && seq == 0)
+        flags &= ~IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK;
+
     pageFlip->connector->output->events.present.emit(IOutput::SPresentEvent{
         .presented = BACKEND->sessionActive(),
         .when      = &presented,
