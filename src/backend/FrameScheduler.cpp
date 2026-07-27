@@ -11,9 +11,10 @@ void CFrameScheduler::onFrameComplete() {
 }
 
 void CFrameScheduler::invalidate() {
-    m_pending        = false;
-    m_frameRunning   = false;
-    m_frameScheduled = false;
+    m_pending             = false;
+    m_frameRunning        = false;
+    m_frameScheduled      = false;
+    m_rescheduleRequested = false;
 }
 
 bool CFrameScheduler::frameInFlight() const {
@@ -40,10 +41,26 @@ void CFrameScheduler::setFrameRunning(bool v) {
     m_frameRunning = v;
 }
 
+void CFrameScheduler::requestReschedule() {
+    m_rescheduleRequested = true;
+}
+
 CFrameRunningGuard::CFrameRunningGuard(CFrameScheduler& s) : m_s(s) {
     m_s.setFrameRunning(true);
 }
 
 CFrameRunningGuard::~CFrameRunningGuard() {
     m_s.setFrameRunning(false);
+
+    if (!m_s.m_rescheduleRequested)
+        return;
+
+    m_s.m_rescheduleRequested = false;
+
+    // the running frame committed, or something already armed an idle frame that path
+    // delivers the next frame, re scheduling here would double fire.
+    if (!m_s.canSchedule())
+        return;
+
+    m_s.rescheduleNeeded.emit();
 }

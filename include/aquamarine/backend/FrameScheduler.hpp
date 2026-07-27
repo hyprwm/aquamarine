@@ -39,13 +39,22 @@ namespace Aquamarine {
         bool frameRunning() const;
         void setFrameRunning(bool v);
 
+        // a scheduleFrame arrived while a frame was running, so reschedule it when the frame is done.
+        void requestReschedule();
+
         // Fires from onFrameComplete. The output wires this to events.frame.emit.
         Hyprutils::Signal::CSignalT<> frameReady;
 
+        // emits from ~CFrameRunningGuard if m_rescheduleRequested is set.
+        Hyprutils::Signal::CSignalT<> rescheduleNeeded;
+
       private:
-        bool m_pending        = false;
-        bool m_frameScheduled = false;
-        bool m_frameRunning   = false;
+        bool m_pending             = false;
+        bool m_frameScheduled      = false;
+        bool m_frameRunning        = false;
+        bool m_rescheduleRequested = false;
+
+        friend class CFrameRunningGuard;
     };
 
     // RAII pair for isFrameRunning: set on ctor, cleared on every exit path so a
