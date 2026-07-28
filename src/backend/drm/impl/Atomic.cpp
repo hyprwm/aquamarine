@@ -59,6 +59,75 @@ Aquamarine::CDRMAtomicRequest::CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer
 Aquamarine::CDRMAtomicRequest::~CDRMAtomicRequest() {
     if (req)
         drmModeAtomicFree(req);
+    for (const auto& blob : borrowedModeBlobs) {
+        destroyBlob(blob);
+    }
+}
+
+// Restates every other enabled head at its current mode, so the kernel re-runs
+// its global modeset check across all of them instead of only ours.
+//
+// Drivers that allocate display bandwidth or head resources globally (nvidia,
+// and i915 via intel_bw_atomic_check) can reject a modeset that touches a single
+// connector while the other heads stay pinned in their existing configuration,
+// even when the very same end state commits fine if every head is modeset at
+// once. That is how a 4K@240 DSC mode ends up EINVAL next to two 1080p heads
+// while weston, which configures all outputs in one go, gets it. (see #7912)
+//
+// A fresh blob is required: handing the kernel the same blob id it already holds
+// leaves mode_changed clear, so the driver never redoes the allocation.
+// Returns false if there was nothing to restate.
+bool Aquamarine::CDRMAtomicRequest::restateConnectors(SP<SDRMConnector> self) {
+    if (failed)
+        return false;
+
+    bool any = false;
+
+    for (const auto& c : backend->connectors) {
+        if (c == self || !c->crtc || !c->output)
+            continue;
+
+        if (!c->output->state->state().enabled)
+            continue;
+
+        drmModeModeInfo* current = c->getCurrentMode();
+        if (!current)
+            continue;
+
+        // getCurrentMode hands back a malloc'd copy. Take it by value and release
+        // it right away, so the early exits below don't each need their own free.
+        const drmModeModeInfo mode = *current;
+        free(current); // I know this and other will fail lint
+
+        uint32_t blob = 0;
+        if (drmModeCreatePropertyBlob(backend->gpu->fd, &mode, sizeof(mode), &blob)) {
+            backend->log(AQ_LOG_ERROR, std::format("atomic drm request: failed to blob mode for {} while restating heads", c->szName));
+            continue;
+        }
+
+        borrowedModeBlobs.emplace_back(blob);
+
+        TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic drm request: restating head {} with blob {}", c->szName, blob)));
+
+        add(c->crtc->id, c->crtc->props.values.mode_id, blob);
+        add(c->crtc->id, c->crtc->props.values.active, 1);
+        add(c->id, c->props.values.crtc_id, c->crtc->id);
+
+        // A head that has not scanned out yet has no buffer to restate; its
+        // existing plane state carries over untouched, which is what we want.
+        if (c->crtc->primary && c->crtc->primary->front) {
+            // planeProps reads per-connector state off `conn`, so point it at the
+            // head we are restating rather than ours.
+            const auto saved = conn;
+            conn             = c;
+            planeProps(c->crtc->primary, c->crtc->primary->front, c->crtc->id, {});
+            conn = saved;
+        }
+
+        any = true;
+    }
+
+    return any && !failed;
 }
 
 void Aquamarine::CDRMAtomicRequest::add(uint32_t id, uint32_t prop, uint64_t val) {
@@ -505,10 +574,34 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     if (!data.blocking && !data.test)
         flags |= DRM_MODE_ATOMIC_NONBLOCK;
 
-    const bool ok = request.commit(flags);
+    bool ok = request.commit(flags);
+
+    // A modeset the driver rejects may still be reachable if every head is
+    // modeset together, since display resources are allocated globally. Retry
+    // once that way before letting the caller fall back to a lesser mode.
+    // See CDRMAtomicRequest::restateConnectors.
+    std::optional<CDRMAtomicRequest> retry;
+    if (!ok && data.modeset) {
+        retry.emplace(backend);
+        retry->addConnector(connector, data);
+        if (retry->restateConnectors(connector)) {
+            ok = retry->commit(flags);
+            if (ok)
+                backend->log(AQ_LOG_DEBUG,
+                             std::format("atomic drm: {} modeset only passed with every head restated; the driver would not "
+                                         "re-allocate for a single connector",
+                                         connector->szName));
+        }
+
+        if (!ok)
+            retry.reset();
+    }
+
+    // whichever request the kernel accepted owns the blob bookkeeping
+    CDRMAtomicRequest& applied = retry.has_value() ? *retry : request;
 
     if (ok) {
-        request.apply(data);
+        applied.apply(data);
         if (!data.test) {
             // remember which connector_state values the kernel last accepted so the
             // next page-flip can skip emitting unchanged ones (see #265).
@@ -524,7 +617,7 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
                 connector->sched.onFrameSubmitted();
         }
     } else
-        request.rollback(data);
+        applied.rollback(data);
 
     return ok;
 }

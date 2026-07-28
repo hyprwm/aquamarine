@@ -25,6 +25,7 @@ namespace Aquamarine {
 
         void setConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
         void addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
+        bool restateConnectors(Hyprutils::Memory::CSharedPointer<SDRMConnector> self);
         void addConnectorModeset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         void addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         bool commit(uint32_t flagssss);
@@ -45,5 +46,8 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMBackend>     backend;
         drmModeAtomicReq*                                req = nullptr;
         Hyprutils::Memory::CSharedPointer<SDRMConnector> conn;
+
+        // mode blobs minted by restateConnectors, owned by this request
+        std::vector<uint32_t> borrowedModeBlobs;
     };
 };
