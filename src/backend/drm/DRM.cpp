@@ -2365,7 +2365,16 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
                                             connector->sched.frameInFlight(), connector->sched.frameScheduled())));
     needsFrame = true;
 
-    if (!connector->sched.canSchedule() || !enabledState)
+    if (!enabledState)
+        return;
+
+    // a scheduleFrame mid frame, reschedule one more.
+    if (connector->sched.frameRunning()) {
+        connector->sched.requestReschedule();
+        return;
+    }
+
+    if (!connector->sched.canSchedule())
         return;
 
     connector->sched.setFrameScheduled(true);
@@ -2463,6 +2472,9 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
 
     // The scheduler's frameReady signal drives the public events.frame on this output.
     frameReadyListener = connector->sched.frameReady.listen([this]() { events.frame.emit(); });
+
+    // scheduled from inside a running frame, schedule it once the running frame is done.
+    rescheduleListener = connector->sched.rescheduleNeeded.listen([this]() { scheduleFrame(AQ_SCHEDULE_NEEDS_FRAME); });
 }
 
 SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, bool* isNew) {

@@ -239,6 +239,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<SDRMConnector>             connector;
         Hyprutils::Memory::CSharedPointer<std::function<void(void)>> frameIdle;
         Hyprutils::Signal::CHyprSignalListener                       frameReadyListener;
+        Hyprutils::Signal::CHyprSignalListener                       rescheduleListener;
 
         struct {
             Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
