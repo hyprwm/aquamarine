@@ -319,10 +319,10 @@ namespace Aquamarine {
         IOutput::SParsedEDID                           parseEDID(std::vector<uint8_t> data);
         bool                                           commitState(SDRMConnectorCommitData& data);
         void                                           applyCommit(const SDRMConnectorCommitData& data);
-        void                                           rollbackCommit(const SDRMConnectorCommitData& data);
         void                                           onPresent();
         void                                           recheckCRTCProps();
         void                                           parseTileInfo();
+        void                                           releaseFBBuffer(const Hyprutils::Memory::CSharedPointer<CDRMFB> fb);
         void                                           releaseFBReferences();
         void                                           invalidateFrame();
         void                                           setCRTC(Hyprutils::Memory::CSharedPointer<SDRMCRTC> newCRTC);
@@ -346,7 +346,6 @@ namespace Aquamarine {
 
         bool                                           cursorEnabled = false;
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
-        Hyprutils::Memory::CSharedPointer<CDRMFB>      pendingCursorFB;
 
         CFrameScheduler                                sched;
 

@@ -51,6 +51,10 @@ const Aquamarine::COutputState::SInternalState& Aquamarine::COutputState::state(
     return internalState;
 }
 
+bool Aquamarine::COutputState::needsReconfig() const {
+    return internalState.committed & (AQ_OUTPUT_STATE_ENABLED | AQ_OUTPUT_STATE_FORMAT | AQ_OUTPUT_STATE_MODE | AQ_OUTPUT_STATE_HDR | AQ_OUTPUT_STATE_WCG);
+}
+
 void Aquamarine::COutputState::addDamage(const Hyprutils::Math::CRegion& region) {
     internalState.damage.add(region);
     internalState.committed |= AQ_OUTPUT_STATE_DAMAGE;

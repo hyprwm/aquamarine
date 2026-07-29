@@ -16,7 +16,6 @@
 #include <cstring>
 #include <filesystem>
 #include <system_error>
-#include <unordered_set>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -479,6 +478,8 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
         if (c->crtc->pendingCursor)
             data.cursorFB = c->crtc->pendingCursor;
+        else if (c->crtc->cursor)
+            data.cursorFB = c->crtc->cursor->front; // a consumed pending cursor lives on the plane
 
         if (data.cursorFB && (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID))
             data.cursorFB = nullptr;
@@ -1570,20 +1571,19 @@ void Aquamarine::SDRMConnector::parseTileInfo() {
     free(blobData);
 }
 
+void Aquamarine::SDRMConnector::releaseFBBuffer(const SP<CDRMFB> fb) {
+    if (!fb)
+        return;
+
+    if (auto buf = fb->buffer.lock(); buf && buf->lockedByBackend) {
+        buf->lockedByBackend = false;
+        buf->events.backendRelease.emit();
+    }
+}
+
 void Aquamarine::SDRMConnector::releaseFBReferences() {
-    std::unordered_set<IBuffer*> releasedBuffers;
-
-    const auto                   releaseFB = [&releasedBuffers](SP<CDRMFB>& fb) {
-        if (!fb) {
-            fb.reset();
-            return;
-        }
-
-        if (auto buf = fb->buffer.lock(); buf && buf->lockedByBackend && releasedBuffers.emplace(buf.get()).second) {
-            buf->lockedByBackend = false;
-            buf->events.backendRelease.emit();
-        }
-
+    const auto releaseFB = [this](SP<CDRMFB> fb) {
+        releaseFBBuffer(fb);
         fb.reset();
     };
 
@@ -1602,8 +1602,6 @@ void Aquamarine::SDRMConnector::releaseFBReferences() {
 
         releaseFB(crtc->pendingCursor);
     }
-
-    releaseFB(pendingCursorFB);
 }
 
 Aquamarine::SDRMConnector::~SDRMConnector() {
@@ -1905,23 +1903,33 @@ bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
 
     if (ok && !data.test)
         applyCommit(data);
-    else
-        rollbackCommit(data);
 
     return ok;
 }
 
 void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data) {
-    crtc->primary->back = data.mainFB;
-    if (crtc->cursor && data.cursorFB)
-        crtc->cursor->back = data.cursorFB;
+    const bool enable = data.enabled && data.mainFB;
 
-    if (data.mainFB)
+    if (enable && data.mainFB != crtc->primary->front) {
+        if (crtc->primary->back != crtc->primary->front && crtc->primary->back != data.mainFB)
+            releaseFBBuffer(crtc->primary->back);
+
+        crtc->primary->back                  = data.mainFB;
         data.mainFB->buffer->lockedByBackend = true;
-    if (crtc->cursor && data.cursorFB)
-        data.cursorFB->buffer->lockedByBackend = true;
+    }
 
-    pendingCursorFB.reset();
+    if (enable && crtc->cursor && data.cursorFB) {
+        if (data.cursorFB != crtc->cursor->front) {
+            if (crtc->cursor->back != crtc->cursor->front && crtc->cursor->back != data.cursorFB)
+                releaseFBBuffer(crtc->cursor->back);
+
+            crtc->cursor->back                     = data.cursorFB;
+            data.cursorFB->buffer->lockedByBackend = true;
+        }
+
+        if (crtc->pendingCursor == data.cursorFB)
+            crtc->pendingCursor.reset();
+    }
 
     if (data.committed & COutputState::AQ_OUTPUT_STATE_MODE)
         refresh = calculateRefresh(data.modeInfo);
@@ -1951,18 +1959,6 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     }
 }
 
-void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
-    // cursors are applied regardless,
-    // unless this was a test
-    if (data.test)
-        return;
-
-    if (crtc->cursor && data.cursorFB)
-        crtc->cursor->back = data.cursorFB;
-
-    crtc->pendingCursor.reset();
-}
-
 void Aquamarine::SDRMConnector::invalidateFrame() {
     sched.invalidate();
 
@@ -1980,14 +1976,16 @@ void Aquamarine::SDRMConnector::setCRTC(SP<SDRMCRTC> newCRTC) {
 }
 
 void Aquamarine::SDRMConnector::onPresent() {
-    crtc->primary->last  = crtc->primary->front;
-    crtc->primary->front = crtc->primary->back;
-    if (crtc->primary->last && crtc->primary->last->buffer) {
-        crtc->primary->last->buffer->lockedByBackend = false;
-        crtc->primary->last->buffer->events.backendRelease.emit();
+    if (crtc->primary->back && crtc->primary->back != crtc->primary->front) {
+        crtc->primary->last  = crtc->primary->front;
+        crtc->primary->front = crtc->primary->back;
+        if (crtc->primary->last && crtc->primary->last->buffer) {
+            crtc->primary->last->buffer->lockedByBackend = false;
+            crtc->primary->last->buffer->events.backendRelease.emit();
+        }
     }
 
-    if (crtc->cursor) {
+    if (crtc->cursor && crtc->cursor->back && crtc->cursor->back != crtc->cursor->front) {
         crtc->cursor->last  = crtc->cursor->front;
         crtc->cursor->front = crtc->cursor->back;
         if (crtc->cursor->last && crtc->cursor->last->buffer) {
@@ -2092,10 +2090,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     // If we are changing the rendering format, we may need to reconfigure the output (aka modeset)
     // which may result in some glitches
-    const bool NEEDS_RECONFIG = COMMITTED &
-        (COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_ENABLED | COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_FORMAT |
-         COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_MODE | COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR |
-         COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_WCG);
+    const bool NEEDS_RECONFIG = state->needsReconfig();
 
     const bool BLOCKING = NEEDS_RECONFIG || !(COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER);
 
@@ -2140,12 +2135,22 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     SDRMConnectorCommitData data;
 
+    // A commit that carries no new buffer has nothing to blit: STATE.buffer is the one we already copied
+    SP<CDRMFB> blittedFB;
+    if (backend->shouldBlit() && !(COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) {
+        const auto& LAST = connector->crtc->primary->back ? connector->crtc->primary->back : connector->crtc->primary->front;
+        if (LAST && !LAST->dead)
+            blittedFB = LAST;
+    }
+
     if (STATE.buffer && STATE.enabled) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Committed a buffer, updating state"));
 
         SP<CDRMFB> drmFB;
 
-        if (backend->shouldBlit()) {
+        if (blittedFB)
+            drmFB = blittedFB;
+        else if (backend->shouldBlit()) {
             if (!backend->rendererState.renderer) {
                 backend->backend->log(AQ_LOG_DEBUG, "drm: No renderer attached to backend when required for blitting, initializing");
                 if (!backend->initMgpu() || !backend->rendererState.renderer || !backend->rendererState.allocator) {
@@ -2342,6 +2347,10 @@ SP<IBackendImplementation> Aquamarine::CDRMOutput::getBackend() {
 bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotspot) {
     if (!connector->crtc)
         return false;
+
+    // already hidden
+    if (!buffer && !cursorVisible)
+        return true;
 
     state->internalState.committed |= COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE;
     if (!buffer)

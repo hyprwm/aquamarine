@@ -90,6 +90,7 @@ namespace Aquamarine {
 
         const SInternalState& state();
 
+        bool                  needsReconfig() const;
         void                  addDamage(const Hyprutils::Math::CRegion& region);
         void                  clearDamage();
         void                  setEnabled(bool enabled);
