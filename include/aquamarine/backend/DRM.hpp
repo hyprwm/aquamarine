@@ -163,6 +163,15 @@ namespace Aquamarine {
         int32_t                refresh = 0; // unused
 
         struct {
+            uintptr_t                                      id = 0; // 0 when nothing is in flight
+            Hyprutils::Memory::CWeakPointer<SDRMConnector> connector;
+            bool                                           async = false; // PAGE_FLIP_ASYNC
+        } pendingFlip;
+
+        uintptr_t armPageFlip(Hyprutils::Memory::CWeakPointer<SDRMConnector> connector, bool async);
+        void      disarmPageFlip();
+
+        struct {
             int gammaSize = 0;
         } legacy;
 
@@ -251,10 +260,6 @@ namespace Aquamarine {
         friend class CDRMLease;
     };
 
-    struct SDRMPageFlip {
-        Hyprutils::Memory::CWeakPointer<SDRMConnector> connector;
-    };
-
     struct SDRMConnectorCommitData {
         Hyprutils::Memory::CSharedPointer<CDRMFB> mainFB, cursorFB;
         bool                                      modeset   = false;
@@ -319,6 +324,8 @@ namespace Aquamarine {
         void                                           recheckCRTCProps();
         void                                           parseTileInfo();
         void                                           releaseFBReferences();
+        void                                           invalidateFrame();
+        void                                           setCRTC(Hyprutils::Memory::CSharedPointer<SDRMCRTC> newCRTC);
 
         Hyprutils::Memory::CSharedPointer<CDRMOutput>  output;
         Hyprutils::Memory::CWeakPointer<CDRMBackend>   backend;
@@ -341,7 +348,6 @@ namespace Aquamarine {
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
         Hyprutils::Memory::CSharedPointer<CDRMFB>      pendingCursorFB;
 
-        SDRMPageFlip                                   pendingPageFlip;
         CFrameScheduler                                sched;
 
         // the current state is invalid and won't commit, don't try to modeset.
@@ -435,6 +441,7 @@ namespace Aquamarine {
         std::string                                                        gpuName;
         virtual int                                                        drmRenderNodeFD();
         virtual eBackendGPUDriver                                          gpuDriver();
+        Hyprutils::Memory::CSharedPointer<SDRMCRTC>                        crtcByID(uint32_t id);
 
       private:
         CDRMBackend(Hyprutils::Memory::CSharedPointer<CBackend> backend);
@@ -477,6 +484,8 @@ namespace Aquamarine {
         std::vector<Hyprutils::Memory::CSharedPointer<SDRMConnector>> connectors;
         std::vector<SDRMFormat>                                       formats;
         std::vector<SDRMFormat>                                       glFormats;
+        uintptr_t                                                     m_lastPageFlipID = 0;
+        uintptr_t                                                     nextPageFlipID();
 
         Hyprutils::Memory::CSharedPointer<CDRMDumbAllocator>          dumbAllocator;
 
@@ -502,7 +511,6 @@ namespace Aquamarine {
         friend struct SDRMCRTC;
         friend struct SDRMPlane;
         friend class CDRMOutput;
-        friend struct SDRMPageFlip;
         friend class CDRMLegacyImpl;
         friend class CDRMAtomicImpl;
         friend class CDRMAtomicRequest;
