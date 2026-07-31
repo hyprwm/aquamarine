@@ -1582,7 +1582,7 @@ void Aquamarine::SDRMConnector::releaseFBBuffer(const SP<CDRMFB> fb) {
 }
 
 void Aquamarine::SDRMConnector::releaseFBReferences() {
-    const auto releaseFB = [this](SP<CDRMFB> fb) {
+    const auto releaseFB = [this](SP<CDRMFB>& fb) {
         releaseFBBuffer(fb);
         fb.reset();
     };
