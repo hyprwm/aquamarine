@@ -2174,12 +2174,19 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
             OPTIONS.cursor   = false;
             OPTIONS.scanout  = true;
+            if (OPTIONS.length == 0) // releaseMgpuResources() cleared the swapchain and we committed without updating it.
+                OPTIONS.length = 2;
             if (!mgpu.swapchain->reconfigure(OPTIONS)) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain failed reconfiguring");
                 return false;
             }
 
-            auto                         NEWAQBUF = mgpu.swapchain->next(nullptr);
+            auto NEWAQBUF = mgpu.swapchain->next(nullptr);
+            if (!NEWAQBUF) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain has no buffer");
+                return false;
+            }
+
             SP<Aquamarine::CDRMRenderer> primaryRenderer;
             if (backend->primary)
                 primaryRenderer = backend->primary->rendererState.renderer;
@@ -2404,7 +2411,12 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
                 return false;
             }
 
-            auto                         NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
+            auto NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
+            if (!NEWAQBUF) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu cursorSwapchain has no buffer");
+                return false;
+            }
+
             SP<Aquamarine::CDRMRenderer> primaryRenderer;
             if (backend->primary)
                 primaryRenderer = backend->primary->rendererState.renderer;
