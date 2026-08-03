@@ -163,7 +163,7 @@ namespace Aquamarine {
         int32_t                refresh = 0; // unused
 
         struct {
-            uintptr_t                                      id = 0; // 0 when nothing is in flight
+            std::optional<uintptr_t>                       id; // nullopt when nothing is in flight
             Hyprutils::Memory::CWeakPointer<SDRMConnector> connector;
             bool                                           async = false; // PAGE_FLIP_ASYNC
         } pendingFlip;

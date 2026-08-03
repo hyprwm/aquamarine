@@ -1178,11 +1178,11 @@ uintptr_t Aquamarine::SDRMCRTC::armPageFlip(CWeakPointer<SDRMConnector> connecto
     pendingFlip.connector = connector;
     pendingFlip.async     = async;
 
-    return pendingFlip.id;
+    return pendingFlip.id.value();
 }
 
 void Aquamarine::SDRMCRTC::disarmPageFlip() {
-    pendingFlip.id = 0;
+    pendingFlip.id.reset();
     pendingFlip.connector.reset();
     pendingFlip.async = false;
 }
