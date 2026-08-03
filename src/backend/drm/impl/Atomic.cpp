@@ -370,11 +370,22 @@ bool Aquamarine::CDRMAtomicRequest::commit(uint32_t flagssss) {
         return false;
     }
 
-    if (auto ret = drmModeAtomicCommit(backend->gpu->fd, req, flagssss, conn ? &conn->pendingPageFlip : nullptr); ret) {
+    // a test never flips.
+    const bool WANTSFLIP = conn && conn->crtc && (flagssss & DRM_MODE_PAGE_FLIP_EVENT) && !(flagssss & DRM_MODE_ATOMIC_TEST_ONLY);
+    const auto FLIPID    = WANTSFLIP ? conn->crtc->armPageFlip(conn, flagssss & DRM_MODE_PAGE_FLIP_ASYNC) : uintptr_t{0};
+
+    if (auto ret = drmModeAtomicCommit(backend->gpu->fd, req, flagssss, rc<void*>(FLIPID)); ret) {
         backend->log((flagssss & DRM_MODE_ATOMIC_TEST_ONLY) ? AQ_LOG_DEBUG : AQ_LOG_ERROR,
                      std::format("atomic drm request: failed to commit: {}, flags: {}", strerror(ret == -1 ? errno : -ret), flagsToStr(flagssss)));
+
+        if (WANTSFLIP)
+            conn->crtc->disarmPageFlip();
+
         return false;
     }
+
+    if (WANTSFLIP)
+        conn->sched.onFrameSubmitted();
 
     return true;
 }
@@ -612,9 +623,6 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
             connector->atomic.propsCached = true;
             if (data.atomic.ctmd)
                 connector->crtc->atomic.ctmStateKnown = true;
-
-            if (data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
-                connector->sched.onFrameSubmitted();
         }
     } else
         applied.rollback(data);

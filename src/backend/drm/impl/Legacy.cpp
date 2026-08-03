@@ -132,8 +132,11 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
     if (!(data.flags & DRM_MODE_PAGE_FLIP_EVENT))
         return true;
 
-    if (int ret = drmModePageFlip(connector->backend->gpu->fd, connector->crtc->id, mainFB ? mainFB->id : -1, data.flags, &connector->pendingPageFlip); ret) {
+    const auto FLIPID = connector->crtc->armPageFlip(connector, data.flags & DRM_MODE_PAGE_FLIP_ASYNC);
+
+    if (int ret = drmModePageFlip(connector->backend->gpu->fd, connector->crtc->id, mainFB ? mainFB->id : -1, data.flags, rc<void*>(FLIPID)); ret) {
         connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModePageFlip failed: {}", strerror(-ret)));
+        connector->crtc->disarmPageFlip();
         return false;
     }
 

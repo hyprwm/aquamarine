@@ -934,6 +934,11 @@ void CDRMRenderer::clearBuffer(IBuffer* buf) {
 }
 
 CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, SP<CDRMRenderer> primaryRenderer, int waitFD) {
+    if (!from || !to) {
+        backend->log(AQ_LOG_ERROR, "EGL (blit): null source or destination buffer");
+        return {};
+    }
+
     CEglContextGuard eglContext(*this);
 
     if (from->dmabuf().size != to->dmabuf().size) {

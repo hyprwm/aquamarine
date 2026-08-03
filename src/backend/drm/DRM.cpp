@@ -16,7 +16,6 @@
 #include <cstring>
 #include <filesystem>
 #include <system_error>
-#include <unordered_set>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -410,7 +409,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
     for (auto const& c : connectors) {
         if (c->sched.frameInFlight() || c->sched.frameRunning()) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Clearing stale page-flip state for {}", c->szName));
-            c->sched.invalidate();
+            c->invalidateFrame();
         }
     }
 
@@ -479,6 +478,8 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
         if (c->crtc->pendingCursor)
             data.cursorFB = c->crtc->pendingCursor;
+        else if (c->crtc->cursor)
+            data.cursorFB = c->crtc->cursor->front; // a consumed pending cursor lives on the plane
 
         if (data.cursorFB && (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID))
             data.cursorFB = nullptr;
@@ -760,7 +761,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
         // disabled outputs release their CRTCs so active outputs get priority
         if (c->crtc && c->status == DRM_MODE_CONNECTED && c->output && !c->output->enabledState) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: {} is disabled, releasing crtc {}", c->szName, c->crtc->id));
-            c->crtc.reset();
+            c->setCRTC(nullptr);
         }
 
         if (c->crtc && c->status == DRM_MODE_CONNECTED) {
@@ -812,7 +813,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
             backend->log(AQ_LOG_DEBUG,
                          std::format("drm: connected slot {} crtc {} assigned to {}{}", i, crtc->id, c->szName, c->crtc ? std::format(" (old {})", c->crtc->id) : ""));
-            c->crtc  = crtc;
+            c->setCRTC(crtc);
             assigned = true;
             changed.emplace_back(c);
             std::erase(recheck, c);
@@ -842,7 +843,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
                 continue;
 
             backend->log(AQ_LOG_DEBUG, std::format("drm: backup slot {} crtc {} assigned to disabled {}", i, crtcs.at(i)->id, c->szName));
-            c->crtc = crtcs.at(i);
+            c->setCRTC(crtcs.at(i));
             std::erase(recheck, c);
             break;
         }
@@ -854,7 +855,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
         if (c->crtc)
             backend->log(AQ_LOG_DEBUG, std::format("drm: {} is not connected, clearing stale crtc {}", c->szName, c->crtc->id));
-        c->crtc.reset();
+        c->setCRTC(nullptr);
     }
 
     // tell the user to re-assign a valid mode etc, if needed
@@ -1156,50 +1157,104 @@ eBackendGPUDriver Aquamarine::CDRMBackend::gpuDriver() {
     return driver;
 }
 
-static void handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void* data) {
-    auto pageFlip = (SDRMPageFlip*)data;
+uintptr_t Aquamarine::CDRMBackend::nextPageFlipID() {
+    return ++m_lastPageFlipID;
+}
 
-    if (!pageFlip || !pageFlip->connector)
+SP<SDRMCRTC> Aquamarine::CDRMBackend::crtcByID(uint32_t id) {
+    auto it = std::find_if(crtcs.begin(), crtcs.end(), [id](const auto& c) { return c->id == id; });
+    return it == crtcs.end() ? nullptr : *it;
+}
+
+uintptr_t Aquamarine::SDRMCRTC::armPageFlip(CWeakPointer<SDRMConnector> connector, bool async) {
+    if (pendingFlip.id && !(pendingFlip.connector == connector)) {
+        if (const auto PREV = pendingFlip.connector.lock()) {
+            backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} page-flip slot taken from {}, dropping its frame", id, PREV->szName));
+            PREV->invalidateFrame();
+        }
+    }
+
+    pendingFlip.id        = backend->nextPageFlipID();
+    pendingFlip.connector = connector;
+    pendingFlip.async     = async;
+
+    return pendingFlip.id.value();
+}
+
+void Aquamarine::SDRMCRTC::disarmPageFlip() {
+    pendingFlip.id.reset();
+    pendingFlip.connector.reset();
+    pendingFlip.async = false;
+}
+
+static CWeakPointer<CDRMBackend> gDispatchingBackend;
+static void                      handlePF(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void* data) {
+    const auto BACKEND = gDispatchingBackend.lock();
+
+    if (!BACKEND || BACKEND->drmFD() != fd)
         return;
 
-    pageFlip->connector->sched.onFrameComplete();
+    const auto FLIPID = rc<uintptr_t>(data);
+    const auto CRTC   = BACKEND->crtcByID(crtc_id);
 
-    const auto& BACKEND = pageFlip->connector->backend;
+    if (!CRTC || !FLIPID || CRTC->pendingFlip.id != FLIPID) {
+        BACKEND->log(AQ_LOG_DEBUG, std::format("drm: Ignoring a stale pf event, flip {} on crtc {}", FLIPID, crtc_id));
+        return;
+    }
+
+    const auto CONNECTOR = CRTC->pendingFlip.connector.lock();
+    const auto ASYNC     = CRTC->pendingFlip.async;
+    CRTC->disarmPageFlip();
+
+    if (!CONNECTOR) {
+        BACKEND->log(AQ_LOG_DEBUG, "drm: Ignoring a pf event whose connector is gone");
+        return;
+    }
 
     TRACE(BACKEND->log(AQ_LOG_TRACE, std::format("drm: pf event seq {} sec {} usec {} crtc {}", seq, tv_sec, tv_usec, crtc_id)));
 
-    if (pageFlip->connector->status != DRM_MODE_CONNECTED || !pageFlip->connector->crtc || !pageFlip->connector->output) {
+    if (!CONNECTOR->sched.frameInFlight()) {
+        BACKEND->log(AQ_LOG_DEBUG, std::format("drm: Ignoring pf event on {}, no frame in flight?", CONNECTOR->szName));
+        return;
+    }
+
+    CONNECTOR->sched.onFrameComplete();
+
+    if (CONNECTOR->status != DRM_MODE_CONNECTED || !CONNECTOR->crtc || !CONNECTOR->output) {
         BACKEND->log(AQ_LOG_DEBUG, "drm: Ignoring a pf event from a disabled crtc / connector");
         return;
     }
 
     // hold isFrameRunning around the emit (RAII pair, so reentrant enable/disable
     // can't strand it).
-    CFrameRunningGuard frameRunning(pageFlip->connector->sched);
+    CFrameRunningGuard frameRunning(CONNECTOR->sched);
 
-    pageFlip->connector->onPresent();
+    // a tearing commit already emitted present and rotated the FBs synchronously
+    if (!ASYNC) {
+        CONNECTOR->onPresent();
 
-    uint32_t flags = IOutput::AQ_OUTPUT_PRESENT_VSYNC | IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK | IOutput::AQ_OUTPUT_PRESENT_HW_COMPLETION | IOutput::AQ_OUTPUT_PRESENT_ZEROCOPY;
+        uint32_t flags = IOutput::AQ_OUTPUT_PRESENT_VSYNC | IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK | IOutput::AQ_OUTPUT_PRESENT_HW_COMPLETION | IOutput::AQ_OUTPUT_PRESENT_ZEROCOPY;
 
-    timespec presented = {.tv_sec = (time_t)tv_sec, .tv_nsec = (long)(tv_usec * 1000)};
+        timespec presented = {.tv_sec = (time_t)tv_sec, .tv_nsec = (long)(tv_usec * 1000)};
 
-    // nvidia-drm registers no vblank counter, unless module options 'nvidia_drm vblank=1' is set.
-    // kernel checks for vblank support and fallbacks to setting seq 0 and the timestamp is a plain ktime_get()
-    // this is not a HW clock, its just a plain software clock fetched from whenever the event was called.
-    if (BACKEND->gpuDriver() == AQ_BACKEND_GPU_DRIVER_NVIDIA && seq == 0)
-        flags &= ~IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK;
+        // nvidia-drm registers no vblank counter, unless module options 'nvidia_drm vblank=1' is set.
+        // kernel checks for vblank support and fallbacks to setting seq 0 and the timestamp is a plain ktime_get()
+        // this is not a HW clock, its just a plain software clock fetched from whenever the event was called.
+        if (BACKEND->gpuDriver() == AQ_BACKEND_GPU_DRIVER_NVIDIA && seq == 0)
+            flags &= ~IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK;
 
-    pageFlip->connector->output->events.present.emit(IOutput::SPresentEvent{
-        .presented = BACKEND->sessionActive(),
-        .when      = &presented,
-        .seq       = seq,
-        .refresh   = (int)(pageFlip->connector->refresh ? (1000000000000LL / pageFlip->connector->refresh) : 0),
-        .flags     = flags,
-    });
+        CONNECTOR->output->events.present.emit(IOutput::SPresentEvent{
+            .presented = BACKEND->sessionActive(),
+            .when      = &presented,
+            .seq       = seq,
+            .refresh   = (int)(CONNECTOR->refresh ? (1000000000000LL / CONNECTOR->refresh) : 0),
+            .flags     = flags,
+        });
+    }
 
     // Skip if an idle frame is already queued: it emits events.frame itself, and #325 forbids double-firing.
-    if (BACKEND->sessionActive() && pageFlip->connector->output->enabledState && !pageFlip->connector->sched.frameScheduled())
-        pageFlip->connector->sched.frameReady.emit();
+    if (BACKEND->sessionActive() && CONNECTOR->output->enabledState && !CONNECTOR->sched.frameScheduled())
+        CONNECTOR->sched.frameReady.emit();
 }
 
 bool Aquamarine::CDRMBackend::dispatchEvents() {
@@ -1207,6 +1262,11 @@ bool Aquamarine::CDRMBackend::dispatchEvents() {
         .version            = 3,
         .page_flip_handler2 = ::handlePF,
     };
+
+    // drmHandleEvent -> handlePF can dispatch another gpus fd so gDispatchingBackend is the wrong backend.
+    const auto  PREVIOUS = gDispatchingBackend;
+    CScopeGuard dispatchGuard([&PREVIOUS] { gDispatchingBackend = PREVIOUS; });
+    gDispatchingBackend = self;
 
     if (drmHandleEvent(gpu->fd, &event) != 0)
         backend->log(AQ_LOG_ERROR, std::format("drm: Failed to handle event on fd {}", gpu->fd));
@@ -1457,8 +1517,6 @@ SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* c
 }
 
 bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
-    pendingPageFlip.connector = self.lock();
-
     if (!getDRMConnectorProps(backend->gpu->fd, id, &props))
         return false;
     if (props.values.Colorspace)
@@ -1475,7 +1533,7 @@ bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
     if (!possibleCrtcs)
         backend->backend->log(AQ_LOG_ERROR, "drm: No CRTCs possible");
 
-    crtc = getCurrentCRTC(connector);
+    setCRTC(getCurrentCRTC(connector));
 
     return true;
 }
@@ -1513,20 +1571,19 @@ void Aquamarine::SDRMConnector::parseTileInfo() {
     free(blobData);
 }
 
+void Aquamarine::SDRMConnector::releaseFBBuffer(const SP<CDRMFB> fb) {
+    if (!fb)
+        return;
+
+    if (auto buf = fb->buffer.lock(); buf && buf->lockedByBackend) {
+        buf->lockedByBackend = false;
+        buf->events.backendRelease.emit();
+    }
+}
+
 void Aquamarine::SDRMConnector::releaseFBReferences() {
-    std::unordered_set<IBuffer*> releasedBuffers;
-
-    const auto                   releaseFB = [&releasedBuffers](SP<CDRMFB>& fb) {
-        if (!fb) {
-            fb.reset();
-            return;
-        }
-
-        if (auto buf = fb->buffer.lock(); buf && buf->lockedByBackend && releasedBuffers.emplace(buf.get()).second) {
-            buf->lockedByBackend = false;
-            buf->events.backendRelease.emit();
-        }
-
+    const auto releaseFB = [this](SP<CDRMFB>& fb) {
+        releaseFBBuffer(fb);
         fb.reset();
     };
 
@@ -1545,8 +1602,6 @@ void Aquamarine::SDRMConnector::releaseFBReferences() {
 
         releaseFB(crtc->pendingCursor);
     }
-
-    releaseFB(pendingCursorFB);
 }
 
 Aquamarine::SDRMConnector::~SDRMConnector() {
@@ -1834,6 +1889,8 @@ void Aquamarine::SDRMConnector::disconnect() {
         return;
     }
 
+    invalidateFrame();
+
     status = DRM_MODE_DISCONNECTED;
     releaseFBReferences();
 
@@ -1846,23 +1903,33 @@ bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
 
     if (ok && !data.test)
         applyCommit(data);
-    else
-        rollbackCommit(data);
 
     return ok;
 }
 
 void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data) {
-    crtc->primary->back = data.mainFB;
-    if (crtc->cursor && data.cursorFB)
-        crtc->cursor->back = data.cursorFB;
+    const bool enable = data.enabled && data.mainFB;
 
-    if (data.mainFB)
+    if (enable && data.mainFB != crtc->primary->front) {
+        if (crtc->primary->back != crtc->primary->front && crtc->primary->back != data.mainFB)
+            releaseFBBuffer(crtc->primary->back);
+
+        crtc->primary->back                  = data.mainFB;
         data.mainFB->buffer->lockedByBackend = true;
-    if (crtc->cursor && data.cursorFB)
-        data.cursorFB->buffer->lockedByBackend = true;
+    }
 
-    pendingCursorFB.reset();
+    if (enable && crtc->cursor && data.cursorFB) {
+        if (data.cursorFB != crtc->cursor->front) {
+            if (crtc->cursor->back != crtc->cursor->front && crtc->cursor->back != data.cursorFB)
+                releaseFBBuffer(crtc->cursor->back);
+
+            crtc->cursor->back                     = data.cursorFB;
+            data.cursorFB->buffer->lockedByBackend = true;
+        }
+
+        if (crtc->pendingCursor == data.cursorFB)
+            crtc->pendingCursor.reset();
+    }
 
     if (data.committed & COutputState::AQ_OUTPUT_STATE_MODE)
         refresh = calculateRefresh(data.modeInfo);
@@ -1872,7 +1939,7 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
 
     if (!output->enabledState) {
         releaseFBReferences();
-        sched.invalidate();
+        invalidateFrame();
     }
 
     if (!backend->updateSecondaryRendererState())
@@ -1892,27 +1959,33 @@ void Aquamarine::SDRMConnector::applyCommit(const SDRMConnectorCommitData& data)
     }
 }
 
-void Aquamarine::SDRMConnector::rollbackCommit(const SDRMConnectorCommitData& data) {
-    // cursors are applied regardless,
-    // unless this was a test
-    if (data.test)
+void Aquamarine::SDRMConnector::invalidateFrame() {
+    sched.invalidate();
+
+    if (crtc && crtc->pendingFlip.connector == self)
+        crtc->disarmPageFlip();
+}
+
+void Aquamarine::SDRMConnector::setCRTC(SP<SDRMCRTC> newCRTC) {
+    if (crtc == newCRTC)
         return;
 
-    if (crtc->cursor && data.cursorFB)
-        crtc->cursor->back = data.cursorFB;
+    invalidateFrame();
 
-    crtc->pendingCursor.reset();
+    crtc = newCRTC;
 }
 
 void Aquamarine::SDRMConnector::onPresent() {
-    crtc->primary->last  = crtc->primary->front;
-    crtc->primary->front = crtc->primary->back;
-    if (crtc->primary->last && crtc->primary->last->buffer) {
-        crtc->primary->last->buffer->lockedByBackend = false;
-        crtc->primary->last->buffer->events.backendRelease.emit();
+    if (crtc->primary->back && crtc->primary->back != crtc->primary->front) {
+        crtc->primary->last  = crtc->primary->front;
+        crtc->primary->front = crtc->primary->back;
+        if (crtc->primary->last && crtc->primary->last->buffer) {
+            crtc->primary->last->buffer->lockedByBackend = false;
+            crtc->primary->last->buffer->events.backendRelease.emit();
+        }
     }
 
-    if (crtc->cursor) {
+    if (crtc->cursor && crtc->cursor->back && crtc->cursor->back != crtc->cursor->front) {
         crtc->cursor->last  = crtc->cursor->front;
         crtc->cursor->front = crtc->cursor->back;
         if (crtc->cursor->last && crtc->cursor->last->buffer) {
@@ -2017,10 +2090,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     // If we are changing the rendering format, we may need to reconfigure the output (aka modeset)
     // which may result in some glitches
-    const bool NEEDS_RECONFIG = COMMITTED &
-        (COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_ENABLED | COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_FORMAT |
-         COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_MODE | COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR |
-         COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_WCG);
+    const bool NEEDS_RECONFIG = state->needsReconfig();
 
     const bool BLOCKING = NEEDS_RECONFIG || !(COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER);
 
@@ -2041,10 +2111,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
 
         if (STATE.enabled && NEEDS_RECONFIG && connector->sched.frameInFlight()) {
-            // ALLOW_MODESET resets the CRTC and cancels the in-flight flip; no
-            // completion event will arrive, so clear the userspace state.
+            // ALLOW_MODESET resets the CRTC, so the in-flight flip is either cancelled or
+            // superseded by this commit. drop it either way; whatever event still arrives no
+            // longer matches the crtcs id and is discarded.
             backend->backend->log(AQ_LOG_DEBUG, std::format("drm: page-flip on {} cancelled by modeset, clearing flip state", name));
-            connector->sched.invalidate();
+            connector->invalidateFrame();
         }
 
         if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && connector->sched.frameInFlight()) {
@@ -2064,12 +2135,22 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
     SDRMConnectorCommitData data;
 
+    // A commit that carries no new buffer has nothing to blit: STATE.buffer is the one we already copied
+    SP<CDRMFB> blittedFB;
+    if (backend->shouldBlit() && !(COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER)) {
+        const auto& LAST = connector->crtc->primary->back ? connector->crtc->primary->back : connector->crtc->primary->front;
+        if (LAST && !LAST->dead)
+            blittedFB = LAST;
+    }
+
     if (STATE.buffer && STATE.enabled) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Committed a buffer, updating state"));
 
         SP<CDRMFB> drmFB;
 
-        if (backend->shouldBlit()) {
+        if (blittedFB)
+            drmFB = blittedFB;
+        else if (backend->shouldBlit()) {
             if (!backend->rendererState.renderer) {
                 backend->backend->log(AQ_LOG_DEBUG, "drm: No renderer attached to backend when required for blitting, initializing");
                 if (!backend->initMgpu() || !backend->rendererState.renderer || !backend->rendererState.allocator) {
@@ -2093,12 +2174,19 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
             OPTIONS.cursor   = false;
             OPTIONS.scanout  = true;
+            if (OPTIONS.length == 0) // releaseMgpuResources() cleared the swapchain and we committed without updating it.
+                OPTIONS.length = 2;
             if (!mgpu.swapchain->reconfigure(OPTIONS)) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain failed reconfiguring");
                 return false;
             }
 
-            auto                         NEWAQBUF = mgpu.swapchain->next(nullptr);
+            auto NEWAQBUF = mgpu.swapchain->next(nullptr);
+            if (!NEWAQBUF) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain has no buffer");
+                return false;
+            }
+
             SP<Aquamarine::CDRMRenderer> primaryRenderer;
             if (backend->primary)
                 primaryRenderer = backend->primary->rendererState.renderer;
@@ -2267,6 +2355,10 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
     if (!connector->crtc)
         return false;
 
+    // already hidden
+    if (!buffer && !cursorVisible)
+        return true;
+
     state->internalState.committed |= COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE;
     if (!buffer)
         setCursorVisible(false);
@@ -2319,7 +2411,12 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
                 return false;
             }
 
-            auto                         NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
+            auto NEWAQBUF = mgpu.cursorSwapchain->next(nullptr);
+            if (!NEWAQBUF) {
+                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu cursorSwapchain has no buffer");
+                return false;
+            }
+
             SP<Aquamarine::CDRMRenderer> primaryRenderer;
             if (backend->primary)
                 primaryRenderer = backend->primary->rendererState.renderer;
