@@ -498,6 +498,7 @@ namespace Aquamarine {
         uintptr_t                                                     nextPageFlipID();
 
         Hyprutils::Memory::CSharedPointer<CDRMDumbAllocator>          dumbAllocator;
+        bool                                                          cpuCopyFallback  = false;
 
         bool                                                          atomic = false;
 
