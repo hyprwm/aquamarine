@@ -856,7 +856,7 @@ bool Aquamarine::CDRMBackend::initResources() {
 }
 
 bool Aquamarine::CDRMBackend::shouldBlit() {
-    return !!primary;
+    return primary && rendererRequired;
 }
 
 bool Aquamarine::CDRMBackend::initMgpu() {
@@ -892,7 +892,7 @@ bool Aquamarine::CDRMBackend::initMgpu() {
 }
 
 bool Aquamarine::CDRMBackend::updateSecondaryRendererState(DRMFBList* deferred) {
-    if (!backend->ready)
+    if (!backend->ready || !rendererRequired)
         return true;
 
     if (!primary) {
@@ -1122,8 +1122,7 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     auto drmVerName = drmVer && drmVer->name ? drmVer->name : "unknown";
     driver          = driverFromName(drmVerName);
     if (driver == AQ_BACKEND_GPU_DRIVER_EVDI) {
-        // DisplayLink/evdi exposes KMS without a usable EGL renderer.
-        primary          = {};
+        // DisplayLink/evdi exposes KMS without a usable EGL renderer. Keep primary so its output swapchain stays LINEAR.
         rendererRequired = false;
     }
 
@@ -2470,6 +2469,11 @@ bool Aquamarine::CDRMOutput::prepareAsyncCommitData(const COutputState::CSnapsho
     } else
         drmFB = CDRMFB::create(STATE.buffer, backend, nullptr);
 
+    if (!drmFB && backend->driver == AQ_BACKEND_GPU_DRIVER_EVDI) {
+        requiresSync = true;
+        return false;
+    }
+
     if (!drmFB || drmFB->dead) {
         backend->log(AQ_LOG_ERROR, "drm: Asynchronous commit buffer failed to import to KMS");
         return false;
@@ -2576,7 +2580,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
-    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->attachments.has<CDRMBufferUnimportable>()) {
+    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->attachments.has<CDRMBufferUnimportable>() &&
+        backend->driver != AQ_BACKEND_GPU_DRIVER_EVDI) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer."));
         return false;
     }
@@ -2640,6 +2645,33 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             blittedFB = LAST;
     }
 
+    auto nextMgpuBuffer = [&](SP<IAllocator> allocator) -> SP<IBuffer> {
+        if (!mgpu.swapchain) {
+            TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: No swapchain for blit, creating"));
+            mgpu.swapchain = CSwapchain::create(allocator, backend.lock());
+        }
+
+        auto OPTIONS = swapchain->currentOptions();
+        auto bufDma  = STATE.buffer->dmabuf();
+        OPTIONS.size = STATE.buffer->size;
+        if (OPTIONS.format == DRM_FORMAT_INVALID)
+            OPTIONS.format = bufDma.format;
+        OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
+        OPTIONS.cursor   = false;
+        OPTIONS.scanout  = true;
+        if (OPTIONS.length == 0) // releaseMgpuResources() cleared the swapchain and we committed without updating it.
+            OPTIONS.length = 2;
+        if (!mgpu.swapchain->reconfigure(OPTIONS)) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain failed reconfiguring");
+            return nullptr;
+        }
+
+        auto buf = mgpu.swapchain->next(nullptr);
+        if (!buf)
+            backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain has no buffer");
+        return buf;
+    };
+
     if (STATE.buffer && STATE.enabled) {
         TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Committed a buffer, updating state"));
 
@@ -2658,31 +2690,9 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires blit, blitting"));
 
-            if (!mgpu.swapchain) {
-                TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: No swapchain for blit, creating"));
-                mgpu.swapchain = CSwapchain::create(backend->rendererState.allocator, backend.lock());
-            }
-
-            auto OPTIONS = swapchain->currentOptions();
-            auto bufDma  = STATE.buffer->dmabuf();
-            OPTIONS.size = STATE.buffer->size;
-            if (OPTIONS.format == DRM_FORMAT_INVALID)
-                OPTIONS.format = bufDma.format;
-            OPTIONS.multigpu = false; // this is not a shared swapchain, and additionally, don't make it linear, nvidia would be mad
-            OPTIONS.cursor   = false;
-            OPTIONS.scanout  = true;
-            if (OPTIONS.length == 0) // releaseMgpuResources() cleared the swapchain and we committed without updating it.
-                OPTIONS.length = 2;
-            if (!mgpu.swapchain->reconfigure(OPTIONS)) {
-                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain failed reconfiguring");
+            auto NEWAQBUF = nextMgpuBuffer(backend->rendererState.allocator);
+            if (!NEWAQBUF)
                 return false;
-            }
-
-            auto NEWAQBUF = mgpu.swapchain->next(nullptr);
-            if (!NEWAQBUF) {
-                backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but the mgpu swapchain has no buffer");
-                return false;
-            }
 
             SP<Aquamarine::CDRMRenderer> primaryRenderer;
             if (backend->primary)
@@ -2703,8 +2713,44 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 data.outputState.explicitInFence = -1;
 
             drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr); // will return attachment if present
-        } else
-            drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
+        } else {
+            const bool EVDI = backend->driver == AQ_BACKEND_GPU_DRIVER_EVDI;
+
+            if (!(EVDI && backend->cpuCopyFallback))
+                drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
+
+            if (!drmFB && EVDI && backend->dumbAllocator) {
+                if (!backend->cpuCopyFallback) {
+                    backend->backend->log(AQ_LOG_DEBUG,
+                                          std::format("drm: direct KMS import of primary buffer failed on {}, switching to dumb-buffer CPU copy", backend->gpuName));
+                    backend->cpuCopyFallback = true;
+                }
+
+                SP<CDRMRenderer> primaryRenderer = backend->primary ? backend->primary->rendererState.renderer : nullptr;
+                if (!primaryRenderer) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: evdi CPU copy requires a primary renderer");
+                    return false;
+                }
+
+                auto NEWAQBUF = nextMgpuBuffer(backend->dumbAllocator);
+                if (!NEWAQBUF)
+                    return false;
+
+                auto blitResult = primaryRenderer->blit(STATE.buffer, NEWAQBUF, nullptr,
+                                                        (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+                if (!blitResult.success) {
+                    backend->backend->log(AQ_LOG_ERROR, "drm: evdi: primary blit into dumb buffer failed");
+                    return false;
+                }
+
+                if (blitResult.syncFD.has_value() && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE))
+                    data.outputState.explicitInFence = blitResult.syncFD.value();
+                else
+                    data.outputState.explicitInFence = -1;
+
+                drmFB = CDRMFB::create(NEWAQBUF, backend, nullptr);
+            }
+        }
 
         if (!drmFB) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
@@ -2875,6 +2921,12 @@ bool Aquamarine::CDRMOutput::setCursor(SP<IBuffer> buffer, const Vector2D& hotsp
         SP<CDRMFB> fb;
 
         if (backend->primary) {
+            if (!backend->rendererRequired) {
+                TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: backend has no renderer, no cursor plane"));
+                setCursorVisible(false);
+                return false;
+            }
+
             TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Backend requires cursor blit, blitting"));
 
             if (!backend->rendererState.renderer || !backend->rendererState.allocator) {
@@ -3056,6 +3108,10 @@ uint32_t Aquamarine::CDRMOutput::commitCapabilities() const {
     if (!backend || !backend->commitThread || !backend->atomic)
         return 0;
 
+    // queued commits only do direct imports, the evdi CPU copy goes through commitState
+    if (backend->cpuCopyFallback)
+        return 0;
+
     uint32_t capabilities = AQ_OUTPUT_COMMIT_CAPABILITY_QUEUED | AQ_OUTPUT_COMMIT_CAPABILITY_TIMED;
     if (connector->canDoVrr)
         capabilities |= AQ_OUTPUT_COMMIT_CAPABILITY_VRR;
@@ -3092,7 +3148,7 @@ Aquamarine::IOutput::SCommitSubmission Aquamarine::CDRMOutput::commitAsync(const
     if (!STATE.buffer || !STATE.enabled || STATE.drmFormat == DRM_FORMAT_INVALID)
         return {.error = EINVAL};
     if (STATE.buffer->attachments.has<CDRMBufferUnimportable>())
-        return {.error = EINVAL};
+        return {.error = backend->driver == AQ_BACKEND_GPU_DRIVER_EVDI ? ENOTSUP : EINVAL};
     if (STATE.adaptiveSync && !(CAPABILITIES & AQ_OUTPUT_COMMIT_CAPABILITY_VRR))
         return {.error = ENOTSUP};
     if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && !(CAPABILITIES & AQ_OUTPUT_COMMIT_CAPABILITY_TEARING))
