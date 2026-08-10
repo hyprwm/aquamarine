@@ -957,24 +957,56 @@ void Aquamarine::CDRMBackend::markRedundantTiles() {
 
         // check if any single connector already has the full tiled resolution,
         // meaning the driver handles tiling internally
-        SP<SDRMConnector> fullResConn;
+        SP<SDRMConnector> primary;
+        std::string       reason;
         for (const auto& conn : members) {
             if (conn->maxMode.x >= fullWidth && conn->maxMode.y >= fullHeight) {
-                fullResConn = conn;
+                primary = conn;
+                reason  = "driver-managed";
                 break;
             }
         }
 
-        if (!fullResConn)
+        if (!primary) {
+            // no connector drives the full tiled resolution on its own, so the tiles are
+            // genuinely separate streams — which we cannot stitch into one output. Driving
+            // more than one tile just creates a ghost output showing a slice of the panel.
+            // If exactly one tile can operate standalone — it advertises modes beyond the
+            // bare tile timing (e.g. the LG UltraFine 5K exposes scaled 4K modes on its
+            // primary tile, which the panel expands to the full display) — drive that tile
+            // alone and drop the rest.
+            bool ambiguous = false;
+            for (const auto& conn : members) {
+                const auto& cti            = conn->tileInfo;
+                bool        hasNonTileMode = std::ranges::any_of(conn->modeSizes, [&cti](const auto& m) { return m.x != cti.tileHSize || m.y != cti.tileVSize; });
+
+                if (!hasNonTileMode)
+                    continue;
+
+                if (primary) {
+                    ambiguous = true;
+                    break;
+                }
+
+                primary = conn;
+                reason  = "standalone-capable";
+            }
+
+            if (ambiguous) {
+                backend->log(AQ_LOG_DEBUG, std::format("drm: Tile group {} has multiple standalone-capable tiles, not marking any redundant", groupId));
+                continue;
+            }
+        }
+
+        if (!primary)
             continue;
 
         for (const auto& conn : members) {
-            if (conn == fullResConn)
+            if (conn == primary)
                 continue;
 
             conn->tilingRedundant = true;
-            backend->log(AQ_LOG_DEBUG,
-                         std::format("drm: Connector {} marked as tiling redundant (tile group {}, driver-managed by {})", conn->szName, groupId, fullResConn->szName));
+            backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} marked as tiling redundant (tile group {}, {} {})", conn->szName, groupId, reason, primary->szName));
         }
     }
 }
@@ -1069,9 +1101,11 @@ void Aquamarine::CDRMBackend::scanConnectors() {
         conn->status = drmConn->connection;
 
         conn->maxMode = {};
+        conn->modeSizes.clear();
         for (int i = 0; i < drmConn->count_modes; ++i) {
             conn->maxMode.x = std::max<double>(conn->maxMode.x, drmConn->modes[i].hdisplay);
             conn->maxMode.y = std::max<double>(conn->maxMode.y, drmConn->modes[i].vdisplay);
+            conn->modeSizes.emplace_back(drmConn->modes[i].hdisplay, drmConn->modes[i].vdisplay);
         }
 
         if (conn->crtc)

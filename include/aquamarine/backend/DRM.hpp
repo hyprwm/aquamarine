@@ -350,6 +350,7 @@ namespace Aquamarine {
         STileInfo                                      tileInfo;
         bool                                           tilingRedundant = false;
         Hyprutils::Math::Vector2D                      maxMode;
+        std::vector<Hyprutils::Math::Vector2D>         modeSizes;
 
         bool                                           cursorEnabled = false;
         Hyprutils::Math::Vector2D                      cursorPos, cursorSize, cursorHotspot;
