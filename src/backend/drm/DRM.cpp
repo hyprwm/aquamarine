@@ -384,6 +384,8 @@ Aquamarine::CDRMBackend::~CDRMBackend() {
 }
 
 void Aquamarine::CDRMBackend::log(eBackendLogLevel l, const std::string& s) {
+    if (!backend)
+        return;
     backend->log(l, s);
 }
 
