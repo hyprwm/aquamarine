@@ -149,6 +149,14 @@ add_test(
   COMMAND attachments "attachments")
 add_dependencies(tests attachments)
 
+add_executable(swapchain "tests/Swapchain.cpp")
+target_link_libraries(swapchain PRIVATE PkgConfig::deps aquamarine)
+add_test(
+  NAME "swapchain"
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+  COMMAND swapchain "swapchain")
+add_dependencies(tests swapchain)
+
 # Installation
 install(TARGETS aquamarine)
 install(DIRECTORY "include/aquamarine" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
