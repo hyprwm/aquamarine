@@ -2,11 +2,13 @@
 
 #include <hyprutils/signal/Signal.hpp>
 #include <hyprutils/math/Vector2D.hpp>
+#include <hyprutils/memory/WeakPtr.hpp>
 
 struct libinput_device;
 struct libinput_tablet_tool;
 
 namespace Aquamarine {
+    class IOutput;
     class ITabletTool;
 
     class IKeyboard {
@@ -67,8 +69,9 @@ namespace Aquamarine {
         };
 
         struct SWarpEvent {
-            uint32_t                  timeMs = 0;
-            Hyprutils::Math::Vector2D absolute;
+            uint32_t                                 timeMs = 0;
+            Hyprutils::Math::Vector2D                absolute;
+            Hyprutils::Memory::CWeakPointer<IOutput> output; // absolute is local to this output when present
         };
 
         struct SButtonEvent {

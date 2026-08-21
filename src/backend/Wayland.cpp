@@ -4,6 +4,7 @@
 #include <xdg-shell.hpp>
 #include "Shared.hpp"
 #include "FormatUtils.hpp"
+#include <chrono>
 #include <cstring>
 #include <xf86drm.h>
 #include <gbm.h>
@@ -275,25 +276,7 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
 
     backend->backend->log(AQ_LOG_DEBUG, "New wayland pointer wl_pointer");
 
-    pointer->setMotion([this](CCWlPointer* r, uint32_t serial, wl_fixed_t x, wl_fixed_t y) {
-        const auto STATE = backend->focusedOutput->state->state();
-
-        if (!backend->focusedOutput || (!STATE.mode && !STATE.customMode))
-            return;
-
-        const Vector2D size = STATE.customMode ? STATE.customMode->pixelSize : STATE.mode->pixelSize;
-
-        Vector2D       local = {wl_fixed_to_double(x), wl_fixed_to_double(y)};
-        local                = local / size;
-
-        timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-
-        events.warp.emit(SWarpEvent{
-            .timeMs   = (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000),
-            .absolute = local,
-        });
-    });
+    pointer->setMotion([this](CCWlPointer* r, uint32_t timeMs, wl_fixed_t x, wl_fixed_t y) { emitWarp(timeMs, x, y); });
 
     pointer->setEnter([this](CCWlPointer* r, uint32_t serial, wl_proxy* surface, wl_fixed_t x, wl_fixed_t y) {
         backend->lastEnterSerial = serial;
@@ -305,6 +288,7 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
             backend->focusedOutput = o;
             backend->backend->log(AQ_LOG_DEBUG, std::format("[wayland] focus changed: {}", o->name));
             o->onEnter(pointer, serial);
+            emitWarp(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(), x, y);
             break;
         }
     });
@@ -315,6 +299,9 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
                 continue;
 
             o->cursorState.serial = 0;
+            if (backend->focusedOutput.lock() == o)
+                backend->focusedOutput = {};
+            break;
         }
     });
 
@@ -335,6 +322,18 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
     });
 
     pointer->setFrame([this](CCWlPointer* r) { events.frame.emit(); });
+}
+
+void Aquamarine::CWaylandPointer::emitWarp(uint32_t timeMs, wl_fixed_t x, wl_fixed_t y) {
+    const auto output = backend->focusedOutput.lock();
+    if (!output || output->waylandState.surfaceSize.x <= 0 || output->waylandState.surfaceSize.y <= 0)
+        return;
+
+    events.warp.emit(SWarpEvent{
+        .timeMs   = timeMs,
+        .absolute = Vector2D{wl_fixed_to_double(x), wl_fixed_to_double(y)} / output->waylandState.surfaceSize,
+        .output   = SP<IOutput>(output),
+    });
 }
 
 Aquamarine::CWaylandPointer::~CWaylandPointer() {
@@ -599,6 +598,9 @@ bool Aquamarine::CWaylandOutput::pendingIdleFrame() {
 }
 
 bool Aquamarine::CWaylandOutput::destroy() {
+    if (backend->focusedOutput.lock() == self.lock())
+        backend->focusedOutput = {};
+
     events.destroy.emit();
     waylandState.surface->sendAttach(nullptr, 0, 0);
     waylandState.surface->sendCommit();
@@ -684,6 +686,7 @@ bool Aquamarine::CWaylandOutput::commit() {
     }
 
     waylandState.surface->sendCommit();
+    waylandState.surfaceSize = state->internalState.buffer->size;
 
     // Flush immediately: commit() runs from the consumer's render path, outside
     // dispatchEvents() (which flushes only at its top). Without this the buffer commit and

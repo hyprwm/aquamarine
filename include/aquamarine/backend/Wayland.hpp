@@ -89,6 +89,7 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<CCXdgSurface>  xdgSurface;
             Hyprutils::Memory::CSharedPointer<CCXdgToplevel> xdgToplevel;
             Hyprutils::Memory::CSharedPointer<CCWlCallback>  frameCallback;
+            Hyprutils::Math::Vector2D                        surfaceSize;
         } waylandState;
 
         friend class CWaylandBackend;
@@ -120,6 +121,8 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CWaylandBackend> backend;
 
       private:
+        void              emitWarp(uint32_t timeMs, wl_fixed_t x, wl_fixed_t y);
+
         const std::string name = "wl_pointer";
     };
 
