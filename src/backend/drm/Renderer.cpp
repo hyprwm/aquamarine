@@ -125,6 +125,57 @@ void main() {
     fragColor = texture(texture0, v_texcoord);
 })#";
 
+// GLSL ES 1.00 variants of the shaders above, for GLES2 contexts.
+// highp is optional in ES 1.00 fragment shaders, hence the guard.
+inline const std::string VERT_SRC_ES100 = R"#(
+#version 100
+precision highp float;
+
+uniform mat3 proj;
+
+attribute vec2 pos;
+attribute vec2 texcoord;
+
+varying vec2 v_texcoord;
+
+void main() {
+    gl_Position = vec4(proj * vec3(pos, 1.0), 1.0);
+    v_texcoord = texcoord;
+})#";
+
+inline const std::string FRAG_SRC_ES100 = R"#(
+#version 100
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+varying vec2 v_texcoord;
+
+uniform sampler2D tex;
+
+void main() {
+    gl_FragColor = texture2D(tex, v_texcoord);
+})#";
+
+inline const std::string FRAG_SRC_EXT_ES100 = R"#(
+#version 100
+#extension GL_OES_EGL_image_external : require
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+varying vec2 v_texcoord;
+
+uniform samplerExternalOES texture0;
+
+void main() {
+    gl_FragColor = texture2D(texture0, v_texcoord);
+})#";
+
 // ------------------- egl stuff
 
 static inline void loadGLProc(void* pProc, const char* name) {
@@ -496,7 +547,7 @@ void CDRMRenderer::initContext() {
 
     egl.context = eglCreateContext(egl.display, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attrs.data());
     if (egl.context == EGL_NO_CONTEXT) {
-        backend->log(AQ_LOG_ERROR, "CDRMRenderer: eglCreateContext failed with GLES 3.2, retrying GLES 3.0");
+        backend->log(AQ_LOG_WARNING, "CDRMRenderer: eglCreateContext failed with GLES 3.2, retrying GLES 3.0");
 
         attrs = attrsNoVer;
         attrs.push_back(EGL_CONTEXT_MAJOR_VERSION);
@@ -508,8 +559,22 @@ void CDRMRenderer::initContext() {
 
         egl.context = eglCreateContext(egl.display, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attrs.data());
         if (egl.context == EGL_NO_CONTEXT) {
-            backend->log(AQ_LOG_ERROR, "CDRMRenderer: Can't create renderer, eglCreateContext failed with both GLES 3.2 and GLES 3.0");
-            return;
+            backend->log(AQ_LOG_WARNING, "CDRMRenderer: eglCreateContext failed with GLES 3.0, retrying GLES 2.0");
+
+            attrs = attrsNoVer;
+            attrs.push_back(EGL_CONTEXT_CLIENT_VERSION);
+            attrs.push_back(2);
+
+            attrs.push_back(EGL_NONE);
+
+            egl.context = eglCreateContext(egl.display, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, attrs.data());
+            if (egl.context == EGL_NO_CONTEXT) {
+                backend->log(AQ_LOG_ERROR, "CDRMRenderer: Can't create renderer, eglCreateContext failed with GLES 3.2, 3.0 and 2.0");
+                return;
+            }
+
+            gles2 = true;
+            backend->log(AQ_LOG_DEBUG, "CDRMRenderer: running in GLES2 mode, using GLSL ES 1.00 shaders");
         }
     }
 
@@ -549,7 +614,10 @@ void CDRMRenderer::initResources() {
     if (!exts.EXT_image_dma_buf_import || !initDRMFormats())
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: initDRMFormats failed, dma-buf won't work");
 
-    shader.program = createProgram(VERT_SRC, FRAG_SRC);
+    if (gles2)
+        shader.program = createProgram(VERT_SRC_ES100, FRAG_SRC_ES100);
+    else
+        shader.program = createProgram(VERT_SRC, FRAG_SRC);
     if (shader.program == 0)
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: texture shader failed");
 
@@ -559,7 +627,10 @@ void CDRMRenderer::initResources() {
     shader.tex       = glGetUniformLocation(shader.program, "tex");
     shader.createVao();
 
-    shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
+    if (gles2)
+        shaderExt.program = createProgram(VERT_SRC_ES100, FRAG_SRC_EXT_ES100);
+    else
+        shaderExt.program = createProgram(VERT_SRC, FRAG_SRC_EXT);
     if (shaderExt.program == 0)
         backend->log(AQ_LOG_ERROR, "CDRMRenderer: external texture shader failed");
 

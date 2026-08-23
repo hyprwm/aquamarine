@@ -162,6 +162,8 @@ namespace Aquamarine {
       private:
         CDRMRenderer() = default;
 
+        bool                                                  gles2 = false;
+
         EGLImageKHR                                           createEGLImage(const SDMABUFAttrs& attrs);
         bool                                                  verifyDestinationDMABUF(const SDMABUFAttrs& attrs);
         void                                                  waitOnSync(int fd);
