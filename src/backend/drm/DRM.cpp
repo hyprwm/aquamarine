@@ -998,7 +998,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             if (c->crtc != crtc)
                 continue;
 
-            if (c->status != DRM_MODE_CONNECTED || c->tilingRedundant)
+            if (c->status != DRM_MODE_CONNECTED && !c->tilingRedundant)
                 continue;
 
             backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} taken by {}, skipping", i, c->crtc->id, c->szName));
@@ -1073,7 +1073,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
     }
 
     for (auto const& c : connectors) {
-        if (c->status == DRM_MODE_CONNECTED)
+        if (c->status == DRM_MODE_CONNECTED || c->tilingRedundant)
             continue;
 
         if (c->crtc)
