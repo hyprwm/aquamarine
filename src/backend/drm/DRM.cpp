@@ -781,7 +781,8 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             if (c->crtc != crtc)
                 continue;
 
-            if (c->status != DRM_MODE_CONNECTED || c->tilingRedundant)
+            // driver-managed tiled outputs may still use redundant connectors
+            if (c->status != DRM_MODE_CONNECTED)
                 continue;
 
             backend->log(AQ_LOG_DEBUG, std::format("drm: slot {} crtc {} taken by {}, skipping", i, c->crtc->id, c->szName));
@@ -1877,7 +1878,6 @@ void Aquamarine::SDRMConnector::disconnect() {
 
     invalidateFrame();
 
-    status = DRM_MODE_DISCONNECTED;
     releaseFBReferences();
 
     output->events.destroy.emit();
