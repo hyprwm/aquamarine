@@ -220,6 +220,7 @@ namespace Aquamarine {
 
         std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>>         pollFDs();
         void                                                            dispatchPendingEventsAsync();
+        void                                                            dispatchLibinputEvents();
         bool                                                            switchVT(uint32_t vt);
         void                                                            onReady();
 
@@ -238,7 +239,6 @@ namespace Aquamarine {
         std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> polls;
 
         void                                                    dispatchUdevEvents();
-        void                                                    dispatchLibinputEvents();
         void                                                    dispatchLibseatEvents();
         void                                                    handleLibinputEvent(libinput_event* e);
         void                                                    handleLibinputTabletToolAxis(libinput_event* e);

@@ -79,8 +79,14 @@ static void libinputLog(libinput*, libinput_log_priority level, const char* fmt,
 static void libseatEnableSeat(struct libseat* seat, void* data) {
     auto PSESSION    = (Aquamarine::CSession*)data;
     PSESSION->active = true;
-    if (PSESSION->libinputHandle)
+    if (PSESSION->libinputHandle) {
         libinput_resume(PSESSION->libinputHandle);
+        // libinput_resume() queues DEVICE_ADDED events for the devices it
+        // reopens. Process those events before announcing session activation,
+        // otherwise the compositor can expose its keyboard capability only
+        // after the first post-resume key has already been consumed.
+        PSESSION->dispatchLibinputEvents();
+    }
     PSESSION->events.changeActive.emit();
 }
 
