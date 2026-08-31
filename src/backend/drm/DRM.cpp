@@ -757,6 +757,17 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
         impl                         = makeShared<CDRMAtomicImpl>(self.lock());
         drmProps.supportsAsyncCommit = drmGetCap(gpu->fd, DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
         atomic                       = true;
+
+        // Virtualized drivers (virtio-gpu, vmwgfx, qxl) set DRIVER_CURSOR_HOTSPOT, and the kernel hides
+        // the cursor plane from atomic clients that have not opted in to programming its hotspot: a
+        // client that positions the plane by its top-left corner would put the guest's pointer in the
+        // wrong place. Without this we never see a cursor plane there and fall back to a software
+        // cursor. Old kernels don't know the cap, which just means there is no hidden plane.
+        if (drmSetClientCap(gpu->fd, DRM_CLIENT_CAP_CURSOR_PLANE_HOTSPOT, 1))
+            backend->log(AQ_LOG_DEBUG, "drm: DRM_CLIENT_CAP_CURSOR_PLANE_HOTSPOT unsupported");
+        else
+            drmProps.supportsCursorHotspot = true;
+
         if (!initCommitThread())
             backend->log(AQ_LOG_WARNING, "drm: Failed to create the asynchronous commit worker");
     }

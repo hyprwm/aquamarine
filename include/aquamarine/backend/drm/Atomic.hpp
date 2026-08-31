@@ -46,6 +46,7 @@ namespace Aquamarine {
         void         planeProps(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Memory::CSharedPointer<CDRMFB> fb, uint32_t crtc, Hyprutils::Math::Vector2D pos,
                                 eOutputColorRange colorRange = AQ_OUTPUT_COLOR_RANGE_AUTO);
         void         planePropsPos(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Math::Vector2D pos);
+        void         planePropsHotspot(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Math::Vector2D hotspot);
 
         void         rollback(SDRMConnectorCommitData& data);
         void         apply(SDRMConnectorCommitData& data);

@@ -555,6 +555,7 @@ namespace Aquamarine {
             Hyprutils::Math::Vector2D cursorSize;
             bool                      supportsAsyncCommit     = false;
             bool                      supportsAddFb2Modifiers = false;
+            bool                      supportsCursorHotspot   = false;
             bool                      supportsTimelines       = false;
         } drmProps;
 

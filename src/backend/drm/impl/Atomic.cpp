@@ -348,6 +348,22 @@ void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CShar
         add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
 }
 
+void Aquamarine::CDRMAtomicRequest::planePropsHotspot(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Math::Vector2D hotspot) {
+    if (failed)
+        return;
+
+    // Only virtualized drivers expose these, and only to clients that set DRM_CLIENT_CAP_CURSOR_PLANE_HOTSPOT.
+    // They need the hotspot because the guest's pointer sits at CRTC_X/Y + HOTSPOT_X/Y; CRTC_X/Y alone is the
+    // top-left corner of the image.
+    if (!plane->props.values.hotspot_x || !plane->props.values.hotspot_y)
+        return;
+
+    TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic planeProps: hotspot blobs: hotspot_x {}, hotspot_y {}", plane->props.values.hotspot_x, plane->props.values.hotspot_y)));
+
+    add(plane->id, plane->props.values.hotspot_x, (uint64_t)(int64_t)hotspot.x);
+    add(plane->id, plane->props.values.hotspot_y, (uint64_t)(int64_t)hotspot.y);
+}
+
 void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     if (!connector->crtc->cursor)
         return;
@@ -360,10 +376,14 @@ void Aquamarine::CDRMAtomicRequest::addConnectorCursor(Hyprutils::Memory::CShare
             if (data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE) {
                 if (!data.cursorVisible)
                     planeProps(connector->crtc->cursor, nullptr, 0, {});
-                else
+                else {
                     planeProps(connector->crtc->cursor, data.cursorFB, connector->crtc->id, data.cursorPos - data.cursorHotspot);
-            } else if (data.cursorVisible)
+                    planePropsHotspot(connector->crtc->cursor, data.cursorHotspot);
+                }
+            } else if (data.cursorVisible) {
                 planePropsPos(connector->crtc->cursor, data.cursorPos - data.cursorHotspot);
+                planePropsHotspot(connector->crtc->cursor, data.cursorHotspot);
+            }
         }
     } else
         planeProps(connector->crtc->cursor, nullptr, 0, {});
