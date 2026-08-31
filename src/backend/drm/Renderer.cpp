@@ -388,7 +388,10 @@ Aquamarine::CDRMRenderer::~CDRMRenderer() {
     if (egl.display && egl.context != EGL_NO_CONTEXT && egl.context != nullptr)
         eglDestroyContext(egl.display, egl.context);
 
-    if (egl.display)
+    // without EGL_KHR_display_reference, eglTerminate destroys a display that may be shared
+    // with other users of the same device in this process (e.g. the compositor's own EGL state),
+    // invalidating their contexts. Only terminate when reference tracking is in effect.
+    if (egl.display && exts.KHR_display_reference)
         eglTerminate(egl.display);
 
     eglReleaseThread();
