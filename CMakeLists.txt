@@ -168,6 +168,15 @@ add_test(
   COMMAND commitThread "commitThread")
 add_dependencies(tests commitThread)
 
+add_executable(drmCommitScheduling "tests/DRMCommitScheduling.cpp")
+target_include_directories(drmCommitScheduling PRIVATE "./src")
+target_link_libraries(drmCommitScheduling PRIVATE PkgConfig::deps aquamarine)
+add_test(
+  NAME "drmCommitScheduling"
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+  COMMAND drmCommitScheduling "drmCommitScheduling")
+add_dependencies(tests drmCommitScheduling)
+
 # Installation
 install(TARGETS aquamarine)
 install(DIRECTORY "include/aquamarine" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

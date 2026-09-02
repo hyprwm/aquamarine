@@ -34,6 +34,7 @@ extern "C" {
 
 #include "Props.hpp"
 #include "FormatUtils.hpp"
+#include "CommitScheduling.hpp"
 #include "Shared.hpp"
 #include "hwdata.hpp"
 #include "Renderer.hpp"
@@ -2590,11 +2591,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit when a page-flip is awaiting");
             return false;
         }
-
-        if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
-            flags |= DRM_MODE_PAGE_FLIP_EVENT;
-        if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
-            flags |= DRM_MODE_PAGE_FLIP_ASYNC;
     }
 
     // we can't go further without a blit
@@ -2704,8 +2700,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                                               fourccToName(STATE.drmFormat), fourccToName(params.format)));
             data.outputState.drmFormat = params.format;
             formatMismatch             = true;
-            // TODO: reject if tearing? We will miss a frame event!
-            flags &= ~DRM_MODE_PAGE_FLIP_ASYNC; // we cannot modeset with async pf
         }
     }
 
@@ -2728,8 +2722,23 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
         data.hdrMetadata = STATE.hdrMetadata;
 
-    data.blocking  = BLOCKING || formatMismatch;
-    data.modeset   = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;
+    data.blocking = BLOCKING || formatMismatch;
+    data.modeset  = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;
+
+    // A blocking atomic commit is complete when drmModeAtomicCommit returns.
+    // Requesting a flip event for it would keep the userspace scheduler marked
+    // in-flight until the event loop drains the DRM fd. Monitor setup can issue
+    // another commit synchronously before returning to that loop and reject it
+    // as still awaiting the previous flip. Only asynchronous commits need an
+    // event to track their completion.
+    const auto pageFlipOptions = drmPageFlipOptions(onlyTest, STATE.enabled, data.blocking, COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER,
+                                                    STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE);
+    if (pageFlipOptions.event) {
+        flags |= DRM_MODE_PAGE_FLIP_EVENT;
+        if (pageFlipOptions.async)
+            flags |= DRM_MODE_PAGE_FLIP_ASYNC;
+    }
+
     data.flags     = flags;
     data.test      = onlyTest;
     data.enabled   = STATE.enabled;
@@ -2775,7 +2784,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         // to avoid doing this over and over.
         data.modeset  = true;
         data.blocking = true;
-        data.flags    = onlyTest ? 0 : DRM_MODE_PAGE_FLIP_EVENT;
+        data.flags    = 0;
         ok            = connector->commitState(data);
 
         if (!ok)
