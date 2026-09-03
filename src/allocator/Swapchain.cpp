@@ -28,6 +28,9 @@ bool Aquamarine::CSwapchain::reconfigure(const SSwapchainOptions& options_) {
         allocator->getBackend()->log(AQ_LOG_DEBUG, "Swapchain: Clearing");
         buffers.clear();
         options = options_;
+        // buffers are gone; sync the length with reality so next() can't
+        // index into the (now empty) buffer vector
+        options.length = 0;
         return true;
     }
 
@@ -60,10 +63,15 @@ bool Aquamarine::CSwapchain::reconfigure(const SSwapchainOptions& options_) {
 }
 
 SP<IBuffer> Aquamarine::CSwapchain::next(int* age) {
-    if (!allocator || options.length <= 0)
+    if (!allocator || options.length <= 0 || buffers.empty())
         return nullptr;
 
     lastAcquired = (lastAcquired + 1) % options.length;
+
+    // safety: options.length can desync from buffers.size() (e.g. after a
+    // failed partial resize); never index out of bounds
+    if (static_cast<size_t>(lastAcquired) >= buffers.size())
+        lastAcquired = 0;
 
     if (age)
         *age = options.length; // we always just rotate
