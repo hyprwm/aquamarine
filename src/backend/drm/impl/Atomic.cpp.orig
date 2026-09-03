@@ -45,15 +45,6 @@ static uint8_t getMaxBPC(uint64_t min, uint64_t max, uint32_t drmFormat) {
         case DRM_FORMAT_ARGB16161616:
         case DRM_FORMAT_ABGR16161616: formatBPC = 16; break;
 
-        // 16-bit float formats (e.g. XB4H from FP16 clients such as Looking Glass).
-        // Treat them as 10 bpc: that matches what a 10-bit output is configured
-        // for, so a fullscreen FP16 client taking direct scanout does not change
-        // "max bpc" and force a DP link re-train on every focus change.
-        case DRM_FORMAT_XRGB16161616F:
-        case DRM_FORMAT_XBGR16161616F:
-        case DRM_FORMAT_ARGB16161616F:
-        case DRM_FORMAT_ABGR16161616F: formatBPC = 10; break;
-
         // FIXME? handle non-rgb formats and some weird stuff like DRM_FORMAT_AXBXGXRX106106106106
         default: formatBPC = 8; break;
     }
