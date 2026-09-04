@@ -285,6 +285,8 @@ namespace Aquamarine {
         bool                                                               asyncCommitEventPending = false;
         Hyprutils::Memory::CAtomicSharedPointer<CDRMCursorPositionMailbox> cursorMailbox;
 
+        bool linearOnly = false;
+
         friend struct SDRMConnector;
         friend class CDRMLease;
         friend class CDRMBackend;

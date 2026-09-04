@@ -2782,6 +2782,45 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             connector->commitTainted = true;
     }
 
+    // the mode may be fine but not the buffer layout: drivers can reject at commit time
+    // modifiers they advertise in IN_FORMATS (e.g. i915 gen9 with Y-tiled/CCS above 4096px).
+    // retry with linear buffers and keep them for this output if that works.
+    if (!ok && data.modeset && !linearOnly && data.mainFB && swapchain && !backend->shouldBlit() && swapchain->currentOptions().scanoutOutput.get() == this) {
+        const auto MOD = data.mainFB->buffer->dmabuf().modifier;
+        if (MOD != DRM_FORMAT_MOD_INVALID && MOD != DRM_FORMAT_MOD_LINEAR) {
+            backend->backend->log(AQ_LOG_WARNING, std::format("drm: Modeset on {} rejected with modifier {}, retrying with linear buffers", name, drmModifierToName(MOD)));
+
+            const auto OPTIONS = swapchain->currentOptions();
+            auto       CLEAR   = OPTIONS;
+            CLEAR.length       = 0; // clears the buffers but keeps scanoutOutput, which the allocator reads on refill
+
+            linearOnly = true;
+            swapchain->reconfigure(CLEAR);
+
+            if (swapchain->reconfigure(OPTIONS)) {
+                if (auto newBuf = swapchain->next(nullptr); newBuf) {
+                    if (auto newFB = CDRMFB::create(newBuf, backend, nullptr); newFB && !newFB->dead) {
+                        data.mainFB = newFB;
+                        ok          = connector->commitState(data);
+
+                        if (ok)
+                            state->setBuffer(newBuf); // the consumer still holds the rejected buffer, don't let it re-commit it
+                        if (onlyTest || !ok)
+                            swapchain->rollback();
+                    }
+                }
+            }
+
+            if (!ok) {
+                // linear didn't help, restore the previous buffers
+                linearOnly = false;
+                swapchain->reconfigure(CLEAR);
+                swapchain->reconfigure(OPTIONS);
+                backend->backend->log(AQ_LOG_ERROR, std::format("drm: Linear retry on {} failed", name));
+            }
+        }
+    }
+
     if (onlyTest || !ok)
         return ok;
 
@@ -3208,7 +3247,17 @@ std::vector<SDRMFormat> Aquamarine::CDRMOutput::getRenderFormats() {
         backend->log(AQ_LOG_ERROR, "Can't get formats: no crtc");
         return {};
     }
-    return connector->crtc->primary->formats;
+
+    if (!linearOnly)
+        return connector->crtc->primary->formats;
+
+    // only linear (or implicit if the plane doesn't list it), see commitState
+    auto fmts = connector->crtc->primary->formats;
+    for (auto& f : fmts) {
+        const bool HAS_LINEAR = std::ranges::find(f.modifiers, DRM_FORMAT_MOD_LINEAR) != f.modifiers.end();
+        f.modifiers           = {HAS_LINEAR ? DRM_FORMAT_MOD_LINEAR : DRM_FORMAT_MOD_INVALID};
+    }
+    return fmts;
 }
 
 bool Aquamarine::CDRMOutput::pendingPageFlip() {
