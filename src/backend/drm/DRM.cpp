@@ -858,9 +858,6 @@ bool Aquamarine::CDRMBackend::initResources() {
 
     for (const auto& crtc : crtcs) {}
 
-    drmModeFreePlaneResources(planeResources);
-    drmModeFreeResources(resources);
-
     return success;
 }
 

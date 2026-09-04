@@ -132,9 +132,8 @@ namespace Aquamarine {
         union UDRMPlaneProps {
             struct {
                 uint32_t type;
-                uint32_t rotation;    // Not guaranteed to exist
-                uint32_t in_formats;  // Not guaranteed to exist
-                uint32_t color_range; // Not guaranteed to exist
+                uint32_t rotation;   // Not guaranteed to exist
+                uint32_t in_formats; // Not guaranteed to exist
 
                 // atomic-modesetting only
 

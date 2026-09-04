@@ -154,6 +154,7 @@ namespace Aquamarine {
         void                  setPlaneBuffer(uint32_t planeIdx, Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
         void                  setPlaneGeometry(uint32_t planeIdx, const Hyprutils::Math::CBox& box);
         void                  addPlaneDamage(uint32_t planeIdx, const Hyprutils::Math::CRegion& region);
+        void                  onCommit();
 
       private:
         SInternalState           internalState;

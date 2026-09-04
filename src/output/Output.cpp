@@ -137,6 +137,9 @@ void Aquamarine::COutputState::consume(const CSnapshot& snapshot) {
         if (property == AQ_OUTPUT_STATE_DAMAGE)
             internalState.damage.clear();
     }
+
+    // FIXME use snapshot
+    onCommit();
 }
 
 void Aquamarine::COutputState::rearm(const CSnapshot& snapshot) {
@@ -309,9 +312,6 @@ void Aquamarine::COutputState::addPlaneDamage(uint32_t planeIdx, const Hyprutils
 }
 
 void Aquamarine::COutputState::onCommit() {
-    internalState.committed = 0;
-    internalState.damage.clear();
-
     for (auto& p : internalState.planeStates) {
         p.damage.clear();
         p.updated = false;
