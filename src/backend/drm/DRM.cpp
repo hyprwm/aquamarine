@@ -2954,7 +2954,7 @@ void Aquamarine::CDRMOutput::scheduleFrame(const scheduleFrameReason reason) {
 
     if (!frameIdle) {
         frameIdle = makeShared<std::function<void(void)>>([this, self_ = self, backend_ = backend]() {
-            if (!self)
+            if (!self_)
                 return;
 
             connector->sched.setFrameScheduled(false);
