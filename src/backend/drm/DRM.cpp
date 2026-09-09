@@ -2133,6 +2133,28 @@ void Aquamarine::SDRMConnector::disconnect() {
     backend->cancelAsyncOutput(output.get());
     invalidateFrame();
 
+    // Hotplug has already marked the connector disconnected, so the normal
+    // output commit path rejects it. Explicitly disable KMS before dropping
+    // the output/FBs or reassigning its CRTC. In particular, Intel Type-C PHY
+    // ownership can remain held by an orphaned active CRTC after unplug.
+    if (crtc && backend->backend->session && backend->backend->session->active && output->enabledState) {
+        const auto QUEUE_KEY = crtc->id;
+        if (backend->pauseCommitQueue(QUEUE_KEY)) {
+            CScopeGuard             resume([this, QUEUE_KEY] { backend->resumeCommitQueue(QUEUE_KEY); });
+            SDRMConnectorCommitData data = {};
+            data.modeset                 = true;
+            data.blocking                = true;
+            data.committed               = COutputState::AQ_OUTPUT_STATE_ENABLED;
+
+            if (backend->impl->commit(self.lock(), data)) {
+                output->enabledState = false;
+                backend->log(AQ_LOG_DEBUG, std::format("drm: Disabled KMS output {} before disconnect", szName));
+            } else
+                backend->log(AQ_LOG_ERROR, std::format("drm: Failed to disable KMS output {} before disconnect", szName));
+        } else
+            backend->log(AQ_LOG_ERROR, std::format("drm: Failed to pause commit queue for disconnect of {}", szName));
+    }
+
     status = DRM_MODE_DISCONNECTED;
     releaseFBReferences();
 
