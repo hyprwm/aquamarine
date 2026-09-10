@@ -678,7 +678,12 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
                 if (data.atomic.ctmd)
                     connector->crtc->atomic.ctmStateKnown = true;
 
-                if (data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
+                // Blocking commits (notably modesets) may complete before we get back
+                // here, and some drivers do not reliably deliver a later page-flip
+                // event for them. Treat only nonblocking page flips as in-flight;
+                // otherwise the scheduler can remain permanently pending and the
+                // output stops rendering after the initial modeset.
+                if (!data.blocking && data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
                     connector->sched.onFrameSubmitted();
             }
         } else {

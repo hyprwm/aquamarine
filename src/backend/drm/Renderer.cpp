@@ -349,7 +349,8 @@ bool CDRMRenderer::initDRMFormats() {
         hasModifiers = hasModifiers || !mods.empty();
 
         // EGL can always do implicit modifiers.
-        mods.emplace_back(DRM_FORMAT_MOD_INVALID, true);
+        // Implicit modifier imports are usable as render targets; they are not external-only.
+        mods.emplace_back(DRM_FORMAT_MOD_INVALID, false);
 
         for (auto const& [mod, external] : mods) {
             dmaFormats.push_back(SGLFormat{

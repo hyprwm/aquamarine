@@ -2591,7 +2591,12 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             return false;
         }
 
-        if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
+        // Do not ask the kernel for a page-flip event on blocking commits
+        // (modesets / format changes). Some AMD/Intel multi-GPU paths keep the
+        // CRTC busy briefly after a blocking modeset with PAGE_FLIP_EVENT, which
+        // lets the next nonblocking frame race into EBUSY. Nonblocking frame
+        // commits below still request PAGE_FLIP_EVENT for normal pacing.
+        if (!BLOCKING && STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
             flags |= DRM_MODE_PAGE_FLIP_EVENT;
         if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
             flags |= DRM_MODE_PAGE_FLIP_ASYNC;
@@ -2669,10 +2674,14 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 return false;
             }
 
-            // replace the explicit in fence if the blitting backend returned one, otherwise discard old. Passed fence from the client is wrong.
-            // if the commit doesn't have an explicit fence, don't use the one we created, just fallback to implicit
+            // Replace the explicit in fence if the blitting backend returned one,
+            // otherwise discard old. The fence from the original client buffer is
+            // for the primary GPU and is not the right synchronization object for
+            // the secondary scanout buffer. In multi-GPU we must pass the blit fence
+            // even if the original commit did not use explicit sync; implicit sync
+            // across GPUs is not reliable on the Intel->AMD MacBook path.
             static auto NO_EXPLICIT = envEnabled("AQ_MGPU_NO_EXPLICIT");
-            if (blitResult.syncFD.has_value() && !NO_EXPLICIT && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE))
+            if (blitResult.syncFD.has_value() && !NO_EXPLICIT)
                 data.outputState.explicitInFence = blitResult.syncFD.value();
             else
                 data.outputState.explicitInFence = -1;
