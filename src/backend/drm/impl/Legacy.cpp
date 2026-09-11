@@ -1,6 +1,8 @@
 #include "aquamarine/output/Output.hpp"
 #include <aquamarine/backend/drm/Legacy.hpp>
 #include <cstring>
+#include <format>
+#include <vector>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <sys/mman.h>
@@ -84,7 +86,48 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
         connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: connector {} vrr -> {}", connector->id, STATE.adaptiveSync));
     }
 
-    // TODO: gamma
+    // Legacy exposes a single gamma ramp per crtc and no degamma. Unlike atomic
+    // there is no blob to zero, so an empty lut is written as an identity ramp.
+    // Re-send on modeset too, so a previous compositor's ramp cannot bleed into
+    // our session (same reasoning as the atomic path, see #127).
+    if (enable && connector->crtc && (data.modeset || (data.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT))) {
+        size_t gammaSize = 0;
+        if (auto crtcInfo = drmModeGetCrtc(connector->backend->gpu->fd, connector->crtc->id); crtcInfo) {
+            gammaSize = crtcInfo->gamma_size;
+            drmModeFreeCrtc(crtcInfo);
+        }
+
+        if (!gammaSize && (data.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT))
+            connector->backend->backend->log(AQ_LOG_ERROR, "legacy drm: can't commit gamma: crtc reports no gamma ramp");
+        else if (gammaSize) {
+            std::vector<uint16_t> r(gammaSize), g(gammaSize), b(gammaSize);
+            bool                  ok = true;
+
+            if (STATE.gammaLut.empty()) {
+                for (size_t i = 0; i < gammaSize; ++i)
+                    r.at(i) = g.at(i) = b.at(i) = gammaSize > 1 ? (uint16_t)((i * 0xFFFF) / (gammaSize - 1)) : 0xFFFF;
+            } else if (STATE.gammaLut.size() != gammaSize * 3) {
+                connector->backend->backend->log(
+                    AQ_LOG_ERROR, std::format("legacy drm: can't commit gamma: lut has {} entries, crtc wants {}", STATE.gammaLut.size() / 3, gammaSize));
+                ok = false;
+            } else {
+                for (size_t i = 0; i < gammaSize; ++i) { // [r,g,b]+
+                    r.at(i) = STATE.gammaLut.at(i * 3 + 0);
+                    g.at(i) = STATE.gammaLut.at(i * 3 + 1);
+                    b.at(i) = STATE.gammaLut.at(i * 3 + 2);
+                }
+            }
+
+            // A failed gamma commit must not fail the whole commit: that would
+            // take the output down over a colour tweak.
+            if (ok) {
+                if (auto ret = drmModeCrtcSetGamma(connector->backend->gpu->fd, connector->crtc->id, gammaSize, r.data(), g.data(), b.data()); ret)
+                    connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModeCrtcSetGamma failed: {}", strerror(-ret)));
+                else
+                    connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: gamma ramp of {} entries set on crtc {}", gammaSize, connector->crtc->id));
+            }
+        }
+    }
 
     if (data.cursorFB && connector->crtc->cursor && data.cursorVisible && enable &&
         (data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS)) {

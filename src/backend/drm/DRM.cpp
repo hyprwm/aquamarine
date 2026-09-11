@@ -3164,14 +3164,22 @@ Aquamarine::IOutput::SCommitSubmission Aquamarine::CDRMOutput::commitAsync(const
 }
 
 size_t Aquamarine::CDRMOutput::getGammaSize() {
-    if (!backend->atomic) {
-        backend->log(AQ_LOG_ERROR, "No support for gamma on the legacy iface");
-        return 0;
-    }
-
     if (!connector->crtc) {
         backend->log(AQ_LOG_ERROR, "Can't get gamma size: no crtc");
         return 0;
+    }
+
+    // Legacy has no gamma_lut_size prop: the ramp length lives on the crtc itself.
+    if (!backend->atomic) {
+        auto crtc = drmModeGetCrtc(backend->gpu->fd, connector->crtc->id);
+        if (!crtc) {
+            backend->log(AQ_LOG_ERROR, "Couldn't get the crtc for the legacy gamma size");
+            return 0;
+        }
+
+        const size_t SIZE = crtc->gamma_size;
+        drmModeFreeCrtc(crtc);
+        return SIZE;
     }
 
     uint64_t size = 0;
