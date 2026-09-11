@@ -2134,14 +2134,17 @@ void Aquamarine::SDRMConnector::disconnect() {
     invalidateFrame();
 
     status = DRM_MODE_DISCONNECTED;
-    releaseFBReferences();
 
+    // Let the consumer disable the CRTC before releasing its scanout buffers.
     output->events.destroy.emit();
+    releaseFBReferences();
     output.reset();
 }
 
 bool Aquamarine::SDRMConnector::commitState(SDRMConnectorCommitData& data) {
-    if (status != DRM_MODE_CONNECTED || !output)
+    // A disconnected connector still needs a synchronous disable commit.
+    const bool DISABLING = (data.committed & COutputState::AQ_OUTPUT_STATE_ENABLED) && !data.enabled;
+    if (!output || (status != DRM_MODE_CONNECTED && !DISABLING))
         return false;
 
     const bool ok = backend->impl->commit(self.lock(), data);
@@ -2494,14 +2497,17 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
-    if (connector->status != DRM_MODE_CONNECTED || connector->output != self.lock()) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit a disconnected output");
-        return false;
-    }
-
     const auto     SNAPSHOT  = state->snapshot();
     const auto&    STATE     = SNAPSHOT.state();
     const uint32_t COMMITTED = STATE.committed;
+
+    // Hot-unplug marks the connector disconnected before notifying the consumer.
+    // Permit its explicit disable request, but reject rendering or re-enabling it.
+    const bool DISABLING = (COMMITTED & COutputState::AQ_OUTPUT_STATE_ENABLED) && !STATE.enabled;
+    if (connector->output != self.lock() || (connector->status != DRM_MODE_CONNECTED && !DISABLING)) {
+        backend->backend->log(AQ_LOG_ERROR, "drm: Cannot commit a disconnected output");
+        return false;
+    }
 
     if (SNAPSHOT.error()) {
         backend->backend->log(AQ_LOG_ERROR, std::format("drm: Failed to duplicate explicit input fence: {}", strerror(SNAPSHOT.error())));
