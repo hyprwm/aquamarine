@@ -1,5 +1,6 @@
 #include "aquamarine/output/Output.hpp"
 #include <aquamarine/backend/drm/Legacy.hpp>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <vector>
@@ -125,6 +126,43 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
                     connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModeCrtcSetGamma failed: {}", strerror(-ret)));
                 else
                     connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: gamma ramp of {} entries set on crtc {}", gammaSize, connector->crtc->id));
+            }
+        }
+    }
+
+    // CTM is a plain crtc property, so legacy can set it with
+    // drmModeObjectSetProperty the same way it sets vrr_enabled above. Without
+    // this, anything driving colour temperature through a CTM (hyprsunset via
+    // hyprland-ctm-control-v1) silently does nothing under AQ_NO_ATOMIC.
+    if (enable && connector->crtc && data.ctm.has_value()) {
+        if (!connector->crtc->props.values.ctm)
+            connector->backend->backend->log(AQ_LOG_ERROR, "legacy drm: can't commit ctm: no ctm prop support");
+        else {
+            static auto doubleToS3132Fixed = [](const double val) -> uint64_t {
+                const uint64_t result = std::abs(val) * (1ULL << 32);
+                if (val < 0)
+                    return result | 1ULL << 63;
+                return result;
+            };
+
+            drm_color_ctm ctm = {0};
+            for (size_t i = 0; i < 9; ++i) {
+                ctm.matrix[i] = doubleToS3132Fixed(data.ctm->getMatrix()[i]);
+            }
+
+            uint32_t blob = 0;
+            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &ctm, sizeof(drm_color_ctm), &blob))
+                connector->backend->backend->log(AQ_LOG_ERROR, "legacy drm: failed to create a ctm blob");
+            else {
+                // As with gamma, a failed ctm must not fail the commit.
+                if (auto ret = drmModeObjectSetProperty(connector->backend->gpu->fd, connector->crtc->id, DRM_MODE_OBJECT_CRTC, connector->crtc->props.values.ctm, blob); ret)
+                    connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: drmModeObjectSetProperty: ctm failed: {}", strerror(-ret)));
+                else
+                    connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: ctm set on crtc {}", connector->crtc->id));
+
+                // The kernel keeps a reference to the blob data, so the id can
+                // be dropped immediately after the property is set.
+                drmModeDestroyPropertyBlob(connector->backend->gpu->fd, blob);
             }
         }
     }
