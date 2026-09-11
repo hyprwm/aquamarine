@@ -2133,6 +2133,16 @@ void Aquamarine::SDRMConnector::disconnect() {
     backend->cancelAsyncOutput(output.get());
     invalidateFrame();
 
+    // scanConnectors() updates the connection status before calling us, but
+    // commits are rejected for disconnected connectors. Temporarily restore the
+    // connected status so the disable commit can release the CRTC in hardware.
+    if (crtc) {
+        status = DRM_MODE_CONNECTED;
+        output->state->setEnabled(false);
+        if (!output->commit())
+            backend->backend->log(AQ_LOG_ERROR, std::format("drm: Failed to disable {} on disconnect, CRTC {} may remain stuck bound to it", szName, crtc->id));
+    }
+
     status = DRM_MODE_DISCONNECTED;
     releaseFBReferences();
 
