@@ -313,10 +313,13 @@ Aquamarine::CWaylandPointer::CWaylandPointer(SP<CCWlPointer> pointer_, Hyprutils
         });
     });
 
+    pointer->setAxisSource([this](CCWlPointer* r, uint32_t source) { axisSource = source; });
+
     pointer->setAxis([this](CCWlPointer* r, uint32_t timeMs, wl_pointer_axis axis, wl_fixed_t value) {
         events.axis.emit(SAxisEvent{
             .timeMs = timeMs,
             .axis   = axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? AQ_POINTER_AXIS_HORIZONTAL : AQ_POINTER_AXIS_VERTICAL,
+            .source = (ePointerAxisSource)axisSource,
             .delta  = wl_fixed_to_double(value),
         });
     });

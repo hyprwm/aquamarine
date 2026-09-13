@@ -123,6 +123,8 @@ namespace Aquamarine {
       private:
         void              emitWarp(uint32_t timeMs, wl_fixed_t x, wl_fixed_t y);
 
+        uint32_t          axisSource = 0; // WL_POINTER_AXIS_SOURCE_WHEEL
+
         const std::string name = "wl_pointer";
     };
 
