@@ -878,7 +878,20 @@ bool Aquamarine::CDRMBackend::initMgpu() {
     rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
 
     if (!rendererState.renderer) {
+        // KMS-only devices (VM display adapters such as vboxvideo, DisplayLink, simpledrm)
+        // expose no EGL device matching their DRM node, so the EGL_PLATFORM_DEVICE path
+        // above finds nothing. EGL_PLATFORM_GBM still initializes on them, so try it
+        // before giving up.
+        backend->log(AQ_LOG_DEBUG, "drm: initMgpu: no EGL device matches this DRM node, trying the GBM platform");
+        rendererState.renderer = CDRMRenderer::attempt(backend.lock(), newAllocator);
+    }
+
+    if (!rendererState.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
+        // Nothing about this GPU changes until it is re-registered, so a retry cannot
+        // succeed. Stop requiring a renderer; otherwise every commit repeats the whole
+        // attempt, which costs tens of milliseconds of CPU per frame and floods the log.
+        rendererRequired = false;
         return false;
     }
 
@@ -1542,6 +1555,8 @@ void Aquamarine::CDRMBackend::onReady() {
             backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
         else {
             auto r = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
+            if (!r)
+                r = CDRMRenderer::attempt(backend.lock(), a); // KMS-only device: no matching EGL device, but GBM works
             if (!r)
                 backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
             else {
