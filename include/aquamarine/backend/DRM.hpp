@@ -5,8 +5,10 @@
 #include "../output/Output.hpp"
 #include "../input/Input.hpp"
 #include "FrameScheduler.hpp"
+#include <cstdint>
 #include <hyprutils/memory/WeakPtr.hpp>
 #include <hyprutils/memory/Atomic.hpp>
+#include <vector>
 #include <wayland-client.h>
 #include <xf86drmMode.h>
 #include <memory>
@@ -153,7 +155,8 @@ namespace Aquamarine {
             } values;
             uint32_t props[18] = {0};
         };
-        UDRMPlaneProps props;
+        UDRMPlaneProps        props;
+        std::vector<uint32_t> unknownProperies;
 
         // only valid when color_range != 0
         union UDRMPlaneColorRange {
@@ -204,10 +207,11 @@ namespace Aquamarine {
             bool ctmStateKnown = false;
         } atomic;
 
-        Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
-        Hyprutils::Memory::CSharedPointer<SDRMPlane> cursor;
-        Hyprutils::Memory::CWeakPointer<CDRMBackend> backend;
-        Hyprutils::Memory::CSharedPointer<CDRMFB>    pendingCursor;
+        Hyprutils::Memory::CSharedPointer<SDRMPlane>              primary;
+        Hyprutils::Memory::CSharedPointer<SDRMPlane>              cursor;
+        std::vector<Hyprutils::Memory::CSharedPointer<SDRMPlane>> planes; // other planes go here
+        Hyprutils::Memory::CWeakPointer<CDRMBackend>              backend;
+        Hyprutils::Memory::CSharedPointer<CDRMFB>                 pendingCursor;
 
         union UDRMCRTCProps {
             struct {
@@ -227,7 +231,8 @@ namespace Aquamarine {
             } values;
             uint32_t props[9] = {0};
         };
-        UDRMCRTCProps props;
+        UDRMCRTCProps         props;
+        std::vector<uint32_t> unknownProperies;
     };
 
     class CDRMOutput : public IOutput {
@@ -250,6 +255,8 @@ namespace Aquamarine {
         virtual bool                                                      pendingIdleFrame();
         virtual uint32_t                                                  commitCapabilities() const;
         virtual SCommitSubmission                                         commitAsync(const SCommitOptions& options);
+        virtual std::vector<SPlaneData>                                   getPlanes();
+        virtual std::optional<SPlaneData>                                 getOverlayPlane();
         void                                                              releaseMgpuResources();
 
         int                                                               getConnectorID();
@@ -425,6 +432,7 @@ namespace Aquamarine {
                 uint32_t content_type;        // not guaranteed to exist
                 uint32_t max_bpc;             // not guaranteed to exist
                 uint32_t Colorspace;          // not guaranteed to exist
+                uint32_t BroadcastRGB;        // not guaranteed to exist
                 uint32_t hdr_output_metadata; // not guaranteed to exist
                 uint32_t tile;                // not guaranteed to exist
 
@@ -432,9 +440,10 @@ namespace Aquamarine {
 
                 uint32_t crtc_id;
             } values;
-            uint32_t props[14] = {0};
+            uint32_t props[15] = {0};
         };
-        UDRMConnectorProps props;
+        UDRMConnectorProps    props;
+        std::vector<uint32_t> unknownProperies;
 
         union UDRMConnectorColorspace {
             struct {
@@ -445,6 +454,16 @@ namespace Aquamarine {
             uint32_t props[3] = {0};
         };
         UDRMConnectorColorspace colorspace;
+
+        union UDRMConnectorBroadcastRGB {
+            struct {
+                uint32_t Automatic;
+                uint32_t Full;
+                uint32_t Limited;
+            } values;
+            uint32_t props[3] = {0};
+        };
+        UDRMConnectorBroadcastRGB broadcastRGB;
     };
 
     class IDRMImplementation {

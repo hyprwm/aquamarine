@@ -47,6 +47,11 @@ namespace Aquamarine {
                                 eOutputColorRange colorRange = AQ_OUTPUT_COLOR_RANGE_AUTO);
         void         planePropsPos(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane, Hyprutils::Math::Vector2D pos);
 
+        void         resetProps(uint32_t id, const std::vector<uint32_t>& props);
+        void         resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
+        void         resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMCRTC> crtc);
+        void         resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane);
+
         void         rollback(SDRMConnectorCommitData& data);
         void         apply(SDRMConnectorCommitData& data);
 
