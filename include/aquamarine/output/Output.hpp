@@ -70,6 +70,7 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_CURSOR_POS         = (1 << 15),
             AQ_OUTPUT_STATE_PLANE_STATE        = (1 << 16),
         };
+#define AQ_OUTPUT_STATE_COUNT 17
 
         struct SPlaneState {
             bool                                       updated = false;
@@ -112,13 +113,13 @@ namespace Aquamarine {
             int                   error() const;
 
           private:
-            CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, 16>& generations);
+            CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, AQ_OUTPUT_STATE_COUNT>& generations);
 
-            const COutputState*            m_owner = nullptr;
-            SInternalState                 m_state;
-            std::array<uint64_t, 16>       m_generations = {};
-            Hyprutils::OS::CFileDescriptor m_explicitInFence;
-            int                            m_error = 0;
+            const COutputState*                         m_owner = nullptr;
+            SInternalState                              m_state;
+            std::array<uint64_t, AQ_OUTPUT_STATE_COUNT> m_generations = {};
+            Hyprutils::OS::CFileDescriptor              m_explicitInFence;
+            int                                         m_error = 0;
 
             friend class COutputState;
         };
@@ -157,11 +158,11 @@ namespace Aquamarine {
         void                  onCommit();
 
       private:
-        SInternalState           internalState;
-        std::array<uint64_t, 16> propertyGenerations = {};
-        uint64_t                 nextGeneration      = 0;
+        SInternalState                              internalState;
+        std::array<uint64_t, AQ_OUTPUT_STATE_COUNT> propertyGenerations = {};
+        uint64_t                                    nextGeneration      = 0;
 
-        void                     markCommitted(uint32_t properties);
+        void                                        markCommitted(uint32_t properties);
 
         friend class IOutput;
         friend class CWaylandOutput;

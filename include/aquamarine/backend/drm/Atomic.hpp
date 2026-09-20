@@ -52,6 +52,7 @@ namespace Aquamarine {
         void         resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMCRTC> crtc);
         void         resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane);
 
+        void         destroyCommitBlobs(SDRMConnectorCommitData& data);
         void         rollback(SDRMConnectorCommitData& data);
         void         apply(SDRMConnectorCommitData& data);
 

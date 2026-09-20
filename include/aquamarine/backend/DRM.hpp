@@ -297,6 +297,12 @@ namespace Aquamarine {
         friend class CDRMBackend;
     };
 
+    struct SDRMPlaneCommitData {
+        Hyprutils::Memory::CSharedPointer<SDRMPlane> plane;
+        Hyprutils::Memory::CSharedPointer<CDRMFB>    fb;
+        uint32_t                                     damage = 0;
+    };
+
     struct SDRMConnectorCommitData {
         Hyprutils::Memory::CSharedPointer<CDRMFB> mainFB, cursorFB;
         COutputState::SInternalState              outputState;
@@ -314,6 +320,7 @@ namespace Aquamarine {
         drmModeModeInfo                           modeInfo;
         std::optional<Hyprutils::Math::Mat3x3>    ctm;
         std::optional<hdr_output_metadata>        hdrMetadata;
+        std::vector<SDRMPlaneCommitData>          planes;
 
         struct {
             uint32_t gammaLut   = 0;
@@ -539,6 +546,9 @@ namespace Aquamarine {
         bool     pauseCommitQueue(uint64_t queueKey);
         void     resumeCommitQueue(uint64_t queueKey);
         uint64_t nextAsyncOwnerID();
+
+        //
+        std::vector<SDRMPlaneCommitData>                      getPlaneCommitData(Hyprutils::Memory::CWeakPointer<SDRMConnector> connector, bool onlyUpdated = true);
 
         Hyprutils::Memory::CSharedPointer<CSessionDevice>     gpu;
         Hyprutils::Memory::CSharedPointer<IDRMImplementation> impl;

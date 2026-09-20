@@ -9,6 +9,7 @@
 #include <format>
 #include <hyprutils/math/Mat3x3.hpp>
 #include <hyprutils/memory/Atomic.hpp>
+#include <hyprutils/memory/WeakPtr.hpp>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
@@ -21,6 +22,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <vector>
 extern "C" {
 #include <libseat.h>
 #include <libudev.h>
@@ -593,6 +595,35 @@ bool Aquamarine::CDRMBackend::sessionActive() {
     return backend->session->active;
 }
 
+std::vector<SDRMPlaneCommitData> Aquamarine::CDRMBackend::getPlaneCommitData(CWeakPointer<SDRMConnector> connector, bool onlyUpdated) {
+    std::vector<SDRMPlaneCommitData> data;
+    if (!onlyUpdated)
+        data.reserve(connector->output->state->state().planeStates.size());
+    auto& STATE = connector->output->state->state();
+    int   i     = 0;
+    for (const auto& state : connector->output->state->state().planeStates) {
+        if (!onlyUpdated || state.updated) {
+            const auto& plane = connector->crtc->planes.at(i);
+            if (state.enabled) {
+                SDRMPlaneCommitData planeData = {
+                    .plane = plane,
+                    .fb    = CDRMFB::create(state.buffer, self, nullptr),
+                };
+                if (connector->crtc->primary->props.values.fb_damage_clips) {
+                    const auto&                 MODE  = STATE.mode ? STATE.mode : STATE.customMode;
+                    std::vector<pixman_box32_t> rects = state.damage.copy().intersect(CBox{{}, MODE->pixelSize}).getRects();
+                    drmModeCreatePropertyBlob(connector->backend->gpu->fd, rects.data(), sizeof(pixman_box32_t) * rects.size(), &planeData.damage);
+                }
+                data.emplace_back(planeData);
+            } else {
+                data.emplace_back(SDRMPlaneCommitData{.plane = plane, .fb = nullptr, .damage = 0});
+            }
+        }
+        i++;
+    }
+    return data;
+}
+
 void Aquamarine::CDRMBackend::restoreAfterVT() {
     backend->log(AQ_LOG_DEBUG, "drm: Restoring after VT switch");
 
@@ -681,6 +712,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
             data.mainFB = drmFB;
         }
+        data.planes = getPlaneCommitData(c);
 
         if (c->crtc->pendingCursor)
             data.cursorFB = c->crtc->pendingCursor;
@@ -2498,6 +2530,8 @@ bool Aquamarine::CDRMOutput::prepareAsyncCommitData(const COutputState::CSnapsho
     } else
         drmFB = CDRMFB::create(STATE.buffer, backend, nullptr);
 
+    data.planes = backend->getPlaneCommitData(connector);
+
     if (!drmFB || drmFB->dead) {
         backend->log(AQ_LOG_ERROR, "drm: Asynchronous commit buffer failed to import to KMS");
         return false;
@@ -2734,6 +2768,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         } else
             drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
 
+        data.planes = backend->getPlaneCommitData(connector);
+
         if (!drmFB) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
             return false;
@@ -2808,6 +2844,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             } else
                 swapchain->rollback();
         }
+        // FIXME same logic for planes?
     }
 
     // Re-send CTM when it changes, when preserving a non-identity CTM over a modeset,

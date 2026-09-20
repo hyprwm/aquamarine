@@ -325,18 +325,14 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->crtc->id, connector->crtc->props.values.vrr_enabled, (uint64_t)STATE.adaptiveSync);
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {}, STATE.colorRange);
-        int i = 0;
-        for (const auto& state : connector->output->state->state().planeStates) {
-            if (state.updated) {
-                const auto& plane = connector->crtc->planes.at(i);
-                if (state.enabled) {
-                    // TODO
-                    // planeProps(plane, , 0, {});
-                    // add(plane->id, plane->props.values.fb_damage_clips, );
-                } else
-                    planeProps(plane, nullptr, 0, {});
+
+        for (const auto& planeData : data.planes) {
+            if (planeData.fb) {
+                planeProps(planeData.plane, planeData.fb, connector->crtc->id, {}, STATE.colorRange);
+                add(planeData.plane->id, planeData.plane->props.values.fb_damage_clips, planeData.damage);
+            } else {
+                planeProps(planeData.plane, nullptr, 0, {});
             }
-            i++;
         }
 
         if (connector->output->supportsExplicit && (data.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) && STATE.explicitInFence >= 0)
@@ -483,6 +479,13 @@ void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CShared
     resetProps(plane->id, plane->unknownProperies);
 }
 
+void Aquamarine::CDRMAtomicRequest::destroyCommitBlobs(SDRMConnectorCommitData& data) {
+    destroyBlob(data.atomic.fbDamage);
+    for (const auto& plane : data.planes) {
+        destroyBlob(plane.damage);
+    }
+}
+
 void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
     if (!conn)
         return;
@@ -493,7 +496,8 @@ void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
     rollbackBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
     rollbackBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     rollbackBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
-    destroyBlob(data.atomic.fbDamage);
+
+    destroyCommitBlobs(data);
 }
 
 void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
@@ -509,7 +513,8 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
     commitBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
     commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     commitBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
-    destroyBlob(data.atomic.fbDamage);
+
+    destroyCommitBlobs(data);
 }
 
 Aquamarine::CDRMAtomicImpl::CDRMAtomicImpl(Hyprutils::Memory::CSharedPointer<CDRMBackend> backend_) : backend(backend_) {

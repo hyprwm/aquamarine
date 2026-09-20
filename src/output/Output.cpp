@@ -70,7 +70,7 @@ bool Aquamarine::IOutput::destroy() {
     return false;
 }
 
-Aquamarine::COutputState::CSnapshot::CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, 16>& generations) :
+Aquamarine::COutputState::CSnapshot::CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, AQ_OUTPUT_STATE_COUNT>& generations) :
     m_owner(owner), m_state(state), m_generations(generations) {
     if (!(m_state.committed & AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) || m_state.explicitInFence < 0)
         return;
@@ -136,10 +136,9 @@ void Aquamarine::COutputState::consume(const CSnapshot& snapshot) {
         internalState.committed &= ~property;
         if (property == AQ_OUTPUT_STATE_DAMAGE)
             internalState.damage.clear();
+        if (property == AQ_OUTPUT_STATE_PLANE_STATE)
+            onCommit();
     }
-
-    // FIXME use snapshot
-    onCommit();
 }
 
 void Aquamarine::COutputState::rearm(const CSnapshot& snapshot) {
@@ -275,10 +274,13 @@ void Aquamarine::COutputState::setPlaneEnabled(uint32_t planeIdx, bool enabled) 
     if (planeIdx >= internalState.planeStates.size())
         return;
 
+    if (internalState.planeStates.at(planeIdx).enabled == enabled)
+        return;
+
     internalState.planeStates.at(planeIdx).enabled = enabled;
     internalState.planeStates.at(planeIdx).updated = true;
 
-    internalState.committed |= AQ_OUTPUT_STATE_PLANE_STATE;
+    markCommitted(AQ_OUTPUT_STATE_PLANE_STATE);
 }
 
 void Aquamarine::COutputState::setPlaneBuffer(uint32_t planeIdx, Hyprutils::Memory::CSharedPointer<IBuffer> buffer) {
@@ -288,7 +290,7 @@ void Aquamarine::COutputState::setPlaneBuffer(uint32_t planeIdx, Hyprutils::Memo
     internalState.planeStates.at(planeIdx).buffer  = buffer;
     internalState.planeStates.at(planeIdx).updated = true;
 
-    internalState.committed |= AQ_OUTPUT_STATE_PLANE_STATE;
+    markCommitted(AQ_OUTPUT_STATE_PLANE_STATE);
 }
 
 void Aquamarine::COutputState::setPlaneGeometry(uint32_t planeIdx, const Hyprutils::Math::CBox& box) {
@@ -298,7 +300,7 @@ void Aquamarine::COutputState::setPlaneGeometry(uint32_t planeIdx, const Hypruti
     internalState.planeStates.at(planeIdx).geometry = box;
     internalState.planeStates.at(planeIdx).updated  = true;
 
-    internalState.committed |= AQ_OUTPUT_STATE_PLANE_STATE;
+    markCommitted(AQ_OUTPUT_STATE_PLANE_STATE);
 }
 
 void Aquamarine::COutputState::addPlaneDamage(uint32_t planeIdx, const Hyprutils::Math::CRegion& region) {
@@ -308,7 +310,7 @@ void Aquamarine::COutputState::addPlaneDamage(uint32_t planeIdx, const Hyprutils
     internalState.planeStates.at(planeIdx).damage.add(region);
     internalState.planeStates.at(planeIdx).updated = true;
 
-    internalState.committed |= AQ_OUTPUT_STATE_PLANE_STATE;
+    markCommitted(AQ_OUTPUT_STATE_PLANE_STATE);
 }
 
 void Aquamarine::COutputState::onCommit() {
