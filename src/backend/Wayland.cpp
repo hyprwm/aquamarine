@@ -182,7 +182,8 @@ bool Aquamarine::CWaylandBackend::createOutput(const std::string& szName) {
     o->self = o;
     if (backend->ready)
         o->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
-    idleCallbacks.emplace_back([this, o]() { backend->events.newOutput.emit(SP<IOutput>(o)); });
+    // Start the configure handshake even when there is no other host traffic.
+    wl_display_flush(waylandState.display);
     return true;
 }
 
@@ -229,12 +230,17 @@ bool Aquamarine::CWaylandBackend::setCursor(Hyprutils::Memory::CSharedPointer<IB
 }
 
 void Aquamarine::CWaylandBackend::onReady() {
-    for (auto const& o : outputs) {
+    const auto OUTPUTS = outputs;
+    for (auto const& o : OUTPUTS) {
+        if (std::ranges::find(outputs, o) == outputs.end())
+            continue;
+
         o->swapchain = CSwapchain::create(backend->primaryAllocator, self.lock());
         if (!o->swapchain) {
             backend->log(AQ_LOG_ERROR, std::format("Output {} failed: swapchain creation failed", o->name));
             continue;
         }
+        o->applyConfigure();
     }
 }
 
@@ -526,6 +532,12 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
     waylandState.xdgSurface->setConfigure([this](CCXdgSurface* r, uint32_t serial) {
         backend->backend->log(AQ_LOG_DEBUG, std::format("Output {}: configure surface with {}", name, serial));
         r->sendAckConfigure(serial);
+
+        // Retain the acknowledged size for consumers that attach their listeners later.
+        if (modes.empty())
+            modes.emplace_back(makeShared<SOutputMode>(SOutputMode{.refreshRate = 60000, .preferred = true}));
+        modes.front()->pixelSize = waylandState.pendingSize;
+        applyConfigure();
     });
 
     waylandState.xdgToplevel = makeShared<CCXdgToplevel>(waylandState.xdgSurface->sendGetToplevel());
@@ -545,12 +557,8 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
             w = 1280;
             h = 720;
         }
-        events.state.emit(SStateEvent{.size = {w, h}});
-        // Kick off the first frame synchronously: the consumer expects events.frame in
-        // the same dispatch cycle as the toplevel configure. Deferring via scheduleFrame's
-        // idle races the first commit and can leave the output blank until the next event.
-        needsFrame = true;
-        sched.frameReady.emit();
+        // The following xdg_surface.configure completes and acknowledges this size.
+        waylandState.pendingSize = {w, h};
     });
 
     waylandState.xdgToplevel->setClose([this](CCXdgToplevel* r) { destroy(); });
@@ -568,6 +576,32 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
     inputRegion->sendDestroy();
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("Output {}: initialized", name));
+}
+
+void Aquamarine::CWaylandOutput::applyConfigure() {
+    if (!backend->backend->ready || !swapchain || modes.empty())
+        return;
+
+    // Signal handlers may destroy the output. Keep it alive and stop notifying it
+    // if it is removed from the backend during an announcement or state change.
+    const auto OUTPUT = self.lock();
+    const auto ACTIVE = [&]() { return std::ranges::find(backend->outputs, OUTPUT) != backend->outputs.end(); };
+    if (!ACTIVE())
+        return;
+
+    if (!waylandState.announced) {
+        waylandState.announced = true;
+        backend->backend->events.newOutput.emit(SP<IOutput>(OUTPUT));
+        if (!ACTIVE())
+            return;
+    }
+
+    events.state.emit(SStateEvent{.size = modes.front()->pixelSize});
+    if (!ACTIVE())
+        return;
+
+    needsFrame = true;
+    sched.frameReady.emit();
 }
 
 Aquamarine::CWaylandOutput::~CWaylandOutput() {
