@@ -497,7 +497,7 @@ void Aquamarine::CDRMBackend::emitAsyncCommitEvent(SP<CDRMOutput> output) {
 
 void Aquamarine::CDRMBackend::flushAsyncCommitEvents() {
     for (const auto& connector : connectors) {
-        if (connector->output && connector->output->asyncCommitEventPending)
+        if (connector && connector->output && connector->output->asyncCommitEventPending)
             emitAsyncCommitEvent(connector->output);
     }
 }
