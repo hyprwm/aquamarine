@@ -9,6 +9,7 @@
 #include <format>
 #include <hyprutils/math/Mat3x3.hpp>
 #include <hyprutils/memory/Atomic.hpp>
+#include <hyprutils/memory/WeakPtr.hpp>
 #include <hyprutils/string/VarList.hpp>
 #include <chrono>
 #include <thread>
@@ -21,6 +22,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <vector>
 extern "C" {
 #include <libseat.h>
 #include <libudev.h>
@@ -593,6 +595,35 @@ bool Aquamarine::CDRMBackend::sessionActive() {
     return backend->session->active;
 }
 
+std::vector<SDRMPlaneCommitData> Aquamarine::CDRMBackend::getPlaneCommitData(CWeakPointer<SDRMConnector> connector, bool onlyUpdated) {
+    std::vector<SDRMPlaneCommitData> data;
+    if (!onlyUpdated)
+        data.reserve(connector->output->state->state().planeStates.size());
+    auto& STATE = connector->output->state->state();
+    int   i     = 0;
+    for (const auto& state : connector->output->state->state().planeStates) {
+        if (!onlyUpdated || state.updated) {
+            const auto& plane = connector->crtc->planes.at(i);
+            if (state.enabled) {
+                SDRMPlaneCommitData planeData = {
+                    .plane = plane,
+                    .fb    = CDRMFB::create(state.buffer, self, nullptr),
+                };
+                if (connector->crtc->primary->props.values.fb_damage_clips) {
+                    const auto&                 MODE  = STATE.mode ? STATE.mode : STATE.customMode;
+                    std::vector<pixman_box32_t> rects = state.damage.copy().intersect(CBox{{}, MODE->pixelSize}).getRects();
+                    drmModeCreatePropertyBlob(connector->backend->gpu->fd, rects.data(), sizeof(pixman_box32_t) * rects.size(), &planeData.damage);
+                }
+                data.emplace_back(planeData);
+            } else {
+                data.emplace_back(SDRMPlaneCommitData{.plane = plane, .fb = nullptr, .damage = 0});
+            }
+        }
+        i++;
+    }
+    return data;
+}
+
 void Aquamarine::CDRMBackend::restoreAfterVT() {
     backend->log(AQ_LOG_DEBUG, "drm: Restoring after VT switch");
 
@@ -681,6 +712,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
             data.mainFB = drmFB;
         }
+        data.planes = getPlaneCommitData(c);
 
         if (c->crtc->pendingCursor)
             data.cursorFB = c->crtc->pendingCursor;
@@ -736,6 +768,11 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
         backend->log(AQ_LOG_ERROR, std::format("drm: DRM_CLIENT_CAP_UNIVERSAL_PLANES unsupported"));
         return false;
     }
+
+#ifdef DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE
+    if (drmSetClientCap(gpu->fd, DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE, 1))
+        backend->log(AQ_LOG_WARNING, std::format("drm: DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE unsupported"));
+#endif
 
     drmProps.supportsAsyncCommit = drmGetCap(gpu->fd, DRM_CAP_ASYNC_PAGE_FLIP, &cap) == 0 && cap == 1;
     drmProps.supportsTimelines   = drmGetCap(gpu->fd, DRM_CAP_SYNCOBJ_TIMELINE, &cap) == 0 && cap == 1;
@@ -805,7 +842,7 @@ bool Aquamarine::CDRMBackend::initResources() {
 
         CRTC->legacy.gammaSize = drmCRTC->gamma_size;
 
-        if (!getDRMCRTCProps(gpu->fd, CRTC->id, &CRTC->props)) {
+        if (!getDRMCRTCProps(gpu->fd, CRTC->id, &CRTC->props, CRTC->unknownProperies)) {
             backend->log(AQ_LOG_ERROR, std::format("drm: getDRMCRTCProps for crtc {} failed", CRTC->id));
             return false;
         }
@@ -850,7 +887,10 @@ bool Aquamarine::CDRMBackend::initResources() {
     }
 
     success = true;
-    return true;
+
+    for (const auto& crtc : crtcs) {}
+
+    return success;
 }
 
 bool Aquamarine::CDRMBackend::shouldBlit() {
@@ -1650,14 +1690,26 @@ Hyprutils::Memory::CWeakPointer<IBackendImplementation> Aquamarine::CDRMBackend:
 bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
     id = plane->plane_id;
 
-    if (!getDRMPlaneProps(backend->gpu->fd, id, &props))
+    if (!getDRMPlaneProps(backend->gpu->fd, id, &props, unknownProperies))
         return false;
 
     if (props.values.color_range)
         getDRMPlaneColorRange(backend->gpu->fd, props.values.color_range, &colorRange);
 
+    for (const auto& id : unknownProperies) {
+        drmModePropertyRes* prop = drmModeGetProperty(backend->gpu->fd, id);
+        if (!prop)
+            continue;
+
+        backend->backend->log(AQ_LOG_DEBUG, std::format("drm: unknown prop {} ({})", id, prop->name));
+        drmModeFreeProperty(prop);
+    }
+
     if (!getDRMProp(backend->gpu->fd, id, props.values.type, &type))
         return false;
+
+    if (props.values.color_range)
+        getDRMPlaneColorRange(backend->gpu->fd, props.values.color_range, &colorRange);
 
     initialID = id;
 
@@ -1712,11 +1764,19 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
         auto CRTC = backend->crtcs.at(i);
         if (type == DRM_PLANE_TYPE_PRIMARY && !CRTC->primary) {
             CRTC->primary = self.lock();
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CRTC {} gets assigned plane {} as primary", CRTC->id, id)));
             break;
         }
 
         if (type == DRM_PLANE_TYPE_CURSOR && !CRTC->cursor) {
             CRTC->cursor = self.lock();
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CRTC {} gets assigned plane {} as cursor", CRTC->id, id)));
+            break;
+        }
+
+        if (std::find(CRTC->planes.begin(), CRTC->planes.end(), self) == CRTC->planes.end()) {
+            CRTC->planes.emplace_back(self.lock());
+            TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: CRTC {} gets added plane {} as general-purpose misc", CRTC->id, id)));
             break;
         }
     }
@@ -1764,10 +1824,12 @@ SP<SDRMCRTC> Aquamarine::SDRMConnector::getCurrentCRTC(const drmModeConnector* c
 }
 
 bool Aquamarine::SDRMConnector::init(drmModeConnector* connector) {
-    if (!getDRMConnectorProps(backend->gpu->fd, id, &props))
+    if (!getDRMConnectorProps(backend->gpu->fd, id, &props, unknownProperies))
         return false;
     if (props.values.Colorspace)
         getDRMConnectorColorspace(backend->gpu->fd, props.values.Colorspace, &colorspace);
+    if (props.values.BroadcastRGB)
+        getDRMConnectorBroadcastRGB(backend->gpu->fd, props.values.BroadcastRGB, &broadcastRGB);
 
     auto name = drmModeGetConnectorTypeName(connector->connector_type);
     if (!name)
@@ -1999,6 +2061,9 @@ void Aquamarine::SDRMConnector::recheckCRTCProps() {
 
     backend->backend->log(AQ_LOG_DEBUG,
                           std::format("drm: connector {} crtc {} Colorspace ({})", szName, (props.values.Colorspace ? "supports" : "doesn't support"), props.values.Colorspace));
+
+    backend->backend->log(
+        AQ_LOG_DEBUG, std::format("drm: connector {} crtc {} Broadcast RGB ({})", szName, (props.values.BroadcastRGB ? "supports" : "doesn't support"), props.values.BroadcastRGB));
 }
 
 void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
@@ -2465,6 +2530,8 @@ bool Aquamarine::CDRMOutput::prepareAsyncCommitData(const COutputState::CSnapsho
     } else
         drmFB = CDRMFB::create(STATE.buffer, backend, nullptr);
 
+    data.planes = backend->getPlaneCommitData(connector);
+
     if (!drmFB || drmFB->dead) {
         backend->log(AQ_LOG_ERROR, "drm: Asynchronous commit buffer failed to import to KMS");
         return false;
@@ -2701,6 +2768,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         } else
             drmFB = CDRMFB::create(STATE.buffer, backend, nullptr); // will return attachment if present
 
+        data.planes = backend->getPlaneCommitData(connector);
+
         if (!drmFB) {
             backend->backend->log(AQ_LOG_ERROR, "drm: Buffer failed to import to KMS");
             return false;
@@ -2775,6 +2844,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             } else
                 swapchain->rollback();
         }
+        // FIXME same logic for planes?
     }
 
     // Re-send CTM when it changes, when preserving a non-identity CTM over a modeset,
@@ -3239,6 +3309,39 @@ bool Aquamarine::CDRMOutput::pendingIdleFrame() {
     return connector->sched.frameScheduled();
 }
 
+std::vector<Aquamarine::IOutput::SPlaneData> Aquamarine::CDRMOutput::getPlanes() {
+    std::vector<Aquamarine::IOutput::SPlaneData> result(connector->crtc->planes.size());
+    uint32_t                                     i = 0;
+    for (const auto& p : connector->crtc->planes) {
+        result.push_back(Aquamarine::IOutput::SPlaneData{
+            .renderFormats = p->formats,
+            .type          = AQ_PLANE_GENERIC,
+            .id            = p->id,
+            .index         = i++,
+        });
+    }
+    return result;
+}
+
+std::optional<Aquamarine::IOutput::SPlaneData> Aquamarine::CDRMOutput::getOverlayPlane() {
+    if (!connector || !connector->crtc || !connector->crtc->planes.size())
+        return {};
+    const auto& overlay = connector->crtc->planes.back();
+    ASSERT(overlay->type == DRM_PLANE_TYPE_OVERLAY);
+    if (!overlaySwapchain) {
+        auto primaryBackend = backend->primary ? backend->primary : backend;
+        overlaySwapchain    = CSwapchain::create(backend->backend->primaryAllocator, primaryBackend.lock());
+        overlaySwapchain->reconfigure(SSwapchainOptions{.length = 0, .scanout = true, .multigpu = !!backend->primary, .scanoutOutput = self});
+    }
+    return Aquamarine::IOutput::SPlaneData{
+        .renderFormats = overlay->formats,
+        .type          = AQ_PLANE_GENERIC,
+        .id            = overlay->id,
+        .index         = (uint32_t)(connector->crtc->planes.size() - 1),
+        .swapchain     = overlaySwapchain,
+    };
+}
+
 int Aquamarine::CDRMOutput::getConnectorID() {
     return connector->id;
 }
@@ -3255,6 +3358,7 @@ Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::
 
     // scheduled from inside a running frame, schedule it once the running frame is done.
     rescheduleListener = connector->sched.rescheduleNeeded.listen([this]() { scheduleFrame(AQ_SCHEDULE_NEEDS_FRAME); });
+    state->internalState.planeStates.resize(connector->crtc->planes.size());
 }
 
 SP<CDRMFB> Aquamarine::CDRMFB::create(SP<IBuffer> buffer_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, bool* isNew) {

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <array>
+#include <cstdint>
 #include <vector>
 #include <optional>
 #include <hyprutils/signal/Signal.hpp>
@@ -67,6 +68,17 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_WCG                = (1 << 13),
             AQ_OUTPUT_STATE_CURSOR_SHAPE       = (1 << 14),
             AQ_OUTPUT_STATE_CURSOR_POS         = (1 << 15),
+            AQ_OUTPUT_STATE_PLANE_STATE        = (1 << 16),
+        };
+#define AQ_OUTPUT_STATE_COUNT 17
+
+        struct SPlaneState {
+            bool                                       updated = false;
+
+            bool                                       enabled = false;
+            Hyprutils::Math::CRegion                   damage;
+            Hyprutils::Math::CBox                      geometry;
+            Hyprutils::Memory::CSharedPointer<IBuffer> buffer;
         };
 
         struct SInternalState {
@@ -89,6 +101,7 @@ namespace Aquamarine {
             hdr_output_metadata                            hdrMetadata    = {};
             uint16_t                                       contentType    = DRM_MODE_CONTENT_TYPE_GRAPHICS;
             eOutputColorRange                              colorRange     = AQ_OUTPUT_COLOR_RANGE_AUTO;
+            std::vector<SPlaneState>                       planeStates;
         };
 
         class CSnapshot {
@@ -100,13 +113,13 @@ namespace Aquamarine {
             int                   error() const;
 
           private:
-            CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, 16>& generations);
+            CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, AQ_OUTPUT_STATE_COUNT>& generations);
 
-            const COutputState*            m_owner = nullptr;
-            SInternalState                 m_state;
-            std::array<uint64_t, 16>       m_generations = {};
-            Hyprutils::OS::CFileDescriptor m_explicitInFence;
-            int                            m_error = 0;
+            const COutputState*                         m_owner = nullptr;
+            SInternalState                              m_state;
+            std::array<uint64_t, AQ_OUTPUT_STATE_COUNT> m_generations = {};
+            Hyprutils::OS::CFileDescriptor              m_explicitInFence;
+            int                                         m_error = 0;
 
             friend class COutputState;
         };
@@ -138,12 +151,18 @@ namespace Aquamarine {
         void                  setContentType(const uint16_t drmContentType);
         void                  setColorRange(eOutputColorRange range);
 
-      private:
-        SInternalState           internalState;
-        std::array<uint64_t, 16> propertyGenerations = {};
-        uint64_t                 nextGeneration      = 0;
+        void                  setPlaneEnabled(uint32_t planeIdx, bool enabled);
+        void                  setPlaneBuffer(uint32_t planeIdx, Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
+        void                  setPlaneGeometry(uint32_t planeIdx, const Hyprutils::Math::CBox& box);
+        void                  addPlaneDamage(uint32_t planeIdx, const Hyprutils::Math::CRegion& region);
+        void                  onCommit();
 
-        void                     markCommitted(uint32_t properties);
+      private:
+        SInternalState                              internalState;
+        std::array<uint64_t, AQ_OUTPUT_STATE_COUNT> propertyGenerations = {};
+        uint64_t                                    nextGeneration      = 0;
+
+        void                                        markCommitted(uint32_t properties);
 
         friend class IOutput;
         friend class CWaylandOutput;
@@ -235,6 +254,21 @@ namespace Aquamarine {
             bool                               supportsBT2020 = false;
         };
 
+        enum ePlaneType : uint32_t {
+            AQ_PLANE_UNKNOWN = 0,
+            AQ_PLANE_PRIMARY,
+            AQ_PLANE_GENERIC,
+            AQ_PLANE_CURSOR,
+        };
+
+        struct SPlaneData {
+            std::vector<SDRMFormat>                       renderFormats; // empty if unknown / not specified -> use getRenderFormats()
+            ePlaneType                                    type  = AQ_PLANE_UNKNOWN;
+            uint32_t                                      id    = 0;
+            uint32_t                                      index = 0;
+            Hyprutils::Memory::CSharedPointer<CSwapchain> swapchain;
+        };
+
         virtual bool                                                      commit()           = 0;
         virtual bool                                                      test()             = 0;
         virtual Hyprutils::Memory::CSharedPointer<IBackendImplementation> getBackend()       = 0;
@@ -254,6 +288,8 @@ namespace Aquamarine {
         virtual bool                                                      pendingIdleFrame() = 0;
         virtual uint32_t                                                  commitCapabilities() const;
         virtual SCommitSubmission                                         commitAsync(const SCommitOptions& options);
+        virtual std::vector<SPlaneData>                                   getPlanes();
+        virtual std::optional<SPlaneData>                                 getOverlayPlane();
 
         std::string                                                       name, description, make, model, serial;
         SParsedEDID                                                       parsedEDID;
@@ -270,6 +306,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<COutputState>             state = Hyprutils::Memory::makeShared<COutputState>();
 
         Hyprutils::Memory::CSharedPointer<CSwapchain>               swapchain;
+        Hyprutils::Memory::CSharedPointer<CSwapchain>               overlaySwapchain;
 
         //
 
