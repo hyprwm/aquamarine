@@ -64,6 +64,7 @@ namespace Aquamarine {
         Hyprutils::Memory::CSharedPointer<CWaylandBuffer> wlBufferFromBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buffer);
 
         void                                              onFrameDone();
+        void                                              applyConfigure();
         void                                              onEnter(Hyprutils::Memory::CSharedPointer<CCWlPointer> pointer, uint32_t serial);
 
         // frame loop — unified scheduler shared with DRM. See CFrameScheduler.
@@ -90,6 +91,8 @@ namespace Aquamarine {
             Hyprutils::Memory::CSharedPointer<CCXdgToplevel> xdgToplevel;
             Hyprutils::Memory::CSharedPointer<CCWlCallback>  frameCallback;
             Hyprutils::Math::Vector2D                        surfaceSize;
+            Hyprutils::Math::Vector2D                        pendingSize;
+            bool                                             announced = false;
         } waylandState;
 
         friend class CWaylandBackend;
