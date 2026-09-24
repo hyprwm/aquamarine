@@ -71,7 +71,7 @@ target_include_directories(
   PRIVATE "./src" "./src/include" "./protocols" "${CMAKE_BINARY_DIR}")
 set_target_properties(aquamarine PROPERTIES VERSION ${AQUAMARINE_VERSION}
                                             SOVERSION 14)
-target_link_libraries(aquamarine OpenGL::EGL OpenGL::OpenGL PkgConfig::deps Threads::Threads)
+target_link_libraries(aquamarine OpenGL::EGL OpenGL::GLES3 PkgConfig::deps Threads::Threads)
 
 check_include_file("sys/timerfd.h" HAS_TIMERFD)
 pkg_check_modules(epoll IMPORTED_TARGET epoll-shim)
