@@ -694,8 +694,13 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
                      std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, data.modeInfo.clock, data.modeInfo.hdisplay,
                                  data.modeInfo.vdisplay, data.modeInfo.vrefresh));
 
-        if (!impl->commit(c, data))
+        if (!impl->commit(c, data)) {
             backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
+            continue;
+        }
+
+        // the restore commit has no page flip event, so nothing would re-arm the frame scheduler
+        c->output->scheduleFrame(IOutput::AQ_SCHEDULE_NEEDS_FRAME);
     }
 
     for (auto const& c : noMode) {
