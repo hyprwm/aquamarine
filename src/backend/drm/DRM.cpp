@@ -2007,6 +2007,20 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         return;
     }
 
+    // A prior output on this connector's CRTC may have gone away abruptly
+    // (e.g. the underlying link was torn down mid-commit, as happens when a
+    // Thunderbolt/USB4-tunneled display's tunnel is torn down during system
+    // suspend) rather than through a graceful disconnect() -- which is the
+    // only other place that clears crtc->pendingFlip. setCRTC() only clears
+    // it when the CRTC assignment actually *changes*, which it usually won't
+    // for the same physical connector reconnecting to the same CRTC. Without
+    // this, a stale pendingFlip persists across the reconnect and every real
+    // commit on this CRTC is silently rejected forever -- the same
+    // "Cannot commit when a page-flip is awaiting" / permanently-black-output
+    // failure mode restoreAfterVT() already guards against for session
+    // reactivation, just reached via a hotplug reconnect instead.
+    invalidateFrame();
+
     // max_bpc-less retry is per-sink and must not persist across hotplugs.
     maxBpcFailed = false;
 
