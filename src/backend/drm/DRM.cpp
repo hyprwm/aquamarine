@@ -1,3 +1,4 @@
+
 #include "aquamarine/output/Output.hpp"
 #include <algorithm>
 #include <aquamarine/backend/DRM.hpp>
@@ -2106,6 +2107,9 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     status = DRM_MODE_CONNECTED;
 
     recheckCRTCProps();
+
+    // invalidate any stale state
+    invalidateFrame();
 
     if (!backend->backend->ready)
         return;
