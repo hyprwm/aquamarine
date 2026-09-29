@@ -587,7 +587,8 @@ void Aquamarine::CDRMBackend::dispatchCommitResults() {
 }
 
 void Aquamarine::CDRMBackend::log(eBackendLogLevel l, const std::string& s) {
-    backend->log(l, s);
+    if (backend)
+        backend->log(l, s);
 }
 
 bool Aquamarine::CDRMBackend::sessionActive() {
