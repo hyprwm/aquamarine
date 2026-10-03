@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <drm_mode.h>
+#include <vector>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <sys/mman.h>
@@ -280,6 +281,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
                 add(connector->id, connector->props.values.Colorspace, newColorspace);
         }
 
+        if (connector->props.values.BroadcastRGB && connector->broadcastRGB.values.Full)
+            add(connector->id, connector->props.values.BroadcastRGB, connector->broadcastRGB.values.Full);
+
         if (connector->props.values.hdr_output_metadata && data.atomic.hdrd)
             add(connector->id, connector->props.values.hdr_output_metadata, data.atomic.hdrBlob);
     } else
@@ -322,6 +326,15 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         planeProps(connector->crtc->primary, data.mainFB, connector->crtc->id, {}, STATE.colorRange);
 
+        for (const auto& planeData : data.planes) {
+            if (planeData.fb) {
+                planeProps(planeData.plane, planeData.fb, connector->crtc->id, {}, STATE.colorRange);
+                add(planeData.plane->id, planeData.plane->props.values.fb_damage_clips, planeData.damage);
+            } else {
+                planeProps(planeData.plane, nullptr, 0, {});
+            }
+        }
+
         if (connector->output->supportsExplicit && (data.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) && STATE.explicitInFence >= 0)
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.in_fence_fd, STATE.explicitInFence);
 
@@ -329,6 +342,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
             add(connector->crtc->primary->id, connector->crtc->primary->props.values.fb_damage_clips, data.atomic.fbDamage);
     } else {
         planeProps(connector->crtc->primary, nullptr, 0, {});
+        for (const auto& plane : connector->crtc->planes) {
+            planeProps(plane, nullptr, 0, {});
+        }
     }
 }
 
@@ -433,6 +449,43 @@ void Aquamarine::CDRMAtomicRequest::rollbackBlob(uint32_t* current, uint32_t nex
     destroyBlob(next);
 }
 
+void Aquamarine::CDRMAtomicRequest::resetProps(uint32_t id, const std::vector<uint32_t>& props) {
+    for (auto prop : props) {
+        add(id, prop, 0);
+    }
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector) {
+    if (!connector)
+        return;
+    resetProps(connector->id, connector->unknownProperies);
+    resetUnknownProps(connector->crtc);
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMCRTC> crtc) {
+    if (!crtc)
+        return;
+    resetProps(crtc->id, crtc->unknownProperies);
+    resetUnknownProps(crtc->primary);
+    resetUnknownProps(crtc->cursor);
+    for (const auto& plane : crtc->planes) {
+        resetUnknownProps(plane);
+    }
+}
+
+void Aquamarine::CDRMAtomicRequest::resetUnknownProps(Hyprutils::Memory::CSharedPointer<SDRMPlane> plane) {
+    if (!plane)
+        return;
+    resetProps(plane->id, plane->unknownProperies);
+}
+
+void Aquamarine::CDRMAtomicRequest::destroyCommitBlobs(SDRMConnectorCommitData& data) {
+    destroyBlob(data.atomic.fbDamage);
+    for (const auto& plane : data.planes) {
+        destroyBlob(plane.damage);
+    }
+}
+
 void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
     if (!conn)
         return;
@@ -443,7 +496,8 @@ void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
     rollbackBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
     rollbackBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     rollbackBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
-    destroyBlob(data.atomic.fbDamage);
+
+    destroyCommitBlobs(data);
 }
 
 void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
@@ -459,7 +513,8 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
     commitBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
     commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     commitBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
-    destroyBlob(data.atomic.fbDamage);
+
+    destroyCommitBlobs(data);
 }
 
 Aquamarine::CDRMAtomicImpl::CDRMAtomicImpl(Hyprutils::Memory::CSharedPointer<CDRMBackend> backend_) : backend(backend_) {
