@@ -171,6 +171,13 @@ add_test(
   COMMAND commitThread "commitThread")
 add_dependencies(tests commitThread)
 
+add_executable(atomicRestore "tests/AtomicRestore.cpp")
+target_include_directories(atomicRestore PRIVATE "./src/backend/drm")
+add_test(
+  NAME "atomicRestore"
+  COMMAND atomicRestore)
+add_dependencies(tests atomicRestore)
+
 # Installation
 install(TARGETS aquamarine)
 install(DIRECTORY "include/aquamarine" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

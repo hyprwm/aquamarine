@@ -8,6 +8,8 @@
 #include <sys/mman.h>
 #include <sstream>
 #include <optional>
+#include "../AtomicRestore.hpp"
+#include "../Props.hpp"
 #include "Shared.hpp"
 #include "aquamarine/output/Output.hpp"
 
@@ -230,6 +232,78 @@ void Aquamarine::CDRMAtomicRequest::setConnector(Hyprutils::Memory::CSharedPoint
     conn = connector;
 }
 
+void Aquamarine::CDRMAtomicRequest::addStaleCrtcCleanup(SP<SDRMConnector> connector, uint32_t targetCrtc) {
+    if (failed || (connector->output && connector->output->lease && connector->output->lease->active))
+        return;
+
+    const auto FD          = backend->gpu->fd;
+    uint64_t   currentCrtc = 0;
+    if (!getDRMProp(FD, connector->id, connector->props.values.crtc_id, &currentCrtc)) {
+        backend->log(AQ_LOG_ERROR, "atomic drm: failed to read connector CRTC_ID before modeset");
+        failed = true;
+        return;
+    }
+    if (!currentCrtc || currentCrtc == targetCrtc)
+        return;
+
+    std::vector<uint32_t> reservedCrtcs, leasedPlanes;
+    for (const auto& c : backend->connectors) {
+        if (!c->crtc)
+            continue;
+        reservedCrtcs.emplace_back(c->crtc->id);
+        if (c->output && c->output->lease && c->output->lease->active) {
+            if (c->crtc->primary)
+                leasedPlanes.emplace_back(c->crtc->primary->id);
+            if (c->crtc->cursor)
+                leasedPlanes.emplace_back(c->crtc->cursor->id);
+        }
+    }
+    if (std::ranges::find(reservedCrtcs, currentCrtc) != reservedCrtcs.end())
+        return;
+
+    std::vector<SAtomicConnectorBinding> bindings{{connector->id, static_cast<uint32_t>(currentCrtc)}};
+    for (const auto& c : backend->connectors) {
+        if (c == connector || (c->output && c->output->lease && c->output->lease->active))
+            continue;
+        uint64_t crtc = 0;
+        if (!getDRMProp(FD, c->id, c->props.values.crtc_id, &crtc)) {
+            backend->log(AQ_LOG_ERROR, "atomic drm: failed to read connector routing before modeset");
+            failed = true;
+            return;
+        }
+        bindings.push_back({c->id, static_cast<uint32_t>(crtc)});
+    }
+
+    const auto STALE = staleCrtcForConnector(connector->id, targetCrtc, bindings, reservedCrtcs);
+    if (!STALE)
+        return;
+    const auto CRTC = backend->crtcByID(*STALE);
+    if (!CRTC) {
+        backend->log(AQ_LOG_ERROR, "atomic drm: connector references an unknown CRTC");
+        failed = true;
+        return;
+    }
+
+    // fbcon may have moved this connector while our session was inactive. Clear
+    // its old controller in the same transaction as the new routing, not in a
+    // separate all-outputs-off commit. Query planes rather than trusting caches.
+    for (const auto& plane : backend->planes) {
+        if (std::ranges::find(leasedPlanes, plane->id) != leasedPlanes.end())
+            continue;
+        uint64_t crtc = 0;
+        if (!getDRMProp(FD, plane->id, plane->props.values.crtc_id, &crtc)) {
+            backend->log(AQ_LOG_ERROR, "atomic drm: failed to read plane CRTC_ID before modeset");
+            failed = true;
+            return;
+        }
+        if (crtc == *STALE)
+            planeProps(plane, nullptr, 0, {});
+    }
+    add(CRTC->id, CRTC->props.values.mode_id, 0);
+    add(CRTC->id, CRTC->props.values.active, 0);
+    backend->log(AQ_LOG_DEBUG, std::format("atomic drm: disabling stale CRTC {} while moving {} to CRTC {}", *STALE, connector->szName, targetCrtc));
+}
+
 void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE  = data.outputState;
     const bool  enable = data.enabled && data.mainFB;
@@ -242,6 +316,9 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
     conn = connector;
+
+    if (data.modeset)
+        addStaleCrtcCleanup(connector, enable ? connector->crtc->id : 0);
 
     // page-flips that don't change connector state must avoid touching connector_state
     // entirely, otherwise the kernel runs drm_atomic_helper_check_modeset every frame and
