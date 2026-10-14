@@ -503,6 +503,7 @@ namespace Aquamarine {
         bool     initResources();
         bool     initMgpu();
         bool     updateSecondaryRendererState(DRMFBList* retired = nullptr);
+        bool     recoverLostRenderer();
         bool     grabFormats();
         bool     shouldBlit();
         void     scanConnectors();

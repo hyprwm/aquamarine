@@ -891,6 +891,29 @@ bool Aquamarine::CDRMBackend::initMgpu() {
     return true;
 }
 
+bool Aquamarine::CDRMBackend::recoverLostRenderer() {
+    if (!rendererState.renderer || !rendererState.renderer->contextLost())
+        return false;
+
+    backend->log(AQ_LOG_WARNING, std::format("drm: Renderer on {} lost its context (GPU reset?), recreating it", gpu->path));
+
+    // buffers keep their GL attachments to the old renderer, blit() recreates them for the new one.
+    // The allocator and the swapchains don't depend on the GL context, keep them.
+    rendererState.renderer.reset();
+    rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
+
+    if (!rendererState.renderer) {
+        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to recreate the renderer on {}", gpu->path));
+        return false;
+    }
+
+    rendererState.renderer->self = rendererState.renderer;
+
+    buildGlFormats(rendererState.renderer->formats);
+
+    return true;
+}
+
 bool Aquamarine::CDRMBackend::updateSecondaryRendererState(DRMFBList* deferred) {
     if (!backend->ready)
         return true;
@@ -2444,8 +2467,10 @@ bool Aquamarine::CDRMOutput::prepareAsyncCommitData(const COutputState::CSnapsho
         SP<CDRMRenderer> primaryRenderer;
         if (backend->primary)
             primaryRenderer = backend->primary->rendererState.renderer;
-        const auto BLIT = backend->rendererState.renderer->blit(STATE.buffer, NEW_BUFFER, primaryRenderer,
-                                                                (STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+        const int WAIT_FD = (STATE.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1;
+        auto      BLIT    = backend->rendererState.renderer->blit(STATE.buffer, NEW_BUFFER, primaryRenderer, WAIT_FD);
+        if (!BLIT.success && backend->recoverLostRenderer())
+            BLIT = backend->rendererState.renderer->blit(STATE.buffer, NEW_BUFFER, primaryRenderer, WAIT_FD);
         if (!BLIT.success) {
             backend->log(AQ_LOG_ERROR, "drm: Asynchronous commit requires blit, but blitting failed");
             return false;
@@ -2687,8 +2712,10 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             SP<Aquamarine::CDRMRenderer> primaryRenderer;
             if (backend->primary)
                 primaryRenderer = backend->primary->rendererState.renderer;
-            auto blitResult = backend->rendererState.renderer->blit(
-                STATE.buffer, NEWAQBUF, primaryRenderer, (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1);
+            const int WAIT_FD    = (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) ? STATE.explicitInFence : -1;
+            auto      blitResult = backend->rendererState.renderer->blit(STATE.buffer, NEWAQBUF, primaryRenderer, WAIT_FD);
+            if (!blitResult.success && backend->recoverLostRenderer())
+                blitResult = backend->rendererState.renderer->blit(STATE.buffer, NEWAQBUF, primaryRenderer, WAIT_FD);
             if (!blitResult.success) {
                 backend->backend->log(AQ_LOG_ERROR, "drm: Backend requires blit, but blit failed");
                 return false;

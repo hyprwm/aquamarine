@@ -106,6 +106,9 @@ namespace Aquamarine {
         // can't be a SP<> because we call it from buf's ctor...
         void clearBuffer(IBuffer* buf);
 
+        // true if the GL context was lost to a GPU reset. A lost context never recovers, the renderer has to be recreated.
+        bool contextLost();
+
         struct SShader {
             ~SShader();
             void   createVao();
@@ -131,6 +134,7 @@ namespace Aquamarine {
             PFNEGLQUERYDEVICESEXTPROC                     eglQueryDevicesEXT                     = nullptr;
             PFNEGLQUERYDEVICESTRINGEXTPROC                eglQueryDeviceStringEXT                = nullptr;
             PFNGLREADNPIXELSEXTPROC                       glReadnPixelsEXT                       = nullptr;
+            PFNGLGETGRAPHICSRESETSTATUSKHRPROC            glGetGraphicsResetStatusKHR            = nullptr;
         } proc;
 
         struct {

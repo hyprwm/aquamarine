@@ -541,6 +541,11 @@ void CDRMRenderer::initContext() {
 
     exts.EXT_read_format_bgra        = EGLEXTENSIONS.contains("GL_EXT_read_format_bgra");
     exts.EXT_texture_format_BGRA8888 = EGLEXTENSIONS.contains("GL_EXT_texture_format_BGRA8888");
+
+    if (EGLEXTENSIONS.contains("GL_KHR_robustness"))
+        loadGLProc(&proc.glGetGraphicsResetStatusKHR, "glGetGraphicsResetStatusKHR");
+    else if (EGLEXTENSIONS.contains("GL_EXT_robustness"))
+        loadGLProc(&proc.glGetGraphicsResetStatusKHR, "glGetGraphicsResetStatusEXT");
 }
 
 void CDRMRenderer::initResources() {
@@ -1110,6 +1115,15 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
 
     return {.success = true, .syncFD = explicitFD == -1 ? std::nullopt : std::optional<int>{explicitFD}};
+}
+
+bool CDRMRenderer::contextLost() {
+    if (!proc.glGetGraphicsResetStatusKHR)
+        return false;
+
+    CEglContextGuard eglContext(*this);
+
+    return proc.glGetGraphicsResetStatusKHR() != GL_NO_ERROR;
 }
 
 bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
