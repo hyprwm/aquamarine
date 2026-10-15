@@ -2771,8 +2771,13 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     // so drivers without plane scaling (e.g. virtio-gpu) reject stale-size buffers,
     // making larger modes unreachable.
     // If the consumer already reconfigured the swapchain to the new size, attach a fresh buffer from it.
+    // On a multi-GPU output the consumer's swapchain lives on the primary GPU: its
+    // buffers cannot be imported here, and a failed import marks them unimportable,
+    // after which every later commit carrying that buffer is rejected and the output
+    // freezes. The blit path above already sizes its own swapchain, so skip this.
     bool acquiredModesetBuffer = false;
-    if (data.modeset && data.mainFB && swapchain && data.mainFB->buffer->size != MODE->pixelSize && swapchain->currentOptions().size == MODE->pixelSize) {
+    if (data.modeset && data.mainFB && swapchain && !backend->shouldBlit() && data.mainFB->buffer->size != MODE->pixelSize &&
+        swapchain->currentOptions().size == MODE->pixelSize) {
         if (auto newBuf = swapchain->next(nullptr); newBuf) {
             if (auto newFB = CDRMFB::create(newBuf, backend, nullptr); newFB && !newFB->dead) {
                 data.mainFB           = newFB;
