@@ -1113,14 +1113,19 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 }
 
 bool CDRMRenderer::verifyDestinationDMABUF(const SDMABUFAttrs& attrs) {
+    // Without modifier support the import drops the modifier (see createEGLImage), so a
+    // linear buffer is imported implicitly: match it against the implicit entry instead of
+    // an explicit linear one the driver never lists (e.g. amdgpu on Polaris).
+    const auto modifier = (!hasModifiers && attrs.modifier == DRM_FORMAT_MOD_LINEAR) ? DRM_FORMAT_MOD_INVALID : attrs.modifier;
+
     for (auto const& fmt : formats) {
         if (fmt.drmFormat != attrs.format)
             continue;
 
-        if (fmt.modifier != attrs.modifier)
+        if (fmt.modifier != modifier)
             continue;
 
-        if (fmt.modifier != DRM_FORMAT_INVALID && fmt.external) {
+        if (fmt.modifier != DRM_FORMAT_MOD_INVALID && fmt.external) {
             backend->log(AQ_LOG_ERROR, "EGL (verifyDestinationDMABUF): FAIL, format is external-only");
             return false;
         }
