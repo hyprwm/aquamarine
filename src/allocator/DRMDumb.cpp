@@ -65,6 +65,9 @@ Aquamarine::CDRMDumbBuffer::~CDRMDumbBuffer() {
 
     TRACE(allocator->backend->log(AQ_LOG_TRACE, std::format("DRM Dumb: dropping buffer {}", primeFD)));
 
+    if (primeFD >= 0)
+        close(primeFD);
+
     if (handle == 0)
         return;
 
