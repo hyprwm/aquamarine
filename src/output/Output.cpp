@@ -70,7 +70,7 @@ bool Aquamarine::IOutput::destroy() {
     return false;
 }
 
-Aquamarine::COutputState::CSnapshot::CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, 16>& generations) :
+Aquamarine::COutputState::CSnapshot::CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, AQ_OUTPUT_STATE_COUNT>& generations) :
     m_owner(owner), m_state(state), m_generations(generations) {
     if (!(m_state.committed & AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) || m_state.explicitInFence < 0)
         return;
@@ -96,6 +96,14 @@ bool Aquamarine::COutputState::CSnapshot::needsReconfig() const {
 
 int Aquamarine::COutputState::CSnapshot::error() const {
     return m_error;
+}
+
+std::vector<Aquamarine::IOutput::SPlaneData> Aquamarine::IOutput::getPlanes() {
+    return {{.renderFormats = {}, .type = AQ_PLANE_PRIMARY}};
+}
+
+std::optional<Aquamarine::IOutput::SPlaneData> Aquamarine::IOutput::getOverlayPlane() {
+    return {};
 }
 
 const Aquamarine::COutputState::SInternalState& Aquamarine::COutputState::state() {
@@ -128,6 +136,8 @@ void Aquamarine::COutputState::consume(const CSnapshot& snapshot) {
         internalState.committed &= ~property;
         if (property == AQ_OUTPUT_STATE_DAMAGE)
             internalState.damage.clear();
+        if (property == AQ_OUTPUT_STATE_PLANE_STATE)
+            onCommit();
     }
 }
 
@@ -257,5 +267,55 @@ void Aquamarine::COutputState::markCommitted(uint32_t properties) {
         const uint32_t property = 1U << std::countr_zero(properties);
         properties &= ~property;
         propertyGenerations.at(std::countr_zero(property)) = ++nextGeneration;
+    }
+}
+
+void Aquamarine::COutputState::setPlaneEnabled(uint32_t planeIdx, bool enabled) {
+    if (planeIdx >= internalState.planeStates.size())
+        return;
+
+    if (internalState.planeStates.at(planeIdx).enabled == enabled)
+        return;
+
+    internalState.planeStates.at(planeIdx).enabled = enabled;
+    internalState.planeStates.at(planeIdx).updated = true;
+
+    markCommitted(AQ_OUTPUT_STATE_PLANE_STATE);
+}
+
+void Aquamarine::COutputState::setPlaneBuffer(uint32_t planeIdx, Hyprutils::Memory::CSharedPointer<IBuffer> buffer) {
+    if (planeIdx >= internalState.planeStates.size())
+        return;
+
+    internalState.planeStates.at(planeIdx).buffer  = buffer;
+    internalState.planeStates.at(planeIdx).updated = true;
+
+    markCommitted(AQ_OUTPUT_STATE_PLANE_STATE);
+}
+
+void Aquamarine::COutputState::setPlaneGeometry(uint32_t planeIdx, const Hyprutils::Math::CBox& box) {
+    if (planeIdx >= internalState.planeStates.size())
+        return;
+
+    internalState.planeStates.at(planeIdx).geometry = box;
+    internalState.planeStates.at(planeIdx).updated  = true;
+
+    markCommitted(AQ_OUTPUT_STATE_PLANE_STATE);
+}
+
+void Aquamarine::COutputState::addPlaneDamage(uint32_t planeIdx, const Hyprutils::Math::CRegion& region) {
+    if (planeIdx >= internalState.planeStates.size())
+        return;
+
+    internalState.planeStates.at(planeIdx).damage.add(region);
+    internalState.planeStates.at(planeIdx).updated = true;
+
+    markCommitted(AQ_OUTPUT_STATE_PLANE_STATE);
+}
+
+void Aquamarine::COutputState::onCommit() {
+    for (auto& p : internalState.planeStates) {
+        p.damage.clear();
+        p.updated = false;
     }
 }
