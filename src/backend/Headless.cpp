@@ -161,6 +161,16 @@ std::vector<SDRMFormat> Aquamarine::CHeadlessBackend::getRenderFormats() {
         return impl->getRenderableFormats();
     }
 
+    // A nested compositor allocates on its parent Wayland device. Reuse
+    // the advertised modifiers instead of assuming implicit/linear support.
+    for (const auto& impl : backend->getImplementations()) {
+        if (impl->type() != AQ_BACKEND_WAYLAND)
+            continue;
+        auto formats = impl->getRenderFormats();
+        if (!formats.empty())
+            return formats;
+    }
+
     // formats probably supported by EGL
     return {SDRMFormat{.drmFormat = DRM_FORMAT_XRGB8888, .modifiers = {DRM_FORMAT_INVALID}},
             SDRMFormat{.drmFormat = DRM_FORMAT_XBGR8888, .modifiers = {DRM_FORMAT_INVALID}},
