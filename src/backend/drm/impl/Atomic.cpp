@@ -460,6 +460,9 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
     commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     commitBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
     destroyBlob(data.atomic.fbDamage);
+
+    if (data.atomic.hdrd && !data.test)
+        conn->atomic.hdrMetadataSet = data.atomic.hdrBlob != 0;
 }
 
 Aquamarine::CDRMAtomicImpl::CDRMAtomicImpl(Hyprutils::Memory::CSharedPointer<CDRMBackend> backend_) : backend(backend_) {
@@ -587,7 +590,14 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         if (!connector->props.values.hdr_output_metadata)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit hdr metadata: no HDR_OUTPUT_METADATA prop support");
         else {
-            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
+            // eotf = 0 (SDR) only needs to reach the sink when leaving HDR (see #358).
+            // If no metadata was ever set, keep the property cleared: an SDR blob on a
+            // panel that never entered HDR corrupts some eDP panels after s2idle
+            // resume on amdgpu (see #414).
+            if (!data.hdrMetadata->hdmi_metadata_type1.eotf && !connector->atomic.hdrMetadataSet) {
+                data.atomic.hdrBlob = 0;
+                data.atomic.hdrd    = true;
+            } else if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a hdr metadata blob");
                 data.atomic.hdrBlob = 0;
                 data.atomic.hdrd    = false;

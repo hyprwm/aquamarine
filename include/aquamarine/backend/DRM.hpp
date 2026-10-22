@@ -410,6 +410,11 @@ namespace Aquamarine {
             uint32_t          crtcID      = 0;
             bool              propsCached = false;
             eOutputColorRange colorRange  = AQ_OUTPUT_COLOR_RANGE_AUTO;
+
+            // whether the kernel currently holds a non-null HDR_OUTPUT_METADATA blob
+            // for this connector. crtc->atomic.hdr can't be used for this, as it's
+            // reset by every commit that doesn't touch HDR.
+            bool hdrMetadataSet = false;
         } atomic;
 
         union UDRMConnectorProps {
