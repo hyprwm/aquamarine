@@ -349,7 +349,7 @@ bool CDRMRenderer::initDRMFormats() {
         hasModifiers = hasModifiers || !mods.empty();
 
         // EGL can always do implicit modifiers.
-        mods.emplace_back(DRM_FORMAT_MOD_INVALID, true);
+        mods.emplace_back(DRM_FORMAT_MOD_INVALID, false);
 
         for (auto const& [mod, external] : mods) {
             dmaFormats.push_back(SGLFormat{
@@ -1105,6 +1105,13 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     // when we pass buffers between gpus we should always use explicit sync,
     // as implicit is not guaranteed at all
     int explicitFD = recreateBlitSync();
+
+    if (explicitFD == -1) {
+        // drivers without EGL_ANDROID_native_fence_sync (e.g. r600/TeraScale) cannot
+        // hand a fence to the page flip, so the flip may scan the buffer out before
+        // the GPU has finished rendering into it. block until the GPU is done.
+        glFinish();
+    }
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
