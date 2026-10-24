@@ -40,6 +40,7 @@ extern "C" {
 #include "Renderer.hpp"
 #include "OutputTiming.hpp"
 #include "AsyncCommit.hpp"
+#include "ConnectorProbe.hpp"
 
 #include <hyprutils/utils/ScopeGuard.hpp>
 using Hyprutils::Utils::CScopeGuard;
@@ -103,7 +104,7 @@ static int gpuNumBuiltinPanels(const SP<CSessionDevice> gpu) {
 
     int num = 0;
     for (int i = 0; i < resources->count_connectors; ++i) {
-        auto drmConn = drmModeGetConnector(gpu->fd, resources->connectors[i]);
+        auto drmConn = probeDRMConnector(gpu->fd, resources->connectors[i]);
         if (!drmConn)
             continue;
 
@@ -1234,11 +1235,10 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
 
             backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} connected", conn->szName));
 
-            auto drmConn = drmModeGetConnector(gpu->fd, conn->id);
+            auto drmConn = probeDRMConnector(gpu->fd, conn->id);
 
-            // ??? was valid 5 sec ago...
             if (!drmConn) {
-                backend->log(AQ_LOG_ERROR, std::format("drm: Connector {} couldn't be connected, drm connector id is no longer valid??", conn->szName));
+                backend->log(AQ_LOG_ERROR, std::format("drm: Connector {} couldn't be queried: {}", conn->szName, strerror(errno)));
                 continue;
             }
 
@@ -1264,12 +1264,13 @@ void Aquamarine::CDRMBackend::scanConnectors() {
         uint32_t          connectorID = resources->connectors[i];
 
         SP<SDRMConnector> conn;
-        auto              drmConn = drmModeGetConnector(gpu->fd, connectorID);
+        auto              drmConn     = probeDRMConnector(gpu->fd, connectorID);
+        const int         QUERY_ERROR = errno;
 
         backend->log(AQ_LOG_DEBUG, std::format("drm: Scanning connector id {}", connectorID));
 
         if (!drmConn) {
-            backend->log(AQ_LOG_ERROR, std::format("drm: Failed to get connector id {}", connectorID));
+            backend->log(AQ_LOG_ERROR, std::format("drm: Failed to get connector id {}: {}", connectorID, strerror(QUERY_ERROR)));
             continue;
         }
 

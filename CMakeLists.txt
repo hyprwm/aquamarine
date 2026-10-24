@@ -171,6 +171,18 @@ add_test(
   COMMAND commitThread "commitThread")
 add_dependencies(tests commitThread)
 
+add_executable(connectorProbe "tests/ConnectorProbe.cpp" "src/backend/drm/ConnectorProbe.cpp")
+target_include_directories(connectorProbe PRIVATE "./src/backend/drm")
+target_link_libraries(connectorProbe PRIVATE PkgConfig::deps Threads::Threads)
+add_test(NAME "connectorProbe" COMMAND connectorProbe)
+# RT limits are Linux-specific.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_test(NAME "connectorProbeRT" COMMAND connectorProbe --rt)
+  set_tests_properties(connectorProbeRT PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 15 LABELS "privileged")
+endif()
+set_tests_properties(connectorProbe PROPERTIES TIMEOUT 10)
+add_dependencies(tests connectorProbe)
+
 # Installation
 install(TARGETS aquamarine)
 install(DIRECTORY "include/aquamarine" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
