@@ -777,7 +777,7 @@ CGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
 
 constexpr GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
 
-void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out) {
+bool             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out, GLenum format, uint32_t stride) {
     CEglContextGuard eglContext(*this);
     auto             att = buf->attachments.get<CDRMRendererBufferOutputAttachment>();
     if (!att || att->renderer != self) {
@@ -790,7 +790,7 @@ void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuf
         att->eglImage = createEGLImage(dma);
         if (att->eglImage == EGL_NO_IMAGE_KHR) {
             backend->log(AQ_LOG_ERROR, std::format("EGL (readBuffer): createEGLImage failed: {}", eglGetError()));
-            return;
+            return false;
         }
 
         GLCALL(glGenRenderbuffers(1, &att->rbo));
@@ -804,14 +804,21 @@ void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuf
 
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
             backend->log(AQ_LOG_ERROR, std::format("EGL (readBuffer): glCheckFramebufferStatus failed: {}", glGetError()));
-            return;
+            GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+            buf->attachments.remove(att);
+            return false;
         }
     }
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, att->fbo));
-    GLCALL(proc.glReadnPixelsEXT(0, 0, dma.size.x, dma.size.y, GL_RGBA, GL_UNSIGNED_BYTE, out.size(), out.data()));
+    if (stride)
+        GLCALL(glPixelStorei(GL_PACK_ROW_LENGTH, stride / 4));
+    GLCALL(proc.glReadnPixelsEXT(0, 0, dma.size.x, dma.size.y, format, GL_UNSIGNED_BYTE, out.size(), out.data()));
+    if (stride)
+        GLCALL(glPixelStorei(GL_PACK_ROW_LENGTH, 0));
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    return true;
 }
 
 void CDRMRenderer::waitOnSync(int fd) {
@@ -1002,7 +1009,8 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     GLuint      rboID = 0, fboID = 0;
     const auto& toDma = to->dmabuf();
 
-    bool        destImportable = verifyDestinationDMABUF(toDma);
+    const auto  cpuOnly        = to->attachments.get<CDRMRendererBufferCPUOnlyAttachment>();
+    bool        destImportable = !(cpuOnly && cpuOnly->renderer == self) && verifyDestinationDMABUF(toDma);
 
     if (destImportable) {
         auto attachment = to->attachments.get<CDRMRendererBufferOutputAttachment>();
@@ -1051,12 +1059,9 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
             return {};
         }
 
-        std::vector<uint8_t> localPixels;
-        std::span<uint8_t>   srcPixels = intermediateBuf;
-        if (srcPixels.empty()) {
-            localPixels.resize((size_t)fromDma.size.x * fromDma.size.y * 4);
-            readBuffer(from, localPixels);
-            srcPixels = localPixels;
+        if (!cpuOnly || cpuOnly->renderer != self) {
+            backend->log(AQ_LOG_DEBUG, "EGL (blit): destination not renderable, using CPU copy");
+            to->attachments.add(makeShared<CDRMRendererBufferCPUOnlyAttachment>(self));
         }
 
         auto [dst, dstFmt, dstLen] = to->beginDataPtr(0);
@@ -1065,35 +1070,44 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
             return {};
         }
 
-        const int    W         = (int)fromDma.size.x;
-        const int    H         = (int)fromDma.size.y;
-        const size_t dstStride = toDma.strides.at(0);
+        const bool RGB = dstFmt == DRM_FORMAT_XRGB8888 || dstFmt == DRM_FORMAT_ARGB8888;
+        const bool BGR = dstFmt == DRM_FORMAT_XBGR8888 || dstFmt == DRM_FORMAT_ABGR8888;
+        if (!RGB && !BGR) {
+            backend->log(AQ_LOG_ERROR, std::format("EGL (blit): destination format {} not supported for CPU fallback", fourccToName(dstFmt)));
+            to->endDataPtr();
+            return {};
+        }
 
-        switch (dstFmt) {
-            case DRM_FORMAT_XRGB8888:
-            case DRM_FORMAT_ARGB8888: {
-                for (int y = 0; y < H; ++y) {
-                    const uint8_t* src = srcPixels.data() + (size_t)y * W * 4;
-                    uint8_t*       d   = dst + (size_t)y * dstStride;
-                    for (int x = 0; x < W; ++x) {
-                        d[x * 4 + 0] = src[x * 4 + 2];
-                        d[x * 4 + 1] = src[x * 4 + 1];
-                        d[x * 4 + 2] = src[x * 4 + 0];
-                        d[x * 4 + 3] = src[x * 4 + 3];
-                    }
-                }
-                break;
-            }
-            case DRM_FORMAT_XBGR8888:
-            case DRM_FORMAT_ABGR8888: {
-                for (int y = 0; y < H; ++y)
-                    memcpy(dst + (size_t)y * dstStride, srcPixels.data() + (size_t)y * W * 4, (size_t)W * 4);
-                break;
-            }
-            default:
-                backend->log(AQ_LOG_ERROR, std::format("EGL (blit): destination format {} not supported for CPU fallback", fourccToName(dstFmt)));
+        const size_t W      = fromDma.size.x;
+        const size_t H      = fromDma.size.y;
+        const size_t STRIDE = toDma.strides.at(0);
+        if (W == 0 || H == 0 || STRIDE % 4 || STRIDE < W * 4 || dstLen < STRIDE * (H - 1) + W * 4 || (!intermediateBuf.empty() && intermediateBuf.size() < W * H * 4)) {
+            backend->log(AQ_LOG_ERROR, "EGL (blit): buffer sizes invalid for CPU fallback");
+            to->endDataPtr();
+            return {};
+        }
+
+        GLenum readFormat = GL_RGBA;
+        if (!intermediateBuf.empty()) {
+            for (size_t y = 0; y < H; ++y)
+                memcpy(dst + y * STRIDE, intermediateBuf.data() + y * W * 4, W * 4);
+        } else {
+            if (RGB && exts.EXT_read_format_bgra)
+                readFormat = GL_BGRA_EXT;
+
+            if (!readBuffer(from, {dst, dstLen}, readFormat, STRIDE)) {
+                backend->log(AQ_LOG_ERROR, "EGL (blit): source readback failed for CPU fallback");
                 to->endDataPtr();
                 return {};
+            }
+        }
+
+        if (RGB && readFormat == GL_RGBA) {
+            for (size_t y = 0; y < H; ++y) {
+                auto row = (uint32_t*)(dst + y * STRIDE);
+                for (size_t x = 0; x < W; ++x)
+                    row[x] = (row[x] & 0xFF00FF00) | ((row[x] >> 16) & 0xFF) | ((row[x] & 0xFF) << 16);
+            }
         }
 
         to->endDataPtr();

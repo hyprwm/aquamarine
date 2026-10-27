@@ -63,6 +63,14 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
     };
 
+    // marks a destination this renderer can't draw into, blit() goes straight to the CPU copy
+    class CDRMRendererBufferCPUOnlyAttachment : public IAttachment {
+      public:
+        CDRMRendererBufferCPUOnlyAttachment(Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer_) : renderer(renderer_) {}
+
+        Hyprutils::Memory::CWeakPointer<CDRMRenderer> renderer;
+    };
+
     // CEglContextGuard is a RAII abstraction for the EGL context.
     // On initialization, it sets the EGL context to the renderer's display,
     // and on destruction, it restores the previous EGL context.
@@ -154,7 +162,7 @@ namespace Aquamarine {
         } egl;
 
         CGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
-        void                                          readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out);
+        bool readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out, GLenum format = GL_RGBA, uint32_t stride = 0);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
         std::vector<SGLFormat>                        formats;
