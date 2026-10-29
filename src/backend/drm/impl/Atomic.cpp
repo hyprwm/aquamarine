@@ -16,42 +16,6 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
-// HW capabilites aren't checked. Should be handled by the drivers (and highly unlikely to get a format outside of bpc range)
-// https://drmdb.emersion.fr/properties/3233857728/max%20bpc
-static uint8_t getMaxBPC(uint64_t min, uint64_t max, uint32_t drmFormat) {
-    uint8_t formatBPC = 8;
-
-    switch (drmFormat) {
-        case DRM_FORMAT_XRGB8888:
-        case DRM_FORMAT_XBGR8888:
-        case DRM_FORMAT_RGBX8888:
-        case DRM_FORMAT_BGRX8888:
-        case DRM_FORMAT_ARGB8888:
-        case DRM_FORMAT_ABGR8888:
-        case DRM_FORMAT_RGBA8888:
-        case DRM_FORMAT_BGRA8888: formatBPC = 8; break;
-
-        case DRM_FORMAT_XRGB2101010:
-        case DRM_FORMAT_XBGR2101010:
-        case DRM_FORMAT_RGBX1010102:
-        case DRM_FORMAT_BGRX1010102:
-        case DRM_FORMAT_ARGB2101010:
-        case DRM_FORMAT_ABGR2101010:
-        case DRM_FORMAT_RGBA1010102:
-        case DRM_FORMAT_BGRA1010102: formatBPC = 10; break;
-
-        case DRM_FORMAT_XRGB16161616:
-        case DRM_FORMAT_XBGR16161616:
-        case DRM_FORMAT_ARGB16161616:
-        case DRM_FORMAT_ABGR16161616: formatBPC = 16; break;
-
-        // FIXME? handle non-rgb formats and some weird stuff like DRM_FORMAT_AXBXGXRX106106106106
-        default: formatBPC = 8; break;
-    }
-
-    return std::clamp<uint64_t>(formatBPC, min, max);
-}
-
 Aquamarine::CDRMAtomicRequest::CDRMAtomicRequest(Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_) : backend(backend_), req(drmModeAtomicAlloc()) {
     if (!req)
         failed = true;
@@ -267,7 +231,10 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 
         // Setup HDR
         if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1) && !connector->maxBpcFailed) {
-            newMaxBpc = getMaxBPC(connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1), data.mainFB->buffer->dmabuf().format);
+            // max_bpc should not follow the scanout buffer format, and should instead always follow what we set in monitor specific configs.
+            // even when in DS, we should not change the max_bpc to 8, as this will cause a modeset / flicker when going in / out of DS.
+            const uint64_t WANTED = STATE.maxBpc ? STATE.maxBpc : connector->maxBpcBounds.at(1);
+            newMaxBpc             = std::clamp<uint64_t>(WANTED, connector->maxBpcBounds.at(0), connector->maxBpcBounds.at(1));
             if (forceConnProps || connector->atomic.maxBpc != newMaxBpc) {
                 add(connector->id, connector->props.values.max_bpc, newMaxBpc);
                 maxBpcEmitted = true;

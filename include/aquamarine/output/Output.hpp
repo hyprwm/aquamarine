@@ -67,6 +67,7 @@ namespace Aquamarine {
             AQ_OUTPUT_STATE_WCG                = (1 << 13),
             AQ_OUTPUT_STATE_CURSOR_SHAPE       = (1 << 14),
             AQ_OUTPUT_STATE_CURSOR_POS         = (1 << 15),
+            AQ_OUTPUT_STATE_MAX_BPC            = (1 << 16),
         };
 
         struct SInternalState {
@@ -89,6 +90,7 @@ namespace Aquamarine {
             hdr_output_metadata                            hdrMetadata    = {};
             uint16_t                                       contentType    = DRM_MODE_CONTENT_TYPE_GRAPHICS;
             eOutputColorRange                              colorRange     = AQ_OUTPUT_COLOR_RANGE_AUTO;
+            uint8_t                                        maxBpc         = 0; // max link bits per component. 0 = unset (use the highest the connector allows)
         };
 
         class CSnapshot {
@@ -100,11 +102,11 @@ namespace Aquamarine {
             int                   error() const;
 
           private:
-            CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, 16>& generations);
+            CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, 17>& generations);
 
             const COutputState*            m_owner = nullptr;
             SInternalState                 m_state;
-            std::array<uint64_t, 16>       m_generations = {};
+            std::array<uint64_t, 17>       m_generations = {};
             Hyprutils::OS::CFileDescriptor m_explicitInFence;
             int                            m_error = 0;
 
@@ -137,10 +139,11 @@ namespace Aquamarine {
         void                  setHDRMetadata(const hdr_output_metadata& metadata);
         void                  setContentType(const uint16_t drmContentType);
         void                  setColorRange(eOutputColorRange range);
+        void                  setMaxBpc(uint8_t maxBpc); 
 
       private:
         SInternalState           internalState;
-        std::array<uint64_t, 16> propertyGenerations = {};
+        std::array<uint64_t, 17> propertyGenerations = {};
         uint64_t                 nextGeneration      = 0;
 
         void                     markCommitted(uint32_t properties);
