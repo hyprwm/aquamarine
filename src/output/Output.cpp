@@ -70,7 +70,7 @@ bool Aquamarine::IOutput::destroy() {
     return false;
 }
 
-Aquamarine::COutputState::CSnapshot::CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, 16>& generations) :
+Aquamarine::COutputState::CSnapshot::CSnapshot(const COutputState* owner, const SInternalState& state, const std::array<uint64_t, 17>& generations) :
     m_owner(owner), m_state(state), m_generations(generations) {
     if (!(m_state.committed & AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) || m_state.explicitInFence < 0)
         return;
@@ -91,7 +91,7 @@ const Aquamarine::COutputState::SInternalState& Aquamarine::COutputState::CSnaps
 }
 
 bool Aquamarine::COutputState::CSnapshot::needsReconfig() const {
-    return m_state.committed & (AQ_OUTPUT_STATE_ENABLED | AQ_OUTPUT_STATE_FORMAT | AQ_OUTPUT_STATE_MODE | AQ_OUTPUT_STATE_HDR | AQ_OUTPUT_STATE_WCG);
+    return m_state.committed & (AQ_OUTPUT_STATE_ENABLED | AQ_OUTPUT_STATE_FORMAT | AQ_OUTPUT_STATE_MODE | AQ_OUTPUT_STATE_HDR | AQ_OUTPUT_STATE_WCG | AQ_OUTPUT_STATE_MAX_BPC);
 }
 
 int Aquamarine::COutputState::CSnapshot::error() const {
@@ -152,7 +152,7 @@ void Aquamarine::COutputState::rearm(const CSnapshot& snapshot) {
 }
 
 bool Aquamarine::COutputState::needsReconfig() const {
-    return internalState.committed & (AQ_OUTPUT_STATE_ENABLED | AQ_OUTPUT_STATE_FORMAT | AQ_OUTPUT_STATE_MODE | AQ_OUTPUT_STATE_HDR | AQ_OUTPUT_STATE_WCG);
+    return internalState.committed & (AQ_OUTPUT_STATE_ENABLED | AQ_OUTPUT_STATE_FORMAT | AQ_OUTPUT_STATE_MODE | AQ_OUTPUT_STATE_HDR | AQ_OUTPUT_STATE_WCG | AQ_OUTPUT_STATE_MAX_BPC);
 }
 
 void Aquamarine::COutputState::addDamage(const Hyprutils::Math::CRegion& region) {
@@ -248,6 +248,11 @@ void Aquamarine::COutputState::setContentType(const uint16_t drmContentType) {
 
 void Aquamarine::COutputState::setColorRange(eOutputColorRange range) {
     internalState.colorRange = range;
+}
+
+void Aquamarine::COutputState::setMaxBpc(uint8_t maxBpc) {
+    internalState.maxBpc = maxBpc;
+    markCommitted(AQ_OUTPUT_STATE_MAX_BPC);
 }
 
 void Aquamarine::COutputState::markCommitted(uint32_t properties) {
