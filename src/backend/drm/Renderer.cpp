@@ -777,7 +777,7 @@ CGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
 
 constexpr GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
 
-void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out) {
+bool             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out, GLenum format, uint32_t stride) {
     CEglContextGuard eglContext(*this);
     auto             att = buf->attachments.get<CDRMRendererBufferOutputAttachment>();
     if (!att || att->renderer != self) {
@@ -790,7 +790,7 @@ void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuf
         att->eglImage = createEGLImage(dma);
         if (att->eglImage == EGL_NO_IMAGE_KHR) {
             backend->log(AQ_LOG_ERROR, std::format("EGL (readBuffer): createEGLImage failed: {}", eglGetError()));
-            return;
+            return false;
         }
 
         GLCALL(glGenRenderbuffers(1, &att->rbo));
@@ -804,14 +804,21 @@ void             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuf
 
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
             backend->log(AQ_LOG_ERROR, std::format("EGL (readBuffer): glCheckFramebufferStatus failed: {}", glGetError()));
-            return;
+            GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+            buf->attachments.remove(att);
+            return false;
         }
     }
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, att->fbo));
-    GLCALL(proc.glReadnPixelsEXT(0, 0, dma.size.x, dma.size.y, GL_RGBA, GL_UNSIGNED_BYTE, out.size(), out.data()));
+    if (stride)
+        GLCALL(glPixelStorei(GL_PACK_ROW_LENGTH, stride / 4));
+    GLCALL(proc.glReadnPixelsEXT(0, 0, dma.size.x, dma.size.y, format, GL_UNSIGNED_BYTE, out.size(), out.data()));
+    if (stride)
+        GLCALL(glPixelStorei(GL_PACK_ROW_LENGTH, 0));
 
     GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    return true;
 }
 
 void CDRMRenderer::waitOnSync(int fd) {
@@ -1002,12 +1009,10 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
     GLuint      rboID = 0, fboID = 0;
     const auto& toDma = to->dmabuf();
 
-    if (!verifyDestinationDMABUF(toDma)) {
-        backend->log(AQ_LOG_ERROR, "EGL (blit): failed to blit: destination dmabuf unsupported");
-        return {};
-    }
+    const auto  cpuOnly        = to->attachments.get<CDRMRendererBufferCPUOnlyAttachment>();
+    bool        destImportable = !(cpuOnly && cpuOnly->renderer == self) && verifyDestinationDMABUF(toDma);
 
-    {
+    if (destImportable) {
         auto attachment = to->attachments.get<CDRMRendererBufferOutputAttachment>();
         if (attachment && attachment->renderer == self) {
             TRACE(backend->log(AQ_LOG_TRACE, "EGL (blit): To attachment found"));
@@ -1021,26 +1026,92 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
             rboImage = createEGLImage(toDma);
             if (rboImage == EGL_NO_IMAGE_KHR) {
-                backend->log(AQ_LOG_ERROR, std::format("EGL (blit): createEGLImage failed: {}", eglGetError()));
-                return {};
+                backend->log(AQ_LOG_DEBUG, std::format("EGL (blit): createEGLImage failed: {}, will try CPU fallback", eglGetError()));
+                destImportable = false;
+            } else {
+                GLCALL(glGenRenderbuffers(1, &rboID));
+                GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
+                GLCALL(proc.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage));
+                GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+
+                GLCALL(glGenFramebuffers(1, &fboID));
+                GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fboID));
+                GLCALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rboID));
+
+                if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                    backend->log(AQ_LOG_DEBUG, std::format("EGL (blit): glCheckFramebufferStatus failed: {}, will try CPU fallback", glGetError()));
+                    glDeleteFramebuffers(1, &fboID);
+                    glDeleteRenderbuffers(1, &rboID);
+                    proc.eglDestroyImageKHR(egl.display, rboImage);
+                    rboImage       = nullptr;
+                    rboID          = 0;
+                    fboID          = 0;
+                    destImportable = false;
+                } else
+                    to->attachments.add(makeShared<CDRMRendererBufferOutputAttachment>(self, rboImage, fboID, rboID));
             }
-
-            GLCALL(glGenRenderbuffers(1, &rboID));
-            GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, rboID));
-            GLCALL(proc.glEGLImageTargetRenderbufferStorageOES(GL_RENDERBUFFER, (GLeglImageOES)rboImage));
-            GLCALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
-
-            GLCALL(glGenFramebuffers(1, &fboID));
-            GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fboID));
-            GLCALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rboID));
-
-            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                backend->log(AQ_LOG_ERROR, std::format("EGL (blit): glCheckFramebufferStatus failed: {}", glGetError()));
-                return {};
-            }
-
-            to->attachments.add(makeShared<CDRMRendererBufferOutputAttachment>(self, rboImage, fboID, rboID));
         }
+    }
+
+    if (!destImportable) {
+        if (!(to->caps() & BUFFER_CAPABILITY_DATAPTR)) {
+            backend->log(AQ_LOG_ERROR, "EGL (blit): destination cannot be imported and has no CPU mapping");
+            return {};
+        }
+
+        if (!cpuOnly || cpuOnly->renderer != self) {
+            backend->log(AQ_LOG_DEBUG, "EGL (blit): destination not renderable, using CPU copy");
+            to->attachments.add(makeShared<CDRMRendererBufferCPUOnlyAttachment>(self));
+        }
+
+        auto [dst, dstFmt, dstLen] = to->beginDataPtr(0);
+        if (!dst) {
+            backend->log(AQ_LOG_ERROR, "EGL (blit): destination beginDataPtr returned null");
+            return {};
+        }
+
+        const bool RGB = dstFmt == DRM_FORMAT_XRGB8888 || dstFmt == DRM_FORMAT_ARGB8888;
+        const bool BGR = dstFmt == DRM_FORMAT_XBGR8888 || dstFmt == DRM_FORMAT_ABGR8888;
+        if (!RGB && !BGR) {
+            backend->log(AQ_LOG_ERROR, std::format("EGL (blit): destination format {} not supported for CPU fallback", fourccToName(dstFmt)));
+            to->endDataPtr();
+            return {};
+        }
+
+        const size_t W      = fromDma.size.x;
+        const size_t H      = fromDma.size.y;
+        const size_t STRIDE = toDma.strides.at(0);
+        if (W == 0 || H == 0 || STRIDE % 4 || STRIDE < W * 4 || dstLen < STRIDE * (H - 1) + W * 4 || (!intermediateBuf.empty() && intermediateBuf.size() < W * H * 4)) {
+            backend->log(AQ_LOG_ERROR, "EGL (blit): buffer sizes invalid for CPU fallback");
+            to->endDataPtr();
+            return {};
+        }
+
+        GLenum readFormat = GL_RGBA;
+        if (!intermediateBuf.empty()) {
+            for (size_t y = 0; y < H; ++y)
+                memcpy(dst + y * STRIDE, intermediateBuf.data() + y * W * 4, W * 4);
+        } else {
+            if (RGB && exts.EXT_read_format_bgra)
+                readFormat = GL_BGRA_EXT;
+
+            if (!readBuffer(from, {dst, dstLen}, readFormat, STRIDE)) {
+                backend->log(AQ_LOG_ERROR, "EGL (blit): source readback failed for CPU fallback");
+                to->endDataPtr();
+                return {};
+            }
+        }
+
+        if (RGB && readFormat == GL_RGBA) {
+            for (size_t y = 0; y < H; ++y) {
+                auto row = (uint32_t*)(dst + y * STRIDE);
+                for (size_t x = 0; x < W; ++x)
+                    row[x] = (row[x] & 0xFF00FF00) | ((row[x] >> 16) & 0xFF) | ((row[x] & 0xFF) << 16);
+            }
+        }
+
+        to->endDataPtr();
+        return {.success = true};
     }
 
     TRACE(backend->log(AQ_LOG_TRACE, std::format("EGL (blit): rboImage 0x{:x}", (uintptr_t)rboImage)));
