@@ -3443,10 +3443,10 @@ void Aquamarine::CDRMFB::drop() {
 
     dropped = true;
 
+    closeHandles();
+
     if (!id)
         return;
-
-    closeHandles();
 
     TRACE(backend->backend->log(AQ_LOG_TRACE, std::format("drm: dropping buffer {}", id)));
 
