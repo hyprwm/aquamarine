@@ -9,6 +9,9 @@
 #include <sstream>
 #include <optional>
 #include "Shared.hpp"
+#include "../Props.hpp"
+#include "../AtomicRouting.hpp"
+#include <hyprutils/utils/ScopeGuard.hpp>
 #include "aquamarine/output/Output.hpp"
 
 using namespace Aquamarine;
@@ -42,14 +45,15 @@ Aquamarine::CDRMAtomicRequest::~CDRMAtomicRequest() {
 // A fresh blob is required: handing the kernel the same blob id it already holds
 // leaves mode_changed clear, so the driver never redoes the allocation.
 // Returns false if there was nothing to restate.
-bool Aquamarine::CDRMAtomicRequest::restateConnectors(SP<SDRMConnector> self) {
+bool Aquamarine::CDRMAtomicRequest::restateConnectors(SP<SDRMConnector> self, uint32_t targetCrtc) {
     if (failed)
         return false;
 
     bool any = false;
+    std::vector<std::pair<uint32_t, uint32_t>> routes{{self->id, targetCrtc}};
 
     for (const auto& c : backend->connectors) {
-        if (c == self || !c->crtc || !c->output)
+        if (c == self || !c->crtc || !c->output || c->tilingRedundant || (c->output->lease && c->output->lease->active))
             continue;
 
         if (!c->output->enabledState)
@@ -77,6 +81,7 @@ bool Aquamarine::CDRMAtomicRequest::restateConnectors(SP<SDRMConnector> self) {
         add(c->crtc->id, c->crtc->props.values.mode_id, blob);
         add(c->crtc->id, c->crtc->props.values.active, 1);
         add(c->id, c->props.values.crtc_id, c->crtc->id);
+        routes.emplace_back(c->id, c->crtc->id);
 
         // A head that has not scanned out yet has no buffer to restate; its
         // existing plane state carries over untouched, which is what we want.
@@ -92,7 +97,99 @@ bool Aquamarine::CDRMAtomicRequest::restateConnectors(SP<SDRMConnector> self) {
         any = true;
     }
 
+    any = cleanupStaleRouting(routes) || any;
     return any && !failed;
+}
+
+// Reconcile the kernel's routing with the routing emitted by the recovery
+// request. In particular, a vanished MST connector can still own our CRTC,
+// and fbcon can move a connector while the session is inactive.
+bool Aquamarine::CDRMAtomicRequest::cleanupStaleRouting(const std::vector<std::pair<uint32_t, uint32_t>>& routes) {
+    if (failed)
+        return false;
+
+    const auto FD        = backend->gpu->fd;
+    auto*      resources = drmModeGetResources(FD);
+    if (!resources) {
+        backend->log(AQ_LOG_ERROR, "atomic drm: failed to query resources for routing recovery");
+        failed = true;
+        return false;
+    }
+    Hyprutils::Utils::CScopeGuard freeResources([resources] { drmModeFreeResources(resources); });
+
+    std::vector<uint32_t>         protectedCrtcs, protectedPlanes;
+    for (const auto& c : backend->connectors) {
+        if (!c->crtc || !c->output || !c->output->lease || !c->output->lease->active)
+            continue;
+        protectedCrtcs.emplace_back(c->crtc->id);
+        if (c->crtc->primary)
+            protectedPlanes.emplace_back(c->crtc->primary->id);
+        if (c->crtc->cursor)
+            protectedPlanes.emplace_back(c->crtc->cursor->id);
+    }
+
+    bool                        changed = false;
+    std::vector<SAtomicRouting> bindings;
+    for (int i = 0; i < resources->count_connectors; ++i) {
+        const auto ID    = resources->connectors[i];
+        const auto known = std::ranges::find_if(backend->connectors, [ID](const auto& c) { return c->id == ID; });
+        const auto c     = known == backend->connectors.end() ? nullptr : *known;
+        if (c && c->output && c->output->lease && c->output->lease->active)
+            continue;
+
+        SDRMConnector::UDRMConnectorProps props   = {};
+        uint64_t                          current = 0;
+        if (!getDRMConnectorProps(FD, ID, &props) || !getDRMProp(FD, ID, props.values.crtc_id, &current)) {
+            backend->log(AQ_LOG_ERROR, std::format("atomic drm: failed to read connector {} routing during recovery", ID));
+            failed = true;
+            return false;
+        }
+
+        auto       next  = static_cast<uint32_t>(current);
+        const auto route = std::ranges::find_if(routes, [ID](const auto& r) { return r.first == ID; });
+        if (route != routes.end())
+            next = route->second;
+        else if (c && !c->tilingRedundant && (c->status == DRM_MODE_DISCONNECTED || (c->output && !c->output->enabledState))) {
+            next = 0;
+            if (current) {
+                add(ID, props.values.crtc_id, 0);
+                changed = true;
+            }
+        }
+        // Unknown connectors and connected outputs not restated above retain
+        // their kernel routing. Never disable a controller they still use.
+        bindings.push_back({static_cast<uint32_t>(current), next});
+    }
+
+    const auto unused = vacatedCrtcs(bindings, protectedCrtcs);
+    if (unused.empty())
+        return changed && !failed;
+
+    for (const auto& plane : backend->planes) {
+        if (std::ranges::find(protectedPlanes, plane->id) != protectedPlanes.end() || std::ranges::find(routedPlanes, plane->id) != routedPlanes.end())
+            continue;
+        uint64_t current = 0;
+        if (!getDRMProp(FD, plane->id, plane->props.values.crtc_id, &current)) {
+            backend->log(AQ_LOG_ERROR, std::format("atomic drm: failed to read plane {} routing during recovery", plane->id));
+            failed = true;
+            return false;
+        }
+        if (std::ranges::find(unused, current) != unused.end())
+            planeProps(plane, nullptr, 0, {});
+    }
+
+    for (const auto id : unused) {
+        const auto crtc = backend->crtcByID(id);
+        if (!crtc) {
+            failed = true;
+            return false;
+        }
+        add(id, crtc->props.values.active, 0);
+        add(id, crtc->props.values.mode_id, 0);
+        changed = true;
+    }
+
+    return changed && !failed;
 }
 
 void Aquamarine::CDRMAtomicRequest::add(uint32_t id, uint32_t prop, uint64_t val) {
@@ -135,6 +232,9 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
 
     if (failed)
         return;
+
+    if (trackPlaneRouting)
+        routedPlanes.emplace_back(plane->id);
 
     if (!fb || !crtc) {
         // Disable the plane
@@ -206,6 +306,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     TRACE(backend->log(AQ_LOG_TRACE, std::format("atomic addConnector values: CRTC {}, mode {}", enable ? connector->crtc->id : 0, data.atomic.modeBlob)));
 
     conn = connector;
+    trackPlaneRouting = data.modeset;
 
     // page-flips that don't change connector state must avoid touching connector_state
     // entirely, otherwise the kernel runs drm_atomic_helper_check_modeset every frame and
@@ -620,7 +721,7 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
         // and will skip the max_bpc property). The property blobs created in
         // prepareConnector() are reused as-is, so we must NOT roll back the
         // original request here or request2 would submit already-destroyed blob
-        // IDs. Blob cleanup is handled by request2.apply()/rollback() below.
+        // IDs. Only the successful request (or final rollback) owns cleanup.
         // maxBpcFailed is latched here so addConnector omits the property, then
         // cleared on retry failure so a transient error does not permanently
         // disable max_bpc for this connector.
@@ -648,23 +749,37 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
                 if (data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
                     connector->sched.onFrameSubmitted();
             }
-        } else {
-            connector->maxBpcFailed = false;
-            request2.rollback(data);
+            return true;
         }
 
-        return ok;
+        // This was not a max_bpc failure. Keep the blobs alive and try the
+        // all-head modeset below before rolling back the entire transaction.
+        connector->maxBpcFailed = false;
     }
 
     // A modeset the driver rejects may still be reachable if every head is
     // modeset together, since display resources are allocated globally. Retry
     // once that way before letting the caller fall back to a lesser mode.
     // See CDRMAtomicRequest::restateConnectors.
+    std::vector<uint64_t>            pausedQueues;
+    Hyprutils::Utils::CScopeGuard    resumeQueues([&] {
+        for (const auto key : pausedQueues)
+            backend->resumeCommitQueue(key);
+    });
     std::optional<CDRMAtomicRequest> retry;
     if (!ok && data.modeset) {
+        // Recovery touches peer CRTCs too. Drain their submissions before
+        // inspecting kernel routing or borrowing their scanout buffers.
+        for (const auto& crtc : backend->crtcs) {
+            if (!backend->pauseCommitQueue(crtc->id)) {
+                request.rollback(data);
+                return false;
+            }
+            pausedQueues.emplace_back(crtc->id);
+        }
         retry.emplace(backend);
         retry->addConnector(connector, data);
-        if (retry->restateConnectors(connector)) {
+        if (retry->restateConnectors(connector, data.atomic.crtcID)) {
             ok = retry->commit(flags);
             if (ok)
                 backend->log(AQ_LOG_DEBUG,
@@ -675,6 +790,14 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
 
         if (!ok)
             retry.reset();
+        else if (!data.test) {
+            // Peer routes may have changed without updating their property
+            // caches. Force those properties into their next commit.
+            for (const auto& peer : backend->connectors) {
+                if (peer != connector && !(peer->output && peer->output->lease && peer->output->lease->active))
+                    peer->atomic.propsCached = false;
+            }
+        }
     }
 
     // whichever request the kernel accepted owns the blob bookkeeping

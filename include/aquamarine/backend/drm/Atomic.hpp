@@ -36,7 +36,7 @@ namespace Aquamarine {
 
         void         setConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector);
         void         addConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
-        bool         restateConnectors(Hyprutils::Memory::CSharedPointer<SDRMConnector> self);
+        bool         restateConnectors(Hyprutils::Memory::CSharedPointer<SDRMConnector> self, uint32_t targetCrtc);
         void         addConnectorModeset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         void         addConnectorCursor(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
         bool         commit(uint32_t flagssss);
@@ -53,6 +53,7 @@ namespace Aquamarine {
         bool         failed = false;
 
       private:
+        bool                                             cleanupStaleRouting(const std::vector<std::pair<uint32_t, uint32_t>>& routes);
         void                                             destroyBlob(uint32_t id);
         void                                             commitBlob(uint32_t* current, uint32_t next);
         void                                             rollbackBlob(uint32_t* current, uint32_t next);
@@ -63,5 +64,7 @@ namespace Aquamarine {
 
         // mode blobs minted by restateConnectors, owned by this request
         std::vector<uint32_t> borrowedModeBlobs;
+        std::vector<uint32_t> routedPlanes;
+        bool                  trackPlaneRouting = false;
     };
 };

@@ -171,6 +171,11 @@ add_test(
   COMMAND commitThread "commitThread")
 add_dependencies(tests commitThread)
 
+add_executable(atomicRouting "tests/AtomicRouting.cpp")
+target_include_directories(atomicRouting PRIVATE "./src/backend/drm")
+add_test(NAME "atomicRouting" COMMAND atomicRouting)
+add_dependencies(tests atomicRouting)
+
 # Installation
 install(TARGETS aquamarine)
 install(DIRECTORY "include/aquamarine" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
