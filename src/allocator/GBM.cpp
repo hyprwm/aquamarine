@@ -145,8 +145,7 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
     if (MULTIGPU && !forceLinearBlit) {
         // Try to use the linear format if available for cross-GPU compatibility.
         // However, Nvidia doesn't support linear, so this is a best-effort basis.
-        if (std::find(explicitModifiers.begin(), explicitModifiers.end(),
-                      DRM_FORMAT_MOD_LINEAR) != explicitModifiers.end()) {
+        if (std::ranges::find(explicitModifiers, DRM_FORMAT_MOD_LINEAR) != explicitModifiers.end()) {
             allocator->backend->log(AQ_LOG_DEBUG, "GBM: Buffer is marked as multigpu, using linear format");
             explicitModifiers = {DRM_FORMAT_MOD_LINEAR};
         }
