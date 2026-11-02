@@ -554,7 +554,11 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         if (!connector->props.values.hdr_output_metadata)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit hdr metadata: no HDR_OUTPUT_METADATA prop support");
         else {
-            if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
+            const bool validHDR = data.hdrMetadata->hdmi_metadata_type1.eotf != 0 || data.hdrMetadata->hdmi_metadata_type1.max_display_mastering_luminance != 0;
+            if (!validHDR) {
+                data.atomic.hdrBlob = 0;
+                data.atomic.hdrd    = true;
+            } else if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a hdr metadata blob");
                 data.atomic.hdrBlob = 0;
                 data.atomic.hdrd    = false;
@@ -654,6 +658,16 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
         }
 
         return ok;
+    }
+
+    // If a modeset failed with PAGE_FLIP_EVENT, retry without PAGE_FLIP_EVENT.
+    // Some drivers (notably nvidia-drm) reject atomic modeset commits requesting
+    // a page-flip completion event when an earlier flip is still pending in the kernel.
+    if (!ok && data.modeset && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
+        backend->log(AQ_LOG_DEBUG, "atomic drm: modeset with PAGE_FLIP_EVENT failed, retrying without PAGE_FLIP_EVENT");
+        flags &= ~DRM_MODE_PAGE_FLIP_EVENT;
+        data.flags = flags;
+        ok         = request.commit(flags);
     }
 
     // A modeset the driver rejects may still be reachable if every head is
