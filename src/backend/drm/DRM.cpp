@@ -2608,12 +2608,14 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Disabling output {}", name));
         }
 
+        bool hadInFlight = false;
         if (STATE.enabled && NEEDS_RECONFIG && connector->sched.frameInFlight()) {
             // ALLOW_MODESET resets the CRTC, so the in-flight flip is either cancelled or
             // superseded by this commit. drop it either way; whatever event still arrives no
             // longer matches the crtcs id and is discarded.
             backend->backend->log(AQ_LOG_DEBUG, std::format("drm: page-flip on {} cancelled by modeset, clearing flip state", name));
             connector->invalidateFrame();
+            hadInFlight = true;
         }
 
         if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && connector->sched.frameInFlight()) {
@@ -2621,7 +2623,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             return false;
         }
 
-        if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
+        if (STATE.enabled && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && !hadInFlight)
             flags |= DRM_MODE_PAGE_FLIP_EVENT;
         if (STATE.presentationMode == AQ_OUTPUT_PRESENTATION_IMMEDIATE && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER))
             flags |= DRM_MODE_PAGE_FLIP_ASYNC;
@@ -2885,6 +2887,20 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         });
 
         connector->onPresent();
+    } else if (data.modeset && (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && !(data.flags & DRM_MODE_PAGE_FLIP_EVENT)) {
+        timespec presented;
+        clock_gettime(CLOCK_MONOTONIC, &presented);
+
+        connector->output->events.present.emit(IOutput::SPresentEvent{
+            .presented = backend->sessionActive(),
+            .when      = &presented,
+            .seq       = 0,
+            .refresh   = (int)(connector->refresh ? (1000000000000LL / connector->refresh) : 0),
+            .flags     = IOutput::AQ_OUTPUT_PRESENT_HW_CLOCK,
+        });
+
+        connector->onPresent();
+        scheduleFrame(IOutput::AQ_SCHEDULE_NEEDS_FRAME);
     }
 
     return ok;
