@@ -599,6 +599,11 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     request.addConnector(connector, data);
 
     uint32_t flags = data.flags;
+    // The kernel rejects (EINVAL) async page-flips combined with ALLOW_MODESET.
+    // A modeset commit must therefore never be async, otherwise it is retried
+    // forever and the output stops presenting frames.
+    if (data.modeset)
+        flags &= ~DRM_MODE_PAGE_FLIP_ASYNC;
     if (data.test)
         flags |= DRM_MODE_ATOMIC_TEST_ONLY;
     if (data.modeset)
