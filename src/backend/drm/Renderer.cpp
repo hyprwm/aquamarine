@@ -992,7 +992,10 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
         if (!intermediateBuf.empty() && primaryRenderer) {
             // Note: this might modify from's output attachment
-            primaryRenderer->readBuffer(from, intermediateBuf);
+            if (!primaryRenderer->readBuffer(from, intermediateBuf)) {
+                backend->log(AQ_LOG_ERROR, "EGL (blit): source readback failed for intermediate buffer");
+                return {};
+            }
         }
     }
 
