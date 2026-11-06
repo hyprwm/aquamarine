@@ -312,6 +312,7 @@ void CDRMRenderer::useProgram(GLuint prog) {
         return;
 
     GLCALL(glUseProgram(prog));
+    m_currentProgram = prog;
 }
 
 bool CDRMRenderer::initDRMFormats() {
