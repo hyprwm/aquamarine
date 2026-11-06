@@ -656,6 +656,16 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
         return ok;
     }
 
+    // If a modeset failed with PAGE_FLIP_EVENT, retry without PAGE_FLIP_EVENT.
+    // Some drivers (notably nvidia-drm) reject atomic modeset commits requesting
+    // a page-flip completion event when an earlier flip is still pending in the kernel.
+    if (!ok && data.modeset && (flags & DRM_MODE_PAGE_FLIP_EVENT)) {
+        backend->log(AQ_LOG_DEBUG, "atomic drm: modeset with PAGE_FLIP_EVENT failed, retrying without PAGE_FLIP_EVENT");
+        flags &= ~DRM_MODE_PAGE_FLIP_EVENT;
+        data.flags = flags;
+        ok         = request.commit(flags);
+    }
+
     // A modeset the driver rejects may still be reachable if every head is
     // modeset together, since display resources are allocated globally. Retry
     // once that way before letting the caller fall back to a lesser mode.
