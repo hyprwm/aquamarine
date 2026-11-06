@@ -296,16 +296,13 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     std::vector<std::pair<uint64_t, bool>> result;
     result.reserve(mods.size());
 
-    bool linearIsExternal = false;
     for (size_t i = 0; i < mods.size(); ++i) {
-        if (external.at(i) && mods.at(i) == DRM_FORMAT_MOD_LINEAR)
-            linearIsExternal = true;
         result.emplace_back(mods.at(i), external.at(i));
     }
 
     // if the driver doesn't mark linear as external, add it. It's allowed unless the driver says otherwise. (e.g. nvidia)
-    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end())
-        result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
+    if (std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end())
+        result.emplace_back(DRM_FORMAT_MOD_LINEAR, false);
 
     return result;
 }
