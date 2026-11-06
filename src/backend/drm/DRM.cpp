@@ -2255,6 +2255,7 @@ void Aquamarine::SDRMConnector::applyCommit(SDRMConnectorCommitData& data) {
         auto bk = backend.lock();
         if (bk) {
             bk->backend->log(AQ_LOG_DEBUG, std::format("drm: Connector {} enabledState changed {} -> {}", szName, wasEnabled, output->enabledState));
+            bk->recheckCRTCs();
             auto weak = bk->self;
             bk->backend->addIdleEvent(makeShared<std::function<void(void)>>([weak] {
                 auto b = weak.lock();
