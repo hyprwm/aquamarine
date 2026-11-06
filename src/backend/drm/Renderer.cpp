@@ -291,7 +291,12 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     mods.resize(len);
     external.resize(len);
 
-    proc.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len);
+    if (!proc.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len) || len < 0 || len > static_cast<EGLint>(mods.size())) {
+        backend->log(AQ_LOG_ERROR, std::format("EGL: eglQueryDmaBufModifiersEXT failed for format {}", fourccToName(format)));
+        return std::nullopt;
+    }
+    mods.resize(len);
+    external.resize(len);
 
     std::vector<std::pair<uint64_t, bool>> result;
     result.reserve(mods.size());
@@ -319,9 +324,17 @@ bool CDRMRenderer::initDRMFormats() {
     std::vector<EGLint> formats;
 
     EGLint              len = 0;
-    proc.eglQueryDmaBufFormatsEXT(egl.display, 0, nullptr, &len);
+    if (!proc.eglQueryDmaBufFormatsEXT(egl.display, 0, nullptr, &len) || len <= 0) {
+        backend->log(AQ_LOG_ERROR, "EGL: Failed to query formats");
+        return false;
+    }
+     formats.resize(len);
+
+    if (!proc.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len) || len < 0 || len > static_cast<EGLint>(formats.size())) {
+        backend->log(AQ_LOG_ERROR, "EGL: Failed to query formats");
+        return false;
+    }
     formats.resize(len);
-    proc.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len);
 
     if (formats.empty()) {
         backend->log(AQ_LOG_ERROR, "EGL: Failed to get formats");
