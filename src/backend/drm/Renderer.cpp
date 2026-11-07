@@ -328,7 +328,7 @@ bool CDRMRenderer::initDRMFormats() {
         backend->log(AQ_LOG_ERROR, "EGL: Failed to query formats");
         return false;
     }
-     formats.resize(len);
+    formats.resize(len);
 
     if (!proc.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len) || len < 0 || len > static_cast<EGLint>(formats.size())) {
         backend->log(AQ_LOG_ERROR, "EGL: Failed to query formats");
