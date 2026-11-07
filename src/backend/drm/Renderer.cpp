@@ -291,21 +291,23 @@ std::optional<std::vector<std::pair<uint64_t, bool>>> CDRMRenderer::getModsForFo
     mods.resize(len);
     external.resize(len);
 
-    proc.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len);
+    if (!proc.eglQueryDmaBufModifiersEXT(egl.display, format, len, mods.data(), external.data(), &len) || len < 0 || len > static_cast<EGLint>(mods.size())) {
+        backend->log(AQ_LOG_ERROR, std::format("EGL: eglQueryDmaBufModifiersEXT failed for format {}", fourccToName(format)));
+        return std::nullopt;
+    }
+    mods.resize(len);
+    external.resize(len);
 
     std::vector<std::pair<uint64_t, bool>> result;
     result.reserve(mods.size());
 
-    bool linearIsExternal = false;
     for (size_t i = 0; i < mods.size(); ++i) {
-        if (external.at(i) && mods.at(i) == DRM_FORMAT_MOD_LINEAR)
-            linearIsExternal = true;
         result.emplace_back(mods.at(i), external.at(i));
     }
 
     // if the driver doesn't mark linear as external, add it. It's allowed unless the driver says otherwise. (e.g. nvidia)
-    if (!linearIsExternal && std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end())
-        result.emplace_back(DRM_FORMAT_MOD_LINEAR, true);
+    if (std::ranges::find(mods, DRM_FORMAT_MOD_LINEAR) == mods.end())
+        result.emplace_back(DRM_FORMAT_MOD_LINEAR, false);
 
     return result;
 }
@@ -315,15 +317,24 @@ void CDRMRenderer::useProgram(GLuint prog) {
         return;
 
     GLCALL(glUseProgram(prog));
+    m_currentProgram = prog;
 }
 
 bool CDRMRenderer::initDRMFormats() {
     std::vector<EGLint> formats;
 
     EGLint              len = 0;
-    proc.eglQueryDmaBufFormatsEXT(egl.display, 0, nullptr, &len);
+    if (!proc.eglQueryDmaBufFormatsEXT(egl.display, 0, nullptr, &len) || len <= 0) {
+        backend->log(AQ_LOG_ERROR, "EGL: Failed to query formats");
+        return false;
+    }
     formats.resize(len);
-    proc.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len);
+
+    if (!proc.eglQueryDmaBufFormatsEXT(egl.display, len, formats.data(), &len) || len < 0 || len > static_cast<EGLint>(formats.size())) {
+        backend->log(AQ_LOG_ERROR, "EGL: Failed to query formats");
+        return false;
+    }
+    formats.resize(len);
 
     if (formats.empty()) {
         backend->log(AQ_LOG_ERROR, "EGL: Failed to get formats");
@@ -994,7 +1005,10 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
         if (!intermediateBuf.empty() && primaryRenderer) {
             // Note: this might modify from's output attachment
-            primaryRenderer->readBuffer(from, intermediateBuf);
+            if (!primaryRenderer->readBuffer(from, intermediateBuf)) {
+                backend->log(AQ_LOG_ERROR, "EGL (blit): source readback failed for intermediate buffer");
+                return {};
+            }
         }
     }
 
