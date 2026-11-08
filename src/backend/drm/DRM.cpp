@@ -2375,8 +2375,6 @@ bool Aquamarine::CDRMOutput::test() {
     const auto QUEUE_KEY = connector->crtc->id;
     if (pendingAsyncCommit)
         backend->cancelAsyncOutput(this, true);
-    if (pendingAsyncCommit)
-        return false;
     if (!backend->pauseCommitQueue(QUEUE_KEY))
         return false;
     CScopeGuard resume([this, QUEUE_KEY] { backend->resumeCommitQueue(QUEUE_KEY); });
