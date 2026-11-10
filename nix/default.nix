@@ -12,7 +12,6 @@
   libGL,
   libinput,
   libgbm,
-  pixman,
   pkg-config,
   seatd,
   udev,
@@ -67,7 +66,6 @@ customStdenv.mkDerivation {
     libGL
     libinput
     libgbm
-    pixman
     seatd
     udev
     wayland-protocols
