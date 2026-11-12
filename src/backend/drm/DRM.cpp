@@ -20,8 +20,10 @@
 #include <system_error>
 #include <utility>
 #include <sys/mman.h>
+#include <sys/timerfd.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <cerrno>
 extern "C" {
 #include <libseat.h>
 #include <libudev.h>
@@ -63,6 +65,11 @@ static bool shouldSubmitCTM(SP<SDRMConnector> connector, const COutputState::SIn
 }
 
 Aquamarine::CDRMBackend::CDRMBackend(SP<CBackend> backend_) : backend(backend_) {
+    // timerfd backing the deferred, coalesced hotplug rescan; see scheduleHotplugRecheck()
+    hotplugSettleFD = Hyprutils::OS::CFileDescriptor(timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC));
+    if (!hotplugSettleFD.isValid())
+        backend->log(AQ_LOG_ERROR, "drm: Failed to create hotplug settle timerfd, hotplug rescans will not be deferred");
+
     listeners.sessionActivate = backend->session->events.changeActive.listen([this] {
         if (backend->session->active) {
             // session got activated, we need to restore
@@ -1137,7 +1144,7 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     listeners.gpuChange = gpu->events.change.listen([this](const CSessionDevice::SChangeEvent& E) {
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
-            recheckOutputs();
+            scheduleHotplugRecheck();
         } else if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a lease event for {}", gpuName));
             scanLeases();
@@ -1248,6 +1255,37 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
 
     if (!updateSecondaryRendererState())
         backend->log(AQ_LOG_ERROR, std::format("drm: Failed to update renderer state for {}", gpu->path));
+}
+
+void Aquamarine::CDRMBackend::scheduleHotplugRecheck() {
+    if (!hotplugSettleFD.isValid()) {
+        // no timerfd (creation failed at construction, logged there); fall back to an immediate rescan
+        recheckOutputs();
+        return;
+    }
+
+    // (Re-)arm the one-shot settle timer. A burst of hotplug events keeps pushing the expiry
+    // out, so we rescan once the event stream has been quiet for the settle window instead of
+    // acting on each individual (possibly transient) connector reading.
+    static constexpr int HOTPLUG_SETTLE_MS = 500;
+    itimerspec          ts {};
+    ts.it_value.tv_sec  = HOTPLUG_SETTLE_MS / 1000;
+    ts.it_value.tv_nsec = (HOTPLUG_SETTLE_MS % 1000) * 1'000'000L;
+    if (timerfd_settime(hotplugSettleFD.get(), 0, &ts, nullptr) < 0)
+        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to arm hotplug settle timer: {}", strerror(errno)));
+}
+
+void Aquamarine::CDRMBackend::dispatchHotplugSettle() {
+    if (!hotplugSettleFD.isValid())
+        return;
+
+    // drain the expiration (non-blocking fd; a racing re-arm may already have reset the timer)
+    uint64_t expirations = 0;
+    if (read(hotplugSettleFD.get(), &expirations, sizeof(expirations)) < 0 && errno != EAGAIN)
+        backend->log(AQ_LOG_ERROR, std::format("drm: Failed to read hotplug settle timer: {}", strerror(errno)));
+
+    backend->log(AQ_LOG_DEBUG, std::format("drm: Hotplug events settled for {}, rescanning outputs", gpuName));
+    recheckOutputs();
 }
 
 void Aquamarine::CDRMBackend::scanConnectors() {
@@ -1369,6 +1407,8 @@ std::vector<Hyprutils::Memory::CSharedPointer<SPollFD>> Aquamarine::CDRMBackend:
     std::vector<SP<SPollFD>> fds = {makeShared<SPollFD>(gpu->fd, [this]() { dispatchEvents(); })};
     if (commitThread)
         fds.emplace_back(makeShared<SPollFD>(commitThread->completionFD(), [this]() { dispatchCommitResults(); }));
+    if (hotplugSettleFD.isValid())
+        fds.emplace_back(makeShared<SPollFD>(hotplugSettleFD.get(), [this]() { dispatchHotplugSettle(); }));
     return fds;
 }
 

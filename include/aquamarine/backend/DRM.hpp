@@ -509,6 +509,8 @@ namespace Aquamarine {
         void     scanLeases();
         void     restoreAfterVT();
         void     recheckOutputs();
+        void     scheduleHotplugRecheck();
+        void     dispatchHotplugSettle();
         void     recheckCRTCs();
         void     markRedundantTiles();
         void     buildGlFormats(const std::vector<SGLFormat>& fmts);
@@ -542,6 +544,8 @@ namespace Aquamarine {
         std::vector<SDRMFormat>                                       glFormats;
         uintptr_t                                                     m_lastPageFlipID           = 0;
         uint64_t                                                      m_lastAsyncOwnerID         = 0;
+        // timerfd backing deferred, coalesced hotplug rescans; see scheduleHotplugRecheck()
+        Hyprutils::OS::CFileDescriptor                                hotplugSettleFD;
         size_t                                                        m_pendingAsyncCommitEvents = 0;
         uintptr_t                                                     nextPageFlipID();
         Hyprutils::Memory::CUniquePointer<CDRMCommitThread>           commitThread;
