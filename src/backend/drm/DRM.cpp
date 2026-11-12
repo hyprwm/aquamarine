@@ -1434,6 +1434,19 @@ void Aquamarine::CDRMBackend::handlePageFlip(uintptr_t flipID, unsigned int seq,
     const auto CRTC = crtcByID(crtcID);
     if (!CRTC || !flipID || CRTC->pendingFlip.id != flipID) {
         log(AQ_LOG_DEBUG, std::format("drm: Ignoring a stale pf event, flip {} on crtc {}", flipID, crtcID));
+
+        // The flip this event belongs to is gone: it was cancelled or superseded
+        // by an ALLOW_MODESET commit that reset the CRTC. If no newer flip is in
+        // flight, the connector's frame scheduler still counts the dead flip as
+        // pending, and every further commit is rejected with "Cannot commit when
+        // a page-flip is awaiting" forever. Complete the bookkeeping so commits
+        // are accepted again and rendering can resume.
+        if (CRTC && flipID && !CRTC->pendingFlip.id) {
+            if (const auto CONNECTOR = CRTC->pendingFlip.connector.lock(); CONNECTOR && CONNECTOR->sched.frameInFlight()) {
+                log(AQ_LOG_DEBUG, std::format("drm: stale pf event flip {} on crtc {} had no live flip, completing frame state", flipID, crtcID));
+                CONNECTOR->sched.onFrameComplete();
+            }
+        }
         return;
     }
 
@@ -2607,10 +2620,11 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Disabling output {}", name));
         }
 
-        if (STATE.enabled && NEEDS_RECONFIG && connector->sched.frameInFlight()) {
+        if (NEEDS_RECONFIG && connector->sched.frameInFlight()) {
             // ALLOW_MODESET resets the CRTC, so the in-flight flip is either cancelled or
-            // superseded by this commit. drop it either way; whatever event still arrives no
-            // longer matches the crtcs id and is discarded.
+            // superseded by this commit, on disable as much as on enable. drop it either
+            // way; whatever event still arrives no longer matches the crtcs id and is
+            // discarded (and completed as stale in handlePageFlip).
             backend->backend->log(AQ_LOG_DEBUG, std::format("drm: page-flip on {} cancelled by modeset, clearing flip state", name));
             connector->invalidateFrame();
         }
