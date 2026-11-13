@@ -92,6 +92,7 @@ namespace Aquamarine {
             EGLContext context = nullptr;
             EGLSurface draw = nullptr, read = nullptr;
         } savedEGLState;
+        bool madeChange = false;
     };
 
     class CDRMRenderer {

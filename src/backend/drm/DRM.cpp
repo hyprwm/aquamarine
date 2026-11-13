@@ -421,7 +421,6 @@ void Aquamarine::CDRMBackend::stopCommitThread() {
         ATOMIC_IMPL->finalizeAsync(*DATA->request, DATA->connector, DATA->commitData, SUBMITTED);
 
         if (SUBMITTED && DATA->connector && DATA->output && DATA->connector->output == DATA->output) {
-            DATA->output->state->internalState.drmFormat = DATA->commitData.outputState.drmFormat;
             DATA->connector->applyCommit(DATA->commitData);
             for (const auto& fb : DATA->commitData.retiredFBs)
                 DATA->connector->releaseFBBuffer(fb);
@@ -524,7 +523,6 @@ void Aquamarine::CDRMBackend::dispatchCommitResults() {
         const auto CRTC      = CONNECTOR ? CONNECTOR->crtc : nullptr;
 
         if (SUBMITTED && CONNECTOR && OUTPUT && CONNECTOR->output == OUTPUT) {
-            OUTPUT->state->internalState.drmFormat = data->commitData.outputState.drmFormat;
             if (data->commitData.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
                 OUTPUT->state->internalState.explicitOutFence = data->commitData.outputState.explicitOutFence;
             CONNECTOR->applyCommit(data->commitData);
@@ -1960,6 +1958,7 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
             .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance,
             .desiredContentMinLuminance      = hdr_static_metadata->desired_content_min_luminance,
             .supportsPQ                      = hdr_static_metadata->pq,
+            .supportsHLG                     = hdr_static_metadata->hlg,
         };
     }
 
