@@ -1958,6 +1958,7 @@ IOutput::SParsedEDID Aquamarine::SDRMConnector::parseEDID(std::vector<uint8_t> d
             .desiredMaxFrameAverageLuminance = hdr_static_metadata->desired_content_max_frame_avg_luminance,
             .desiredContentMinLuminance      = hdr_static_metadata->desired_content_min_luminance,
             .supportsPQ                      = hdr_static_metadata->pq,
+            .supportsHLG                     = hdr_static_metadata->hlg,
         };
     }
 
