@@ -217,6 +217,7 @@ namespace Aquamarine {
             float desiredMaxFrameAverageLuminance = 0;
             float desiredContentMinLuminance      = 0;
             bool  supportsPQ                      = false;
+            bool  supportsHLG                     = false;
         };
 
         struct xy {
