@@ -2547,7 +2547,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         // verify the format is valid for the primary plane
         bool ok = false;
         for (auto const& f : getRenderFormats()) {
-            if (f.drmFormat == STATE.drmFormat) {
+            if (f.drmFormat == STATE.drmFormat || f.drmFormat == opaqueToAlphaFormat(STATE.drmFormat)) {
                 ok = true;
                 break;
             }
@@ -2767,7 +2767,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     // sometimes, our consumer could f up the swapchain format and change it without the state changing
     bool formatMismatch = false;
     if (data.mainFB) {
-        if (const auto params = data.mainFB->buffer->dmabuf(); params.success && params.format != STATE.drmFormat) {
+        if (const auto params = data.mainFB->buffer->dmabuf(); params.success && params.format != STATE.drmFormat && params.format != opaqueToAlphaFormat(STATE.drmFormat)) {
             // formats mismatch. Update the state format and roll with it
             backend->backend->log(AQ_LOG_WARNING,
                                   std::format("drm: Formats mismatch in commit, buffer is {} but output is set to {}. Modesetting to {}", fourccToName(params.format),
@@ -3167,7 +3167,7 @@ Aquamarine::IOutput::SCommitSubmission Aquamarine::CDRMOutput::commitAsync(const
 
     const auto MAIN_BUFFER = data.mainFB ? data.mainFB->buffer.lock() : nullptr;
     const auto ATTRS       = MAIN_BUFFER ? MAIN_BUFFER->dmabuf() : SDMABUFAttrs{};
-    if (ATTRS.success && ATTRS.format != STATE.drmFormat)
+    if (ATTRS.success && ATTRS.format != STATE.drmFormat && ATTRS.format != opaqueToAlphaFormat(STATE.drmFormat))
         return {.error = ENOTSUP};
 
     if (options.lateCursor && cursorVisible && connector->crtc->cursor)

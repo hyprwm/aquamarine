@@ -101,6 +101,17 @@ Aquamarine::CGBMBuffer::CGBMBuffer(const SAllocatorBufferParams& params, Hypruti
         return;
     }
 
+    // Scanout planes that offer only the alpha variant of an 8 bpc format (Apple M5 internal panel):
+    // allocate the A variant when the X variant is requested but not offered.
+    if (params.scanout && !CURSOR) {
+        const auto hasFmt = [&FORMATS](uint32_t fmt) { return std::ranges::any_of(FORMATS, [fmt](const auto& f) { return f.drmFormat == fmt; }); };
+        const uint32_t alt = opaqueToAlphaFormat(attrs.format);
+        if (alt != DRM_FORMAT_INVALID && !hasFmt(attrs.format) && hasFmt(alt)) {
+            allocator->backend->log(AQ_LOG_DEBUG, std::format("GBM: {} not offered by the scanout plane, using {}", fourccToName(attrs.format), fourccToName(alt)));
+            attrs.format = alt;
+        }
+    }
+
     bool foundFormat = false;
     // check if we can use modifiers. If the requested support has any explicit modifier
     // supported by the primary backend, we can.
