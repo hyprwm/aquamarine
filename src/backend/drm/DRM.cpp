@@ -1696,7 +1696,7 @@ bool Aquamarine::SDRMPlane::init(drmModePlane* plane) {
 
             if (it == formats.end())
                 formats.emplace_back(SDRMFormat{.drmFormat = iter.fmt, .modifiers = {iter.mod}});
-            else
+            else if (std::ranges::find(it->modifiers, iter.mod) == it->modifiers.end())
                 it->modifiers.emplace_back(iter.mod);
         }
 
