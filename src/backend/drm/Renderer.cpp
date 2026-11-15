@@ -390,6 +390,11 @@ bool CDRMRenderer::initDRMFormats() {
 }
 
 Aquamarine::CDRMRenderer::~CDRMRenderer() {
+    if (egl.lastBlitSync)
+        proc.eglDestroySyncKHR(egl.display, egl.lastBlitSync);
+    if (egl.lastBlitSyncFD >= 0)
+        close(egl.lastBlitSyncFD);
+
     if (egl.display)
         eglMakeCurrent(egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
