@@ -162,8 +162,8 @@ namespace Aquamarine {
             int        lastBlitSyncFD = -1;
         } egl;
 
-        CGLTex                                        glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
-        bool readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out, GLenum format = GL_RGBA, uint32_t stride = 0);
+        CGLTex glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buf);
+        bool   readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out, GLenum format = GL_RGBA, uint32_t stride = 0, int waitFD = -1);
 
         Hyprutils::Memory::CWeakPointer<CDRMRenderer> self;
         std::vector<SGLFormat>                        formats;
