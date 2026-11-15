@@ -80,7 +80,9 @@ bool Aquamarine::CDRMAtomicRequest::restateConnectors(SP<SDRMConnector> self) {
 
         // A head that has not scanned out yet has no buffer to restate; its
         // existing plane state carries over untouched, which is what we want.
-        if (c->crtc->primary && c->crtc->primary->front) {
+        // After suspend/resume (seen on NVIDIA) the retained front FB can be dead,
+        // i.e. its buffer is gone; touching it would crash (hyprwm/aquamarine#466).
+        if (c->crtc->primary && c->crtc->primary->front && !c->crtc->primary->front->dead && c->crtc->primary->front->buffer) {
             // planeProps reads per-connector state off `conn`, so point it at the
             // head we are restating rather than ours.
             const auto saved = conn;
@@ -143,6 +145,13 @@ void Aquamarine::CDRMAtomicRequest::planeProps(Hyprutils::Memory::CSharedPointer
         add(plane->id, plane->props.values.crtc_id, 0);
         add(plane->id, plane->props.values.crtc_x, (uint64_t)(int64_t)pos.x);
         add(plane->id, plane->props.values.crtc_y, (uint64_t)(int64_t)pos.y);
+        return;
+    }
+
+    if (fb->dead || !fb->buffer) {
+        // a dead FB has no backing buffer anymore - fail the request instead of crashing (hyprwm/aquamarine#466)
+        backend->log(AQ_LOG_ERROR, std::format("atomic planeProps: refusing dead framebuffer on plane {}", plane->id));
+        failed = true;
         return;
     }
 
