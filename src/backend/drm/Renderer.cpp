@@ -798,9 +798,13 @@ CGLTex CDRMRenderer::glTex(Hyprutils::Memory::CSharedPointer<IBuffer> buffa) {
 
 constexpr GLenum PIXEL_BUFFER_FORMAT = GL_RGBA;
 
-bool             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out, GLenum format, uint32_t stride) {
+bool             CDRMRenderer::readBuffer(Hyprutils::Memory::CSharedPointer<IBuffer> buf, std::span<uint8_t> out, GLenum format, uint32_t stride, int waitFD) {
     CEglContextGuard eglContext(*this);
-    auto             att = buf->attachments.get<CDRMRendererBufferOutputAttachment>();
+    // Server-side waits only order commands in the current context, not the blitting GPU's context.
+    if (waitFD >= 0 && !CFileDescriptor::isReadable(waitFD))
+        waitOnSync(waitFD);
+
+    auto att = buf->attachments.get<CDRMRendererBufferOutputAttachment>();
     if (!att || att->renderer != self) {
         att = makeShared<CDRMRendererBufferOutputAttachment>(self, nullptr, 0, 0);
         buf->attachments.add(att);
@@ -1015,7 +1019,7 @@ CDRMRenderer::SBlitResult CDRMRenderer::blit(SP<IBuffer> from, SP<IBuffer> to, S
 
         if (!intermediateBuf.empty() && primaryRenderer) {
             // Note: this might modify from's output attachment
-            if (!primaryRenderer->readBuffer(from, intermediateBuf)) {
+            if (!primaryRenderer->readBuffer(from, intermediateBuf, PIXEL_BUFFER_FORMAT, 0, waitFD)) {
                 backend->log(AQ_LOG_ERROR, "EGL (blit): source readback failed for intermediate buffer");
                 return {};
             }
