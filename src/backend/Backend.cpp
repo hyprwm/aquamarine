@@ -5,6 +5,7 @@
 #include <aquamarine/backend/Null.hpp>
 #include <aquamarine/allocator/GBM.hpp>
 #include <hyprutils/os/FileDescriptor.hpp>
+#include <algorithm>
 #include <ranges>
 #include <sys/timerfd.h>
 #include <ctime>
@@ -158,6 +159,15 @@ bool Aquamarine::CBackend::start() {
             log(AQ_LOG_ERROR, std::format("Implementation {} failed, erasing.", backendTypeToName(i->type())));
         return failed;
     });
+
+    // a nested backend gets input from the parent, a session without DRM is useless there
+    const bool HAS_DRM     = std::ranges::any_of(implementations, [](const auto& i) { return i->type() == AQ_BACKEND_DRM; });
+    const bool HAS_WAYLAND = std::ranges::any_of(implementations, [](const auto& i) { return i->type() == AQ_BACKEND_WAYLAND; });
+
+    if (session && !HAS_DRM && HAS_WAYLAND) {
+        log(AQ_LOG_DEBUG, "Nested without DRM, dropping the session");
+        session.reset();
+    }
 
     // TODO: obviously change this when (if) we add different allocators.
     for (auto const& b : implementations) {
