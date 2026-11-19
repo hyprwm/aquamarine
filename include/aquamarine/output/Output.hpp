@@ -26,6 +26,10 @@ namespace Aquamarine {
         std::optional<drmModeModeInfo> modeInfo; // if this is a drm mode, this will be populated.
     };
 
+    struct SCursorPlaneSizeHints {
+        std::vector<Hyprutils::Math::Vector2D> sizes;
+    };
+
     enum eOutputPresentationMode : uint32_t {
         AQ_OUTPUT_PRESENTATION_VSYNC = 0,
         AQ_OUTPUT_PRESENTATION_IMMEDIATE, // likely tearing
@@ -139,7 +143,7 @@ namespace Aquamarine {
         void                  setHDRMetadata(const hdr_output_metadata& metadata);
         void                  setContentType(const uint16_t drmContentType);
         void                  setColorRange(eOutputColorRange range);
-        void                  setMaxBpc(uint8_t maxBpc); 
+        void                  setMaxBpc(uint8_t maxBpc);
 
       private:
         SInternalState           internalState;
@@ -249,6 +253,7 @@ namespace Aquamarine {
         virtual void                                                      setCursorVisible(bool visible); // moving the cursor will make it visible again without this util
         virtual bool                                                      hasCursorPlane() const;
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize(); // -1, -1 means no set size, 0, 0 means error
+        virtual const SCursorPlaneSizeHints&                              cursorPlaneSizeHints() const;
         virtual std::optional<std::chrono::steady_clock::time_point>      nextVBlank() const;
         virtual void                                                      scheduleFrame(const scheduleFrameReason reason = AQ_SCHEDULE_UNKNOWN);
         virtual size_t                                                    getGammaSize();
