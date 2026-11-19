@@ -69,6 +69,7 @@ static const struct prop_info plane_info[] = {
     {.name = "HOTSPOT_Y", .index = INDEX(hotspot_y)},
     {.name = "IN_FENCE_FD", .index = INDEX(in_fence_fd)},
     {.name = "IN_FORMATS", .index = INDEX(in_formats)},
+    {.name = "SIZE_HINTS", .index = INDEX(size_hints)},
     {.name = "SRC_H", .index = INDEX(src_h)},
     {.name = "SRC_W", .index = INDEX(src_w)},
     {.name = "SRC_X", .index = INDEX(src_x)},

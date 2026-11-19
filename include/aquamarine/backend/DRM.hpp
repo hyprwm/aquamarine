@@ -116,6 +116,7 @@ namespace Aquamarine {
 
     struct SDRMPlane {
         bool                                         init(drmModePlane* plane);
+        void                                         initSizeHints();
 
         uint64_t                                     type      = 0;
         uint32_t                                     id        = 0;
@@ -126,12 +127,14 @@ namespace Aquamarine {
         Hyprutils::Memory::CWeakPointer<SDRMPlane>   self;
         bool                                         backSet = false;
         std::vector<SDRMFormat>                      formats;
+        SCursorPlaneSizeHints                        sizeHints;
 
         union UDRMPlaneProps {
             struct {
                 uint32_t type;
                 uint32_t rotation;   // Not guaranteed to exist
                 uint32_t in_formats; // Not guaranteed to exist
+                uint32_t size_hints; // Not guaranteed to exist
 
                 // atomic-modesetting only
 
@@ -151,7 +154,7 @@ namespace Aquamarine {
                 uint32_t in_fence_fd;
                 uint32_t color_range;
             } values;
-            uint32_t props[18] = {0};
+            uint32_t props[19] = {0};
         };
         UDRMPlaneProps props;
 
@@ -242,6 +245,7 @@ namespace Aquamarine {
         virtual void                                                      setCursorVisible(bool visible);
         virtual bool                                                      hasCursorPlane() const;
         virtual Hyprutils::Math::Vector2D                                 cursorPlaneSize();
+        virtual const SCursorPlaneSizeHints&                              cursorPlaneSizeHints() const;
         virtual std::optional<std::chrono::steady_clock::time_point>      nextVBlank() const;
         virtual size_t                                                    getGammaSize();
         virtual size_t                                                    getDeGammaSize();
@@ -548,7 +552,7 @@ namespace Aquamarine {
         std::chrono::microseconds                                     commitLeadTime = std::chrono::microseconds{2000};
 
         Hyprutils::Memory::CSharedPointer<CDRMDumbAllocator>          dumbAllocator;
-        bool                                                          cpuCopyFallback  = false;
+        bool                                                          cpuCopyFallback = false;
 
         bool                                                          atomic = false;
 

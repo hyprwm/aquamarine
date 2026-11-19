@@ -54,6 +54,11 @@ Hyprutils::Math::Vector2D Aquamarine::IOutput::cursorPlaneSize() {
     return {}; // error
 }
 
+const Aquamarine::SCursorPlaneSizeHints& Aquamarine::IOutput::cursorPlaneSizeHints() const {
+    static const SCursorPlaneSizeHints EMPTY;
+    return EMPTY;
+}
+
 std::optional<std::chrono::steady_clock::time_point> Aquamarine::IOutput::nextVBlank() const {
     return std::nullopt;
 }
