@@ -410,24 +410,23 @@ void Aquamarine::CDRMBackend::stopCommitThread() {
     flushAsyncCommitEvents();
     auto RESULTS = commitThread->stopAndDrain();
     for (auto& result : RESULTS) {
-        auto* DATA        = dynamic_cast<CDRMAsyncCommitData*>(result.request->data.get());
-        auto* ATOMIC_IMPL = dynamic_cast<CDRMAtomicImpl*>(impl.get());
-        if (!DATA || !DATA->request || !ATOMIC_IMPL)
+        auto* DATA = dynamic_cast<CDRMAsyncCommitData*>(result.request->data.get());
+        if (!DATA || !DATA->request)
             continue;
 
         const bool SUBMITTED = result.status == CDRMCommitThread::AQ_DRM_COMMIT_THREAD_SUBMITTED;
-        if (SUBMITTED)
+        if (SUBMITTED) {
             DATA->mgpuAcquired = false;
-        ATOMIC_IMPL->finalizeAsync(*DATA->request, DATA->connector, DATA->commitData, SUBMITTED);
-
-        if (SUBMITTED && DATA->connector && DATA->output && DATA->connector->output == DATA->output) {
-            DATA->connector->applyCommit(DATA->commitData);
-            for (const auto& fb : DATA->commitData.retiredFBs)
-                DATA->connector->releaseFBBuffer(fb);
-        }
-
-        if (!SUBMITTED)
+            DATA->request->apply(DATA->commitData);
+            if (DATA->connector && DATA->output && DATA->connector->output == DATA->output) {
+                DATA->connector->applyCommit(DATA->commitData);
+                for (const auto& fb : DATA->commitData.retiredFBs)
+                    DATA->connector->releaseFBBuffer(fb);
+            }
+        } else {
+            DATA->request->rollback(DATA->commitData);
             DATA->rollbackMgpu();
+        }
         DATA->releasePins();
         if (!SUBMITTED && DATA->output && DATA->snapshot)
             DATA->output->state->rearm(*DATA->snapshot);
@@ -506,32 +505,31 @@ void Aquamarine::CDRMBackend::dispatchCommitResults() {
     if (!commitThread || m_pendingAsyncCommitEvents > 0)
         return;
 
-    auto* atomicImpl = dynamic_cast<CDRMAtomicImpl*>(impl.get());
-    auto  results    = commitThread->drainResults();
+    auto results = commitThread->drainResults();
     for (auto& result : results) {
         auto* data = dynamic_cast<CDRMAsyncCommitData*>(result.request->data.get());
-        if (!data || !data->request || !atomicImpl)
+        if (!data || !data->request)
             continue;
 
         const bool SUBMITTED = result.status == CDRMCommitThread::AQ_DRM_COMMIT_THREAD_SUBMITTED;
-        if (SUBMITTED)
-            data->mgpuAcquired = false;
-        atomicImpl->finalizeAsync(*data->request, data->connector, data->commitData, SUBMITTED);
-
         const auto OUTPUT    = data->output;
         const auto CONNECTOR = data->connector;
         const auto CRTC      = CONNECTOR ? CONNECTOR->crtc : nullptr;
 
-        if (SUBMITTED && CONNECTOR && OUTPUT && CONNECTOR->output == OUTPUT) {
-            if (data->commitData.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
-                OUTPUT->state->internalState.explicitOutFence = data->commitData.outputState.explicitOutFence;
-            CONNECTOR->applyCommit(data->commitData);
-            for (const auto& fb : data->commitData.retiredFBs)
-                CONNECTOR->releaseFBBuffer(fb);
-        }
-
-        if (!SUBMITTED)
+        if (SUBMITTED) {
+            data->mgpuAcquired = false;
+            data->request->apply(data->commitData);
+            if (CONNECTOR && OUTPUT && CONNECTOR->output == OUTPUT) {
+                if (data->commitData.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_OUT_FENCE)
+                    OUTPUT->state->internalState.explicitOutFence = data->commitData.outputState.explicitOutFence;
+                CONNECTOR->applyCommit(data->commitData);
+                for (const auto& fb : data->commitData.retiredFBs)
+                    CONNECTOR->releaseFBBuffer(fb);
+            }
+        } else {
+            data->request->rollback(data->commitData);
             data->rollbackMgpu();
+        }
         data->releasePins();
 
         const bool CURRENT = OUTPUT && result.request->ownerID == OUTPUT->asyncOwnerID && OUTPUT->pendingAsyncCommit == result.request->id;
@@ -2719,8 +2717,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
 
             if (!drmFB && EVDI && backend->dumbAllocator) {
                 if (!backend->cpuCopyFallback) {
-                    backend->backend->log(AQ_LOG_DEBUG,
-                                          std::format("drm: direct KMS import of primary buffer failed on {}, switching to dumb-buffer CPU copy", backend->gpuName));
+                    backend->backend->log(AQ_LOG_DEBUG, std::format("drm: direct KMS import of primary buffer failed on {}, switching to dumb-buffer CPU copy", backend->gpuName));
                     backend->cpuCopyFallback = true;
                 }
 
@@ -3218,7 +3215,7 @@ Aquamarine::IOutput::SCommitSubmission Aquamarine::CDRMOutput::commitAsync(const
     if (!COMMIT_ID) {
         auto* failedData = dynamic_cast<CDRMAsyncCommitData*>(request->data.get());
         if (failedData) {
-            atomicImpl->finalizeAsync(*failedData->request, connector, failedData->commitData, false);
+            failedData->request->rollback(failedData->commitData);
             failedData->rollbackMgpu();
             failedData->releasePins();
         }

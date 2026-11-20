@@ -427,6 +427,21 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
     commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     commitBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
     destroyBlob(data.atomic.fbDamage);
+
+    if (data.test)
+        return;
+
+    conn->atomic.maxBpc      = data.atomic.maxBpc;
+    conn->atomic.colorspace  = data.atomic.colorspace;
+    conn->atomic.contentType = data.atomic.contentType;
+    conn->atomic.crtcID      = data.atomic.crtcID;
+    conn->atomic.propsCached = true;
+    conn->atomic.colorRange  = data.outputState.colorRange;
+    conn->atomic.vrrEnabled  = data.enabled && data.mainFB && data.outputState.adaptiveSync;
+    if (conn->output)
+        conn->output->vrrActive = conn->atomic.vrrEnabled;
+    if (data.atomic.ctmd)
+        conn->crtc->atomic.ctmStateKnown = true;
 }
 
 Aquamarine::CDRMAtomicImpl::CDRMAtomicImpl(Hyprutils::Memory::CSharedPointer<CDRMBackend> backend_) : backend(backend_) {
@@ -447,25 +462,6 @@ CUniquePointer<CDRMAtomicRequest> Aquamarine::CDRMAtomicImpl::prepareAsync(SP<SD
     }
 
     return request;
-}
-
-void Aquamarine::CDRMAtomicImpl::finalizeAsync(CDRMAtomicRequest& request, SP<SDRMConnector> connector, SDRMConnectorCommitData& data, bool success) {
-    if (!success) {
-        request.rollback(data);
-        return;
-    }
-
-    request.apply(data);
-    connector->atomic.maxBpc      = data.atomic.maxBpc;
-    connector->atomic.colorspace  = data.atomic.colorspace;
-    connector->atomic.contentType = data.atomic.contentType;
-    connector->atomic.crtcID      = data.atomic.crtcID;
-    connector->atomic.propsCached = true;
-    connector->atomic.colorRange  = data.outputState.colorRange;
-    connector->atomic.vrrEnabled  = data.outputState.adaptiveSync;
-    connector->output->vrrActive  = data.outputState.adaptiveSync;
-    if (data.atomic.ctmd)
-        connector->crtc->atomic.ctmStateKnown = true;
 }
 
 bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
@@ -610,7 +606,8 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     if (!data.blocking && !data.test)
         flags |= DRM_MODE_ATOMIC_NONBLOCK;
 
-    bool ok = request.commit(flags);
+    bool                             ok = request.commit(flags);
+    std::optional<CDRMAtomicRequest> retry;
 
     // If the commit failed and max_bpc was actually emitted in this request, retry
     // without it. Some drivers (notably amdgpu on eDP panels) reject atomic commits
@@ -620,52 +617,18 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     if (!ok && data.atomic.maxBpcEmitted && !connector->maxBpcFailed) {
         connector->backend->backend->log(AQ_LOG_WARNING, "drm: atomic commit failed with max_bpc set, retrying without max_bpc");
 
-        // Re-build the request without max_bpc (addConnector checks maxBpcFailed
-        // and will skip the max_bpc property). The property blobs created in
-        // prepareConnector() are reused as-is, so we must NOT roll back the
-        // original request here or request2 would submit already-destroyed blob
-        // IDs. Blob cleanup is handled by request2.apply()/rollback() below.
-        // maxBpcFailed is latched here so addConnector omits the property, then
-        // cleared on retry failure so a transient error does not permanently
-        // disable max_bpc for this connector.
-        connector->maxBpcFailed   = true;
-        data.atomic.maxBpc        = 0;
-        data.atomic.maxBpcEmitted = false;
-
-        CDRMAtomicRequest request2(backend);
-        request2.addConnector(connector, data);
-
-        ok = request2.commit(flags);
-
-        if (ok) {
-            request2.apply(data);
-            if (!data.test) {
-                connector->atomic.maxBpc      = data.atomic.maxBpc;
-                connector->atomic.colorspace  = data.atomic.colorspace;
-                connector->atomic.contentType = data.atomic.contentType;
-                connector->atomic.crtcID      = data.atomic.crtcID;
-                connector->atomic.propsCached = true;
-                connector->atomic.colorRange  = data.outputState.colorRange;
-                if (data.atomic.ctmd)
-                    connector->crtc->atomic.ctmStateKnown = true;
-
-                if (data.mainFB && data.enabled && (flags & DRM_MODE_PAGE_FLIP_EVENT))
-                    connector->sched.onFrameSubmitted();
-            }
-        } else {
+        // Reuse the staged blobs; rolling back the original request here would
+        // destroy them before the retry can submit them. Latch the workaround
+        // only if dropping max_bpc actually helps.
+        connector->maxBpcFailed = true;
+        retry.emplace(backend);
+        retry->addConnector(connector, data);
+        ok = retry->commit(flags);
+        if (!ok)
             connector->maxBpcFailed = false;
-            request2.rollback(data);
-        }
-
-        return ok;
-    }
-
-    // A modeset the driver rejects may still be reachable if every head is
-    // modeset together, since display resources are allocated globally. Retry
-    // once that way before letting the caller fall back to a lesser mode.
-    // See CDRMAtomicRequest::restateConnectors.
-    std::optional<CDRMAtomicRequest> retry;
-    if (!ok && data.modeset) {
+    } else if (!ok && data.modeset) {
+        // Display resources are allocated globally, so retry with every head
+        // restated before letting the caller fall back to a lesser mode.
         retry.emplace(backend);
         retry->addConnector(connector, data);
         if (retry->restateConnectors(connector)) {
@@ -681,25 +644,11 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
             retry.reset();
     }
 
-    // whichever request the kernel accepted owns the blob bookkeeping
-    CDRMAtomicRequest& applied = retry.has_value() ? *retry : request;
-
-    if (ok) {
-        applied.apply(data);
-        if (!data.test) {
-            // remember which connector_state values the kernel last accepted so the
-            // next page-flip can skip emitting unchanged ones (see #265).
-            connector->atomic.maxBpc      = data.atomic.maxBpc;
-            connector->atomic.colorspace  = data.atomic.colorspace;
-            connector->atomic.contentType = data.atomic.contentType;
-            connector->atomic.crtcID      = data.atomic.crtcID;
-            connector->atomic.propsCached = true;
-            connector->atomic.colorRange  = data.outputState.colorRange;
-            if (data.atomic.ctmd)
-                connector->crtc->atomic.ctmStateKnown = true;
-        }
-    } else
-        applied.rollback(data);
+    auto& completed = retry ? *retry : request;
+    if (ok)
+        completed.apply(data);
+    else
+        completed.rollback(data);
 
     return ok;
 }
