@@ -14,7 +14,6 @@ namespace Aquamarine {
 
         Hyprutils::Memory::CUniquePointer<CDRMAtomicRequest> prepareAsync(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data,
                                                                           uint32_t& flags);
-        void finalizeAsync(CDRMAtomicRequest& request, Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data, bool success);
 
       private:
         bool                                         prepareConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data);
