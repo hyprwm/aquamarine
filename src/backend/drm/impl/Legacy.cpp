@@ -151,7 +151,7 @@ bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     if (!testInternal(connector, data))
         return false;
 
-    return commitInternal(connector, data);
+    return data.test && commitInternal(connector, data);
 }
 
 bool Aquamarine::CDRMLegacyImpl::reset() {
