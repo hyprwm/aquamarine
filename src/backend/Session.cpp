@@ -575,9 +575,11 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
             // --------- pointer
 
         case LIBINPUT_EVENT_POINTER_MOTION: {
-            auto pe = libinput_event_get_pointer_event(e);
+            auto pe     = libinput_event_get_pointer_event(e);
+            auto timeUs = libinput_event_pointer_get_time_usec(pe);
             hlDevice->mouse->events.move.emit(IPointer::SMoveEvent{
-                .timeMs  = (uint32_t)(libinput_event_pointer_get_time_usec(pe) / 1000),
+                .timeMs  = sc<uint32_t>(timeUs / 1000),
+                .timeUs  = timeUs,
                 .delta   = {libinput_event_pointer_get_dx(pe), libinput_event_pointer_get_dy(pe)},
                 .unaccel = {libinput_event_pointer_get_dx_unaccelerated(pe), libinput_event_pointer_get_dy_unaccelerated(pe)},
             });

@@ -65,6 +65,7 @@ namespace Aquamarine {
 
         struct SMoveEvent {
             uint32_t                  timeMs = 0;
+            uint64_t                  timeUs = 0; // zero if only timeMs is available
             Hyprutils::Math::Vector2D delta, unaccel;
         };
 
