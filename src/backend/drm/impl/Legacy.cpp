@@ -65,7 +65,7 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
         }
     }
 
-    if (data.committed & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_ADAPTIVE_SYNC) {
+    if ((enable && data.modeset) || (data.committed & COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC)) {
         if (STATE.adaptiveSync && !connector->canDoVrr) {
             connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: connector {} can't do vrr", connector->id));
             return false;
@@ -80,7 +80,6 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
             }
         }
 
-        connector->output->vrrActive = STATE.adaptiveSync;
         connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: connector {} vrr -> {}", connector->id, STATE.adaptiveSync));
     }
 
@@ -151,7 +150,14 @@ bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
     if (!testInternal(connector, data))
         return false;
 
-    return data.test && commitInternal(connector, data);
+    if (data.test)
+        return true;
+    if (!commitInternal(connector, data))
+        return false;
+
+    if (connector->output)
+        connector->output->vrrActive = data.enabled && data.mainFB && data.outputState.adaptiveSync;
+    return true;
 }
 
 bool Aquamarine::CDRMLegacyImpl::reset() {
