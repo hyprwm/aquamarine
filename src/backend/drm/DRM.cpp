@@ -620,7 +620,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
 
-    std::vector<SP<SDRMConnector>> noMode;
+    std::vector<CWeakPointer<CDRMOutput>> needsRecovery;
 
     for (auto const& c : connectors) {
         if (!c->crtc || !c->output)
@@ -645,39 +645,38 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
         auto& MODE = STATE.customMode ? STATE.customMode : STATE.mode;
 
-        if (!MODE) {
-            backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no mode, will send a reset state event later.");
-            noMode.emplace_back(c);
+        c->crtc->atomic.ctmStateKnown = false;
+
+        if (STATE.enabled && !MODE) {
+            backend->log(AQ_LOG_WARNING, std::format("drm: No mode to restore on {}, requesting state", c->szName));
+            needsRecovery.emplace_back(c->output);
             continue;
         }
 
-        c->crtc->atomic.ctmStateKnown = false;
-
-        if (MODE->modeInfo.has_value())
-            data.modeInfo = *MODE->modeInfo;
-        else
-            data.calculateMode(c);
+        if (MODE) {
+            if (MODE->modeInfo.has_value())
+                data.modeInfo = *MODE->modeInfo;
+            else
+                data.calculateMode(c);
+        }
 
         if (shouldSubmitCTM(c, STATE, data.modeset))
             data.ctm = STATE.ctm;
 
-        if (STATE.buffer) {
+        if (STATE.enabled) {
             data.committed |= COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC;
             SP<CDRMFB> drmFB;
 
             // If this backend requires blit (multi-GPU), the STATE.buffer was
             // rendered on a different GPU and cannot be directly imported here.
             // Skip the import and request a re-render through the proper blit pipeline.
-            if (!shouldBlit()) {
-                auto buf   = STATE.buffer;
-                bool isNew = false;
-                drmFB      = CDRMFB::create(buf, self, &isNew);
-            }
+            if (STATE.buffer && !shouldBlit())
+                drmFB = CDRMFB::create(STATE.buffer, self, nullptr);
 
-            if (!drmFB) {
+            if (!drmFB || drmFB->dead) {
                 backend->log(AQ_LOG_DEBUG,
                              std::format("drm: Buffer unavailable for crtc {} restore ({}), requesting re-render", c->crtc->id, shouldBlit() ? "multi-gpu" : "import failed"));
-                noMode.emplace_back(c);
+                needsRecovery.emplace_back(c->output);
                 continue;
             }
 
@@ -697,20 +696,19 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
                      std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, data.modeInfo.clock, data.modeInfo.hdisplay,
                                  data.modeInfo.vdisplay, data.modeInfo.vrefresh));
 
-        if (!c->commitState(data))
-            backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
-        else
+        if (!c->commitState(data)) {
+            backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore, requesting state", c->crtc->id));
+            needsRecovery.emplace_back(c->output);
+        } else
             c->output->lastCommitNoBuffer = !data.mainFB;
     }
 
     connectNewOutputs();
 
-    for (auto const& c : noMode) {
-        if (!c->output)
-            continue;
-
-        // tell the consumer to re-set a state because we had no mode
-        c->output->events.state.emit(IOutput::SStateEvent{});
+    for (const auto& weak : needsRecovery) {
+        const auto output = weak.lock();
+        if (output && output->connector->output == output)
+            output->events.state.emit(IOutput::SStateEvent{});
     }
 }
 
