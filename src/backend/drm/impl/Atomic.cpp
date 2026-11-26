@@ -219,15 +219,7 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
     bool           maxBpcEmitted  = false;
 
     if (enable) {
-        drmModeModeInfo* currentMode = connector->getCurrentMode();
-        bool             modeDiffers = true;
-        if (currentMode) {
-            modeDiffers = memcmp(currentMode, &data.modeInfo, sizeof(drmModeModeInfo)) != 0;
-            free(currentMode);
-        }
-
-        if (modeDiffers)
-            addConnectorModeset(connector, data);
+        addConnectorModeset(connector, data);
 
         // Setup HDR
         if (connector->props.values.max_bpc && connector->maxBpcBounds.at(0) && connector->maxBpcBounds.at(1) && !connector->maxBpcFailed) {
@@ -300,12 +292,10 @@ void Aquamarine::CDRMAtomicRequest::addConnector(Hyprutils::Memory::CSharedPoint
 }
 
 void Aquamarine::CDRMAtomicRequest::addConnectorModeset(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
-    if (!data.modeset)
+    if (!data.atomic.blobbed)
         return;
 
     const bool enable = data.enabled && data.mainFB;
-
-    data.atomic.blobbed = true;
 
     if (enable) {
         add(connector->crtc->id, connector->crtc->props.values.mode_id, data.atomic.modeBlob);
@@ -466,13 +456,18 @@ CUniquePointer<CDRMAtomicRequest> Aquamarine::CDRMAtomicImpl::prepareAsync(SP<SD
 
 bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     const auto& STATE  = data.outputState;
-    const bool  enable = data.enabled;
+    const bool  enable = data.enabled && data.mainFB;
     const auto& MODE   = STATE.mode ? STATE.mode : STATE.customMode;
 
     if (data.modeset) {
-        if (!enable)
-            data.atomic.modeBlob = 0;
-        else {
+        data.atomic.blobbed = true;
+        if (enable) {
+            if (auto current = connector->getCurrentMode()) {
+                data.atomic.blobbed = std::memcmp(current, &data.modeInfo, sizeof(data.modeInfo)) != 0;
+                free(current);
+            }
+        }
+        if (enable && data.atomic.blobbed) {
             if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.modeInfo, sizeof(drmModeModeInfo), &data.atomic.modeBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a modeset blob");
                 return false;
