@@ -394,7 +394,6 @@ void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
     if (!conn)
         return;
 
-    conn->crtc->atomic.ownModeID = true;
     if (data.atomic.blobbed)
         rollbackBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
     rollbackBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
@@ -404,22 +403,27 @@ void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
 }
 
 void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
+    if (data.test) {
+        rollback(data);
+        return;
+    }
+
     if (!conn)
         return;
 
-    if (!conn->crtc->atomic.ownModeID)
-        conn->crtc->atomic.modeID = 0;
-
-    conn->crtc->atomic.ownModeID = true;
-    if (data.atomic.blobbed)
+    if (data.atomic.blobbed) {
+        if (!conn->crtc->atomic.ownModeID)
+            conn->crtc->atomic.modeID = 0;
         commitBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
-    commitBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
-    commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
-    commitBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
+        conn->crtc->atomic.ownModeID = true;
+    }
+    if (data.atomic.gammad)
+        commitBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
+    if (data.atomic.ctmd)
+        commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
+    if (data.atomic.hdrd)
+        commitBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
     destroyBlob(data.atomic.fbDamage);
-
-    if (data.test)
-        return;
 
     conn->atomic.maxBpc      = data.atomic.maxBpc;
     conn->atomic.colorspace  = data.atomic.colorspace;
@@ -478,6 +482,9 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                                                       data.modeInfo.hdisplay, data.modeInfo.vdisplay, data.modeInfo.vrefresh, data.modeInfo.name)));
         }
     }
+
+    if (!enable)
+        return true;
 
     auto prepareGammaBlob = [connector](uint32_t prop, const std::vector<uint16_t>& gammaLut, uint32_t* blobId) -> bool {
         if (!prop) // TODO: allow this with legacy gamma, perhaps.
