@@ -384,22 +384,14 @@ void Aquamarine::CDRMAtomicRequest::commitBlob(uint32_t* current, uint32_t next)
     *current = next;
 }
 
-void Aquamarine::CDRMAtomicRequest::rollbackBlob(uint32_t* current, uint32_t next) {
-    if (*current == next)
-        return;
-    destroyBlob(next);
-}
-
 void Aquamarine::CDRMAtomicRequest::rollback(SDRMConnectorCommitData& data) {
-    if (!conn)
-        return;
-
-    if (data.atomic.blobbed)
-        rollbackBlob(&conn->crtc->atomic.modeID, data.atomic.modeBlob);
-    rollbackBlob(&conn->crtc->atomic.gammaLut, data.atomic.gammaLut);
-    rollbackBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
-    rollbackBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
+    destroyBlob(data.atomic.modeBlob);
+    destroyBlob(data.atomic.gammaLut);
+    destroyBlob(data.atomic.degammaLut);
+    destroyBlob(data.atomic.ctmBlob);
+    destroyBlob(data.atomic.hdrBlob);
     destroyBlob(data.atomic.fbDamage);
+    data.atomic = {}; // a failed flip may be retried as a modeset
 }
 
 void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
@@ -423,6 +415,8 @@ void Aquamarine::CDRMAtomicRequest::apply(SDRMConnectorCommitData& data) {
         commitBlob(&conn->crtc->atomic.ctm, data.atomic.ctmBlob);
     if (data.atomic.hdrd)
         commitBlob(&conn->crtc->atomic.hdr, data.atomic.hdrBlob);
+
+    destroyBlob(data.atomic.degammaLut);
     destroyBlob(data.atomic.fbDamage);
 
     conn->atomic.maxBpc      = data.atomic.maxBpc;
@@ -443,10 +437,12 @@ Aquamarine::CDRMAtomicImpl::CDRMAtomicImpl(Hyprutils::Memory::CSharedPointer<CDR
 }
 
 CUniquePointer<CDRMAtomicRequest> Aquamarine::CDRMAtomicImpl::prepareAsync(SP<SDRMConnector> connector, SDRMConnectorCommitData& data, uint32_t& flags) {
-    if (!prepareConnector(connector, data))
-        return nullptr;
-
     auto request = makeUnique<CDRMAtomicRequest>(backend);
+    if (!prepareConnector(connector, data)) {
+        request->rollback(data);
+        return nullptr;
+    }
+
     request->addConnector(connector, data);
 
     flags = data.flags | DRM_MODE_ATOMIC_NONBLOCK;
@@ -593,10 +589,11 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
 }
 
 bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
-    if (!prepareConnector(connector, data))
-        return false;
-
     CDRMAtomicRequest request(backend);
+    if (!prepareConnector(connector, data)) {
+        request.rollback(data);
+        return false;
+    }
 
     request.addConnector(connector, data);
 
