@@ -639,7 +639,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             .flags         = 0,
             .test          = false,
             .enabled       = STATE.enabled,
-            .committed     = STATE.committed,
+            .committed     = COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE | COutputState::AQ_OUTPUT_STATE_CURSOR_POS,
             .hdrMetadata   = STATE.hdrMetadata,
         };
 
@@ -662,6 +662,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             data.ctm = STATE.ctm;
 
         if (STATE.buffer) {
+            data.committed |= COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC;
             SP<CDRMFB> drmFB;
 
             // If this backend requires blit (multi-GPU), the STATE.buffer was
@@ -681,12 +682,13 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             }
 
             data.mainFB = drmFB;
+            data.committed |= data.outputState.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE;
         }
 
         if (c->crtc->pendingCursor)
             data.cursorFB = c->crtc->pendingCursor;
-        else if (c->crtc->cursor)
-            data.cursorFB = c->crtc->cursor->front; // a consumed pending cursor lives on the plane
+        else if (const auto& cursor = c->crtc->cursor)
+            data.cursorFB = cursor->backSet ? cursor->back : cursor->front; // a consumed pending cursor lives on the plane
 
         if (data.cursorFB && (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID))
             data.cursorFB = nullptr;
@@ -695,8 +697,10 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
                      std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, data.modeInfo.clock, data.modeInfo.hdisplay,
                                  data.modeInfo.vdisplay, data.modeInfo.vrefresh));
 
-        if (!impl->commit(c, data))
+        if (!c->commitState(data))
             backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
+        else
+            c->output->lastCommitNoBuffer = !data.mainFB;
     }
 
     connectNewOutputs();
