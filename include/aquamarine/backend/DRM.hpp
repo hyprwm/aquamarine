@@ -512,8 +512,9 @@ namespace Aquamarine {
         void     scanConnectors();
         void     scanLeases();
         void     restoreAfterVT();
-        void     recheckOutputs();
+        void     recheckConnectors();
         void     recheckCRTCs();
+        void     connectNewOutputs();
         void     markRedundantTiles();
         void     buildGlFormats(const std::vector<SGLFormat>& fmts);
         bool     initCommitThread();

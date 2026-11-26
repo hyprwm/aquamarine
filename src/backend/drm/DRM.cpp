@@ -362,7 +362,9 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 
         drmBackend->grabFormats();
 
-        drmBackend->recheckOutputs();
+        drmBackend->recheckConnectors();
+        drmBackend->recheckCRTCs();
+        drmBackend->connectNewOutputs();
 
         if (!newPrimary) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: gpu {} becomes primary drm", gpu->path));
@@ -613,7 +615,8 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         }
     }
 
-    recheckOutputs();
+    recheckConnectors();
+    recheckCRTCs();
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
 
@@ -695,6 +698,8 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         if (!impl->commit(c, data))
             backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
     }
+
+    connectNewOutputs();
 
     for (auto const& c : noMode) {
         if (!c->output)
@@ -1133,7 +1138,9 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     listeners.gpuChange = gpu->events.change.listen([this](const CSessionDevice::SChangeEvent& E) {
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
-            recheckOutputs();
+            recheckConnectors();
+            recheckCRTCs();
+            connectNewOutputs();
         } else if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a lease event for {}", gpuName));
             scanLeases();
@@ -1199,7 +1206,7 @@ void Aquamarine::CDRMBackend::markRedundantTiles() {
     }
 }
 
-void Aquamarine::CDRMBackend::recheckOutputs() {
+void Aquamarine::CDRMBackend::recheckConnectors() {
     scanConnectors();
     markRedundantTiles();
 
@@ -1216,9 +1223,9 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
             conn->disconnect();
         }
     }
+}
 
-    recheckCRTCs();
-
+void Aquamarine::CDRMBackend::connectNewOutputs() {
     // now that crtcs are assigned, connect outputs
     for (const auto& conn : connectors) {
         if (conn->status == DRM_MODE_CONNECTED && !conn->output && !conn->tilingRedundant) {
@@ -2283,8 +2290,11 @@ void Aquamarine::SDRMConnector::applyCommit(SDRMConnectorCommitData& data) {
             auto weak = bk->self;
             bk->backend->addIdleEvent(makeShared<std::function<void(void)>>([weak] {
                 auto b = weak.lock();
-                if (b)
-                    b->recheckOutputs();
+                if (b) {
+                    b->recheckConnectors();
+                    b->recheckCRTCs();
+                    b->connectNewOutputs();
+                }
             }));
         }
     }
