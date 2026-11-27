@@ -513,7 +513,7 @@ namespace Aquamarine {
         void     scanLeases();
         void     restoreAfterVT();
         void     recheckConnectors();
-        void     recheckCRTCs();
+        void     recheckCRTCs(bool notifyReassigned = true);
         void     connectNewOutputs();
         void     markRedundantTiles();
         void     buildGlFormats(const std::vector<SGLFormat>& fmts);

@@ -616,7 +616,7 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
     }
 
     recheckConnectors();
-    recheckCRTCs();
+    recheckCRTCs(false);
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
 
@@ -968,7 +968,7 @@ void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts)
     glFormats = result;
 }
 
-void Aquamarine::CDRMBackend::recheckCRTCs() {
+void Aquamarine::CDRMBackend::recheckCRTCs(bool notifyReassigned) {
     if (connectors.empty() || crtcs.empty())
         return;
 
@@ -1028,20 +1028,16 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             if (c->output && !c->output->enabledState)
                 continue;
 
-            // deactivate old output
-            if (c->output && c->output->enabledState) {
-                c->output->state->setEnabled(false);
-                if (!c->output->commit()) {
-                    backend->log(AQ_LOG_ERROR, std::format("drm: Failed to disable {} before reassigning its CRTC", c->szName));
-                    continue;
-                }
-            }
-
             backend->log(AQ_LOG_DEBUG,
                          std::format("drm: connected slot {} crtc {} assigned to {}{}", i, crtc->id, c->szName, c->crtc ? std::format(" (old {})", c->crtc->id) : ""));
             c->setCRTC(crtc);
             assigned = true;
-            changed.emplace_back(c);
+            if (c->output) {
+                c->output->lastCommitNoBuffer = true;
+                c->recheckCRTCProps();
+                if (notifyReassigned)
+                    changed.emplace_back(c);
+            }
             std::erase(recheck, c);
             break;
         }
@@ -1072,6 +1068,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
             backend->log(AQ_LOG_DEBUG, std::format("drm: backup slot {} crtc {} assigned to disabled {}", i, crtcs.at(i)->id, c->szName));
             c->setCRTC(crtcs.at(i));
+            c->recheckCRTCProps();
             std::erase(recheck, c);
             break;
         }
@@ -1088,7 +1085,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
     // tell the user to re-assign a valid mode etc, if needed
     for (auto const& conn : changed) {
-        if (conn->status != DRM_MODE_CONNECTED && conn->output)
+        if (conn->status == DRM_MODE_CONNECTED && conn->crtc && conn->output && conn->output->enabledState)
             conn->output->events.state.emit(IOutput::SStateEvent{});
     }
 }
