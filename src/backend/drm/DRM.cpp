@@ -2610,15 +2610,15 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
-    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && !STATE.buffer) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: No buffer committed");
-        return false;
-    }
-
-    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->attachments.has<CDRMBufferUnimportable>() &&
-        backend->driver != AQ_BACKEND_GPU_DRIVER_EVDI) {
-        TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer."));
-        return false;
+    if (STATE.enabled && (COMMITTED & COutputState::AQ_OUTPUT_STATE_BUFFER)) {
+        if (!STATE.buffer) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: No buffer committed");
+            return false;
+        }
+        if (STATE.buffer->attachments.has<CDRMBufferUnimportable>() && backend->driver != AQ_BACKEND_GPU_DRIVER_EVDI) {
+            TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer."));
+            return false;
+        }
     }
 
     // If we are changing the rendering format, we may need to reconfigure the output (aka modeset)

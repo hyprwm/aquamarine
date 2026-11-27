@@ -153,6 +153,8 @@ void Aquamarine::COutputState::rearm(const CSnapshot& snapshot) {
         internalState.committed |= property;
         if (property == AQ_OUTPUT_STATE_DAMAGE)
             internalState.damage.add(snapshot.m_state.damage);
+        if (property == AQ_OUTPUT_STATE_BUFFER && snapshot.m_explicitInFence.isValid())
+            internalState.buffer.reset();
     }
 }
 
