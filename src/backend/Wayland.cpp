@@ -250,6 +250,8 @@ Aquamarine::CWaylandKeyboard::CWaylandKeyboard(SP<CCWlKeyboard> keyboard_, Hypru
 
     backend->backend->log(AQ_LOG_DEBUG, "New wayland keyboard wl_keyboard");
 
+    keyboard->setKeymap([](CCWlKeyboard*, wl_keyboard_keymap_format, int32_t fd, uint32_t) { close(fd); });
+
     keyboard->setKey([this](CCWlKeyboard* r, uint32_t serial, uint32_t timeMs, uint32_t key, wl_keyboard_key_state state) {
         events.key.emit(SKeyEvent{
             .timeMs  = timeMs,
