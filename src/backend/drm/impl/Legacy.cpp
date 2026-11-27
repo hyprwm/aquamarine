@@ -65,7 +65,7 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
         }
     }
 
-    if (data.committed & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_ADAPTIVE_SYNC) {
+    if ((enable && data.modeset) || (data.committed & COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC)) {
         if (STATE.adaptiveSync && !connector->canDoVrr) {
             connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: connector {} can't do vrr", connector->id));
             return false;
@@ -80,14 +80,13 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
             }
         }
 
-        connector->output->vrrActive = STATE.adaptiveSync;
         connector->backend->backend->log(AQ_LOG_DEBUG, std::format("legacy drm: connector {} vrr -> {}", connector->id, STATE.adaptiveSync));
     }
 
     // TODO: gamma
 
-    if (data.cursorFB && connector->crtc->cursor && data.cursorVisible && enable &&
-        (data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE || data.committed & COutputState::AQ_OUTPUT_STATE_CURSOR_POS)) {
+    const bool updateCursor = connector->crtc->cursor && (data.committed & (COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE | COutputState::AQ_OUTPUT_STATE_CURSOR_POS));
+    if (data.cursorFB && data.cursorVisible && enable && updateCursor) {
         uint32_t boHandle = 0;
         auto     attrs    = data.cursorFB->buffer->dmabuf();
 
@@ -121,8 +120,10 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
             connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: cursor drmIoctl failed: {}", strerror(errno)));
             return false;
         }
-    } else if (drmModeSetCursor(connector->backend->gpu->fd, connector->crtc->id, 0, 0, 0))
+    } else if (updateCursor && drmModeSetCursor(connector->backend->gpu->fd, connector->crtc->id, 0, 0, 0)) {
         connector->backend->backend->log(AQ_LOG_ERROR, "legacy drm: cursor null failed");
+        return false;
+    }
 
     if (!enable)
         return true;
@@ -144,14 +145,22 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
 }
 
 bool Aquamarine::CDRMLegacyImpl::testInternal(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
-    return true; // TODO: lol
+    const auto& hdr = data.outputState.hdrMetadata.hdmi_metadata_type1;
+    return !data.enabled || (!hdr.eotf && !hdr.max_display_mastering_luminance);
 }
 
 bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
     if (!testInternal(connector, data))
         return false;
 
-    return data.test && commitInternal(connector, data);
+    if (data.test)
+        return true;
+    if (!commitInternal(connector, data))
+        return false;
+
+    if (connector->output)
+        connector->output->vrrActive = data.enabled && data.mainFB && data.outputState.adaptiveSync;
+    return true;
 }
 
 bool Aquamarine::CDRMLegacyImpl::reset() {

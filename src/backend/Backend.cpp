@@ -331,8 +331,10 @@ void Aquamarine::CBackend::onNewGpu(std::string path) {
     implementations.emplace_back(ref);
     events.pollFDsChanged.emit();
 
-    ref->onReady();        // Renderer created here
-    ref->recheckOutputs(); // Now we can recheck outputs
+    ref->onReady(); // Renderer created here
+    ref->recheckConnectors();
+    ref->recheckCRTCs();
+    ref->connectNewOutputs();
 }
 
 // Yoinked from wlroots, render/allocator/allocator.c

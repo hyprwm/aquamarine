@@ -774,14 +774,12 @@ void Aquamarine::CSession::handleLibinputEvent(libinput_event* e) {
 
             const bool ENABLED = libinput_event_switch_get_switch_state(se) == LIBINPUT_SWITCH_STATE_ON;
 
-            if (ENABLED == hlDevice->switchy->state)
-                return;
             hlDevice->switchy->state = ENABLED;
 
             switch (libinput_event_switch_get_switch(se)) {
                 case LIBINPUT_SWITCH_LID: hlDevice->switchy->type = ISwitch::AQ_SWITCH_TYPE_LID; break;
                 case LIBINPUT_SWITCH_TABLET_MODE: hlDevice->switchy->type = ISwitch::AQ_SWITCH_TYPE_TABLET_MODE; break;
-                default: break;
+                default: hlDevice->switchy->type = ISwitch::AQ_SWITCH_TYPE_UNKNOWN; break;
             }
 
             hlDevice->switchy->events.fire.emit(ISwitch::SFireEvent{

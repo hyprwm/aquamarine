@@ -80,9 +80,9 @@ void Aquamarine::CHeadlessOutput::scheduleFrame(const scheduleFrameReason reason
     int64_t refreshRatemHz = 60000;
     auto&   currentState   = state->state();
 
-    if (currentState.mode)
+    if (currentState.mode && currentState.mode->refreshRate)
         refreshRatemHz = currentState.mode->refreshRate;
-    else if (currentState.customMode)
+    else if (currentState.customMode && currentState.customMode->refreshRate)
         refreshRatemHz = currentState.customMode->refreshRate;
 
     const auto FRAME_INTERVAL  = std::chrono::nanoseconds(1000LL * TIMESPEC_NSEC_PER_SEC / refreshRatemHz);

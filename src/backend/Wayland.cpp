@@ -250,6 +250,8 @@ Aquamarine::CWaylandKeyboard::CWaylandKeyboard(SP<CCWlKeyboard> keyboard_, Hypru
 
     backend->backend->log(AQ_LOG_DEBUG, "New wayland keyboard wl_keyboard");
 
+    keyboard->setKeymap([](CCWlKeyboard*, wl_keyboard_keymap_format, int32_t fd, uint32_t) { close(fd); });
+
     keyboard->setKey([this](CCWlKeyboard* r, uint32_t serial, uint32_t timeMs, uint32_t key, wl_keyboard_key_state state) {
         events.key.emit(SKeyEvent{
             .timeMs  = timeMs,
@@ -433,6 +435,7 @@ bool Aquamarine::CWaylandBackend::initDmabuf() {
         static_assert(sizeof(wlDrmFormatMarshalled) == 16);
 
         auto formatTable = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        close(fd);
         if (formatTable == MAP_FAILED) {
             backend->log(AQ_LOG_ERROR, std::format("zwp_linux_dmabuf_v1: Failed to mmap the format table"));
             return;
@@ -552,11 +555,10 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
 
     waylandState.xdgToplevel->setConfigure([this](CCXdgToplevel* r, int32_t w, int32_t h, wl_array* arr) {
         backend->backend->log(AQ_LOG_DEBUG, std::format("Output {}: configure toplevel with {}x{}", name, w, h));
-        if (w == 0 || h == 0) {
-            backend->backend->log(AQ_LOG_DEBUG, std::format("Output {}: w/h is 0, sending default hardcoded 1280x720", name));
-            w = 1280;
-            h = 720;
-        }
+        if (w == 0)
+            w = waylandState.surfaceSize.x > 0 ? waylandState.surfaceSize.x : 1280;
+        if (h == 0)
+            h = waylandState.surfaceSize.y > 0 ? waylandState.surfaceSize.y : 720;
         // The following xdg_surface.configure completes and acknowledges this size.
         waylandState.pendingSize = {w, h};
     });

@@ -54,7 +54,6 @@ namespace Aquamarine {
       private:
         void                                             destroyBlob(uint32_t id);
         void                                             commitBlob(uint32_t* current, uint32_t next);
-        void                                             rollbackBlob(uint32_t* current, uint32_t next);
 
         Hyprutils::Memory::CWeakPointer<CDRMBackend>     backend;
         drmModeAtomicReq*                                req = nullptr;

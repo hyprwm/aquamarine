@@ -49,19 +49,6 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
-static bool shouldSubmitCTM(SP<SDRMConnector> connector, const COutputState::SInternalState& state, bool modeset) {
-    if (state.committed & COutputState::AQ_OUTPUT_STATE_CTM)
-        return true;
-
-    if (!modeset)
-        return false;
-
-    if (!(state.ctm == Mat3x3::identity()))
-        return true;
-
-    return connector->crtc->props.values.ctm && !connector->crtc->atomic.ctmStateKnown;
-}
-
 Aquamarine::CDRMBackend::CDRMBackend(SP<CBackend> backend_) : backend(backend_) {
     listeners.sessionActivate = backend->session->events.changeActive.listen([this] {
         if (backend->session->active) {
@@ -362,7 +349,9 @@ std::vector<SP<CDRMBackend>> Aquamarine::CDRMBackend::attempt(SP<CBackend> backe
 
         drmBackend->grabFormats();
 
-        drmBackend->recheckOutputs();
+        drmBackend->recheckConnectors();
+        drmBackend->recheckCRTCs();
+        drmBackend->connectNewOutputs();
 
         if (!newPrimary) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: gpu {} becomes primary drm", gpu->path));
@@ -613,11 +602,15 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         }
     }
 
-    recheckOutputs();
+    for (const auto& crtc : crtcs)
+        crtc->atomic.identityCTMInstalled = false;
+
+    recheckConnectors();
+    recheckCRTCs(false);
 
     backend->log(AQ_LOG_DEBUG, "drm: Rescanned connectors");
 
-    std::vector<SP<SDRMConnector>> noMode;
+    std::vector<CWeakPointer<CDRMOutput>> needsRecovery;
 
     for (auto const& c : connectors) {
         if (!c->crtc || !c->output)
@@ -636,54 +629,49 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             .flags         = 0,
             .test          = false,
             .enabled       = STATE.enabled,
-            .committed     = STATE.committed,
-            .hdrMetadata   = STATE.hdrMetadata,
+            .committed     = COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE | COutputState::AQ_OUTPUT_STATE_CURSOR_POS,
         };
 
         auto& MODE = STATE.customMode ? STATE.customMode : STATE.mode;
 
-        if (!MODE) {
-            backend->log(AQ_LOG_WARNING, "drm: Connector {} has output but state has no mode, will send a reset state event later.");
-            noMode.emplace_back(c);
+        if (STATE.enabled && !MODE) {
+            backend->log(AQ_LOG_WARNING, std::format("drm: No mode to restore on {}, requesting state", c->szName));
+            needsRecovery.emplace_back(c->output);
             continue;
         }
 
-        c->crtc->atomic.ctmStateKnown = false;
+        if (MODE) {
+            if (MODE->modeInfo.has_value())
+                data.modeInfo = *MODE->modeInfo;
+            else
+                data.calculateMode(c);
+        }
 
-        if (MODE->modeInfo.has_value())
-            data.modeInfo = *MODE->modeInfo;
-        else
-            data.calculateMode(c);
-
-        if (shouldSubmitCTM(c, STATE, data.modeset))
-            data.ctm = STATE.ctm;
-
-        if (STATE.buffer) {
+        if (STATE.enabled) {
+            data.committed |= COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC;
             SP<CDRMFB> drmFB;
 
             // If this backend requires blit (multi-GPU), the STATE.buffer was
             // rendered on a different GPU and cannot be directly imported here.
             // Skip the import and request a re-render through the proper blit pipeline.
-            if (!shouldBlit()) {
-                auto buf   = STATE.buffer;
-                bool isNew = false;
-                drmFB      = CDRMFB::create(buf, self, &isNew);
-            }
+            if (STATE.buffer && !shouldBlit())
+                drmFB = CDRMFB::create(STATE.buffer, self, nullptr);
 
-            if (!drmFB) {
+            if (!drmFB || drmFB->dead) {
                 backend->log(AQ_LOG_DEBUG,
                              std::format("drm: Buffer unavailable for crtc {} restore ({}), requesting re-render", c->crtc->id, shouldBlit() ? "multi-gpu" : "import failed"));
-                noMode.emplace_back(c);
+                needsRecovery.emplace_back(c->output);
                 continue;
             }
 
             data.mainFB = drmFB;
+            data.committed |= data.outputState.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE;
         }
 
         if (c->crtc->pendingCursor)
             data.cursorFB = c->crtc->pendingCursor;
-        else if (c->crtc->cursor)
-            data.cursorFB = c->crtc->cursor->front; // a consumed pending cursor lives on the plane
+        else if (const auto& cursor = c->crtc->cursor)
+            data.cursorFB = cursor->backSet ? cursor->back : cursor->front; // a consumed pending cursor lives on the plane
 
         if (data.cursorFB && (data.cursorFB->dead || data.cursorFB->buffer->dmabuf().modifier == DRM_FORMAT_MOD_INVALID))
             data.cursorFB = nullptr;
@@ -692,16 +680,19 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
                      std::format("drm: Restoring crtc {} with clock {} hdisplay {} vdisplay {} vrefresh {}", c->crtc->id, data.modeInfo.clock, data.modeInfo.hdisplay,
                                  data.modeInfo.vdisplay, data.modeInfo.vrefresh));
 
-        if (!impl->commit(c, data))
-            backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore", c->crtc->id));
+        if (!c->commitState(data)) {
+            backend->log(AQ_LOG_ERROR, std::format("drm: crtc {} failed restore, requesting state", c->crtc->id));
+            needsRecovery.emplace_back(c->output);
+        } else
+            c->output->lastCommitNoBuffer = !data.mainFB;
     }
 
-    for (auto const& c : noMode) {
-        if (!c->output)
-            continue;
+    connectNewOutputs();
 
-        // tell the consumer to re-set a state because we had no mode
-        c->output->events.state.emit(IOutput::SStateEvent{});
+    for (const auto& weak : needsRecovery) {
+        const auto output = weak.lock();
+        if (output && output->connector->output == output)
+            output->events.state.emit(IOutput::SStateEvent{});
     }
 }
 
@@ -961,7 +952,7 @@ void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts)
     glFormats = result;
 }
 
-void Aquamarine::CDRMBackend::recheckCRTCs() {
+void Aquamarine::CDRMBackend::recheckCRTCs(bool notifyReassigned) {
     if (connectors.empty() || crtcs.empty())
         return;
 
@@ -1021,20 +1012,16 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
             if (c->output && !c->output->enabledState)
                 continue;
 
-            // deactivate old output
-            if (c->output && c->output->enabledState) {
-                c->output->state->setEnabled(false);
-                if (!c->output->commit()) {
-                    backend->log(AQ_LOG_ERROR, std::format("drm: Failed to disable {} before reassigning its CRTC", c->szName));
-                    continue;
-                }
-            }
-
             backend->log(AQ_LOG_DEBUG,
                          std::format("drm: connected slot {} crtc {} assigned to {}{}", i, crtc->id, c->szName, c->crtc ? std::format(" (old {})", c->crtc->id) : ""));
             c->setCRTC(crtc);
             assigned = true;
-            changed.emplace_back(c);
+            if (c->output) {
+                c->output->lastCommitNoBuffer = true;
+                c->recheckCRTCProps();
+                if (notifyReassigned)
+                    changed.emplace_back(c);
+            }
             std::erase(recheck, c);
             break;
         }
@@ -1065,6 +1052,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
             backend->log(AQ_LOG_DEBUG, std::format("drm: backup slot {} crtc {} assigned to disabled {}", i, crtcs.at(i)->id, c->szName));
             c->setCRTC(crtcs.at(i));
+            c->recheckCRTCProps();
             std::erase(recheck, c);
             break;
         }
@@ -1081,7 +1069,7 @@ void Aquamarine::CDRMBackend::recheckCRTCs() {
 
     // tell the user to re-assign a valid mode etc, if needed
     for (auto const& conn : changed) {
-        if (conn->status != DRM_MODE_CONNECTED && conn->output)
+        if (conn->status == DRM_MODE_CONNECTED && conn->crtc && conn->output && conn->output->enabledState)
             conn->output->events.state.emit(IOutput::SStateEvent{});
     }
 }
@@ -1133,7 +1121,9 @@ bool Aquamarine::CDRMBackend::registerGPU(SP<CSessionDevice> gpu_, SP<CDRMBacken
     listeners.gpuChange = gpu->events.change.listen([this](const CSessionDevice::SChangeEvent& E) {
         if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_HOTPLUG) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a hotplug event for {}", gpuName));
-            recheckOutputs();
+            recheckConnectors();
+            recheckCRTCs();
+            connectNewOutputs();
         } else if (E.type == CSessionDevice::AQ_SESSION_EVENT_CHANGE_LEASE) {
             backend->log(AQ_LOG_DEBUG, std::format("drm: Got a lease event for {}", gpuName));
             scanLeases();
@@ -1199,7 +1189,7 @@ void Aquamarine::CDRMBackend::markRedundantTiles() {
     }
 }
 
-void Aquamarine::CDRMBackend::recheckOutputs() {
+void Aquamarine::CDRMBackend::recheckConnectors() {
     scanConnectors();
     markRedundantTiles();
 
@@ -1216,9 +1206,9 @@ void Aquamarine::CDRMBackend::recheckOutputs() {
             conn->disconnect();
         }
     }
+}
 
-    recheckCRTCs();
-
+void Aquamarine::CDRMBackend::connectNewOutputs() {
     // now that crtcs are assigned, connect outputs
     for (const auto& conn : connectors) {
         if (conn->status == DRM_MODE_CONNECTED && !conn->output && !conn->tilingRedundant) {
@@ -2040,6 +2030,8 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     output            = SP<CDRMOutput>(new CDRMOutput(szName, backend, self.lock()));
     output->self      = output;
     output->connector = self.lock();
+    output->supportsHDRMetadata = backend->atomic && props.values.hdr_output_metadata;
+    output->supportsBT2020RGB = backend->atomic && props.values.Colorspace && colorspace.values.BT2020_RGB;
 
     backend->backend->log(AQ_LOG_DEBUG, "drm: Dumping detected modes:");
 
@@ -2283,8 +2275,11 @@ void Aquamarine::SDRMConnector::applyCommit(SDRMConnectorCommitData& data) {
             auto weak = bk->self;
             bk->backend->addIdleEvent(makeShared<std::function<void(void)>>([weak] {
                 auto b = weak.lock();
-                if (b)
-                    b->recheckOutputs();
+                if (b) {
+                    b->recheckConnectors();
+                    b->recheckCRTCs();
+                    b->connectNewOutputs();
+                }
             }));
         }
     }
@@ -2598,15 +2593,15 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         return false;
     }
 
-    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && !STATE.buffer) {
-        backend->backend->log(AQ_LOG_ERROR, "drm: No buffer committed");
-        return false;
-    }
-
-    if ((COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_BUFFER) && STATE.buffer->attachments.has<CDRMBufferUnimportable>() &&
-        backend->driver != AQ_BACKEND_GPU_DRIVER_EVDI) {
-        TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer."));
-        return false;
+    if (STATE.enabled && (COMMITTED & COutputState::AQ_OUTPUT_STATE_BUFFER)) {
+        if (!STATE.buffer) {
+            backend->backend->log(AQ_LOG_ERROR, "drm: No buffer committed");
+            return false;
+        }
+        if (STATE.buffer->attachments.has<CDRMBufferUnimportable>() && backend->driver != AQ_BACKEND_GPU_DRIVER_EVDI) {
+            TRACE(backend->backend->log(AQ_LOG_TRACE, "drm: Cannot commit a KMS-unimportable buffer."));
+            return false;
+        }
     }
 
     // If we are changing the rendering format, we may need to reconfigure the output (aka modeset)
@@ -2818,9 +2813,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
     }
 
-    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
-        data.hdrMetadata = STATE.hdrMetadata;
-
     data.blocking  = BLOCKING || formatMismatch;
     data.modeset   = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;
     data.flags     = flags;
@@ -2840,7 +2832,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     // making larger modes unreachable.
     // If the consumer already reconfigured the swapchain to the new size, attach a fresh buffer from it.
     bool acquiredModesetBuffer = false;
-    if (data.modeset && data.mainFB && swapchain && data.mainFB->buffer->size != MODE->pixelSize && swapchain->currentOptions().size == MODE->pixelSize) {
+    const bool fenced = (data.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) && data.outputState.explicitInFence >= 0;
+    if (!fenced && data.modeset && data.mainFB && swapchain && data.mainFB->buffer->size != MODE->pixelSize && swapchain->currentOptions().size == MODE->pixelSize) {
         if (auto newBuf = swapchain->next(nullptr); newBuf) {
             if (auto newFB = CDRMFB::create(newBuf, backend, nullptr); newFB && !newFB->dead) {
                 data.mainFB           = newFB;
@@ -2849,12 +2842,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
                 swapchain->rollback();
         }
     }
-
-    // Re-send CTM when it changes, when preserving a non-identity CTM over a modeset,
-    // or when we need one identity blob to clear unknown kernel state from before us.
-    // Once a real CTM commit succeeds, ordinary identity modesets can skip the blob.
-    if (shouldSubmitCTM(connector, STATE, data.modeset))
-        data.ctm = STATE.ctm;
 
     bool ok = connector->commitState(data);
 
@@ -3630,6 +3617,7 @@ SP<CDRMLease> Aquamarine::CDRMLease::create(std::vector<SP<IOutput>> outputs) {
 
     for (auto const& o : lease->outputs) {
         o->lease = lease;
+        o->connector->crtc->atomic.identityCTMInstalled = false;
     }
 
     lease->leaseFD = leaseFD;
