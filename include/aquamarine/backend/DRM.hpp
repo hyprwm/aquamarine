@@ -203,8 +203,7 @@ namespace Aquamarine {
             uint32_t gammaLut  = 0;
             uint32_t ctm       = 0;
             uint32_t hdr       = 0;
-            // true once a real commit has made the kernel CTM match our state.
-            bool ctmStateKnown = false;
+            bool     identityCTMInstalled = false;
         } atomic;
 
         Hyprutils::Memory::CSharedPointer<SDRMPlane> primary;
@@ -309,7 +308,6 @@ namespace Aquamarine {
         DRMFBList                                 retiredFBs;
         Hyprutils::Math::CRegion                  damage;
         drmModeModeInfo                           modeInfo;
-        std::optional<Hyprutils::Math::Mat3x3>    ctm;
         std::optional<hdr_output_metadata>        hdrMetadata;
 
         struct {

@@ -49,19 +49,6 @@ using namespace Hyprutils::Memory;
 using namespace Hyprutils::Math;
 #define SP CSharedPointer
 
-static bool shouldSubmitCTM(SP<SDRMConnector> connector, const COutputState::SInternalState& state, bool modeset) {
-    if (state.committed & COutputState::AQ_OUTPUT_STATE_CTM)
-        return true;
-
-    if (!modeset)
-        return false;
-
-    if (!(state.ctm == Mat3x3::identity()))
-        return true;
-
-    return connector->crtc->props.values.ctm && !connector->crtc->atomic.ctmStateKnown;
-}
-
 Aquamarine::CDRMBackend::CDRMBackend(SP<CBackend> backend_) : backend(backend_) {
     listeners.sessionActivate = backend->session->events.changeActive.listen([this] {
         if (backend->session->active) {
@@ -615,6 +602,9 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
         }
     }
 
+    for (const auto& crtc : crtcs)
+        crtc->atomic.identityCTMInstalled = false;
+
     recheckConnectors();
     recheckCRTCs(false);
 
@@ -645,8 +635,6 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
 
         auto& MODE = STATE.customMode ? STATE.customMode : STATE.mode;
 
-        c->crtc->atomic.ctmStateKnown = false;
-
         if (STATE.enabled && !MODE) {
             backend->log(AQ_LOG_WARNING, std::format("drm: No mode to restore on {}, requesting state", c->szName));
             needsRecovery.emplace_back(c->output);
@@ -659,9 +647,6 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             else
                 data.calculateMode(c);
         }
-
-        if (shouldSubmitCTM(c, STATE, data.modeset))
-            data.ctm = STATE.ctm;
 
         if (STATE.enabled) {
             data.committed |= COutputState::AQ_OUTPUT_STATE_ADAPTIVE_SYNC;
@@ -2860,12 +2845,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         }
     }
 
-    // Re-send CTM when it changes, when preserving a non-identity CTM over a modeset,
-    // or when we need one identity blob to clear unknown kernel state from before us.
-    // Once a real CTM commit succeeds, ordinary identity modesets can skip the blob.
-    if (shouldSubmitCTM(connector, STATE, data.modeset))
-        data.ctm = STATE.ctm;
-
     bool ok = connector->commitState(data);
 
     // a buffer acquired only to validate/attempt the modeset isn't consumed by the
@@ -3640,6 +3619,7 @@ SP<CDRMLease> Aquamarine::CDRMLease::create(std::vector<SP<IOutput>> outputs) {
 
     for (auto const& o : lease->outputs) {
         o->lease = lease;
+        o->connector->crtc->atomic.identityCTMInstalled = false;
     }
 
     lease->leaseFD = leaseFD;
