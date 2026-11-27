@@ -632,7 +632,9 @@ bool Aquamarine::CDRMAtomicImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMCo
         ok = retry->commit(flags);
         if (!ok)
             connector->maxBpcFailed = false;
-    } else if (!ok && data.modeset) {
+    }
+
+    if (!ok && data.modeset) {
         // Display resources are allocated globally, so retry with every head
         // restated before letting the caller fall back to a lesser mode.
         retry.emplace(backend);
