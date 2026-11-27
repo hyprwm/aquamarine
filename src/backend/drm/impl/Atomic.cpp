@@ -529,7 +529,10 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
     if (data.ctm.has_value()) {
         if (!connector->crtc->props.values.ctm)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit ctm: no ctm prop support");
-        else {
+        else if (*data.ctm == Hyprutils::Math::Mat3x3::identity()) {
+            data.atomic.ctmBlob = 0;
+            data.atomic.ctmd    = true;
+        } else {
             static auto doubleToS3132Fixed = [](const double val) -> uint64_t {
                 const uint64_t result = std::abs(val) * (1ULL << 32);
                 if (val < 0)
