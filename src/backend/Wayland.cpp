@@ -555,11 +555,10 @@ Aquamarine::CWaylandOutput::CWaylandOutput(const std::string& name_, Hyprutils::
 
     waylandState.xdgToplevel->setConfigure([this](CCXdgToplevel* r, int32_t w, int32_t h, wl_array* arr) {
         backend->backend->log(AQ_LOG_DEBUG, std::format("Output {}: configure toplevel with {}x{}", name, w, h));
-        if (w == 0 || h == 0) {
-            backend->backend->log(AQ_LOG_DEBUG, std::format("Output {}: w/h is 0, sending default hardcoded 1280x720", name));
-            w = 1280;
-            h = 720;
-        }
+        if (w == 0)
+            w = waylandState.surfaceSize.x > 0 ? waylandState.surfaceSize.x : 1280;
+        if (h == 0)
+            h = waylandState.surfaceSize.y > 0 ? waylandState.surfaceSize.y : 720;
         // The following xdg_surface.configure completes and acknowledges this size.
         waylandState.pendingSize = {w, h};
     });
