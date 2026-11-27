@@ -57,6 +57,7 @@ Checks: >
   -modernize-use-nodiscard,
   -modernize-pass-by-value,
   -modernize-use-auto,
+  -modernize-use-designated-initializers,
   performance-*,
   -performance-avoid-endl,
   -performance-unnecessary-value-param,
@@ -82,6 +83,7 @@ Checks: >
   -readability-make-member-function-const,
   -readability-isolate-declaration,
   -readability-inconsistent-declaration-parameter-name,
+  -readability-inconsistent-ifelse-braces,
   -clang-diagnostic-error,
 
 CheckOptions:

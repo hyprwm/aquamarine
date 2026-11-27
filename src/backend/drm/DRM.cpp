@@ -712,7 +712,7 @@ bool Aquamarine::CDRMBackend::checkFeatures() {
     if (drmGetCap(gpu->fd, DRM_CAP_CURSOR_HEIGHT, &curH))
         curH = 64;
 
-    drmProps.cursorSize = Hyprutils::Math::Vector2D{(double)curW, (double)curH};
+    drmProps.cursorSize = Hyprutils::Math::Vector2D{static_cast<double>(curW), static_cast<double>(curH)};
 
     uint64_t cap = 0;
     if (drmGetCap(gpu->fd, DRM_CAP_PRIME, &cap) || !(cap & DRM_PRIME_CAP_IMPORT)) {
@@ -958,7 +958,7 @@ void Aquamarine::CDRMBackend::buildGlFormats(const std::vector<SGLFormat>& fmts)
         });
     }
 
-    glFormats = result;
+    glFormats = std::move(result);
 }
 
 void Aquamarine::CDRMBackend::recheckCRTCs() {
@@ -1816,7 +1816,7 @@ void Aquamarine::SDRMConnector::parseTileInfo() {
         return;
 
     size_t blobLen  = 0;
-    char*  blobData = (char*)getDRMPropBlob(backend->gpu->fd, id, props.values.tile, &blobLen);
+    char*  blobData = static_cast<char*>(getDRMPropBlob(backend->gpu->fd, id, props.values.tile, &blobLen));
     if (!blobData || blobLen == 0) {
         free(blobData);
         return;
@@ -1889,7 +1889,7 @@ Aquamarine::SDRMConnector::~SDRMConnector() {
 }
 
 static int32_t calculateRefresh(const drmModeModeInfo& mode) {
-    int32_t refresh = (mode.clock * 1000000LL / mode.htotal + mode.vtotal / 2) / mode.vtotal;
+    int32_t refresh = ((mode.clock * 1000000LL / mode.htotal) + (mode.vtotal / 2)) / mode.vtotal;
 
     if (mode.flags & DRM_MODE_FLAG_INTERLACE)
         refresh *= 2;
@@ -2082,7 +2082,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     if (currentModeInfo)
         free(currentModeInfo);
 
-    output->physicalSize = {(double)connector->mmWidth, (double)connector->mmHeight};
+    output->physicalSize = {static_cast<double>(connector->mmWidth), static_cast<double>(connector->mmHeight)};
 
     backend->backend->log(AQ_LOG_DEBUG, std::format("drm: Physical size {} (mm)", output->physicalSize));
 
@@ -2109,7 +2109,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
         backend->backend->log(AQ_LOG_ERROR, "drm: Failed to check max_bpc");
 
     size_t               edidLen  = 0;
-    uint8_t*             edidData = (uint8_t*)getDRMPropBlob(backend->gpu->fd, id, props.values.edid, &edidLen);
+    uint8_t*             edidData = static_cast<uint8_t*>(getDRMPropBlob(backend->gpu->fd, id, props.values.edid, &edidLen));
 
     std::vector<uint8_t> edid{edidData, edidData + edidLen};
     auto                 parsedEDID = parseEDID(edid);
@@ -2122,7 +2122,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     output->make        = parsedEDID.make;
     output->model       = parsedEDID.model;
     output->serial      = parsedEDID.serial;
-    output->parsedEDID  = parsedEDID;
+    output->parsedEDID  = std::move(parsedEDID);
     output->description = std::format("{} {} {} ({})", make, model, serial, szName);
     output->needsFrame  = true;
 
@@ -2502,7 +2502,7 @@ bool Aquamarine::CDRMOutput::prepareAsyncCommitData(const COutputState::CSnapsho
         return false;
     }
 
-    data.mainFB = drmFB;
+    data.mainFB = std::move(drmFB);
     if (connector->crtc->pendingCursor)
         data.cursorFB = connector->crtc->pendingCursor;
     else if (connector->crtc->cursor)
@@ -2701,7 +2701,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
         SP<CDRMFB> drmFB;
 
         if (blittedFB)
-            drmFB = blittedFB;
+            drmFB = std::move(blittedFB);
         else if (backend->shouldBlit()) {
             if (!backend->rendererState.renderer) {
                 backend->backend->log(AQ_LOG_DEBUG, "drm: No renderer attached to backend when required for blitting, initializing");
@@ -2784,7 +2784,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             return false;
         }
 
-        data.mainFB = drmFB;
+        data.mainFB = std::move(drmFB);
     }
 
     // sometimes, our consumer could f up the swapchain format and change it without the state changing
@@ -2843,7 +2843,7 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     if (data.modeset && data.mainFB && swapchain && data.mainFB->buffer->size != MODE->pixelSize && swapchain->currentOptions().size == MODE->pixelSize) {
         if (auto newBuf = swapchain->next(nullptr); newBuf) {
             if (auto newFB = CDRMFB::create(newBuf, backend, nullptr); newFB && !newFB->dead) {
-                data.mainFB           = newFB;
+                data.mainFB           = std::move(newFB);
                 acquiredModesetBuffer = true;
             } else
                 swapchain->rollback();
@@ -3334,9 +3334,8 @@ int Aquamarine::CDRMOutput::getConnectorID() {
 }
 
 Aquamarine::CDRMOutput::CDRMOutput(const std::string& name_, Hyprutils::Memory::CWeakPointer<CDRMBackend> backend_, SP<SDRMConnector> connector_) :
-    backend(backend_), connector(connector_) {
+    backend(backend_), connector(connector_), asyncOwnerID(backend->nextAsyncOwnerID()) {
     name          = name_;
-    asyncOwnerID  = backend->nextAsyncOwnerID();
     cursorMailbox = makeAtomicShared<CDRMCursorPositionMailbox>();
     cursorMailbox->store(cursorPos);
 
@@ -3541,8 +3540,8 @@ void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CShar
 
     di_cvt_options options = {
         .red_blank_ver = DI_CVT_REDUCED_BLANKING_NONE,
-        .h_pixels      = (int)MODE->pixelSize.x,
-        .v_lines       = (int)MODE->pixelSize.y,
+        .h_pixels      = static_cast<int>(MODE->pixelSize.x),
+        .v_lines       = static_cast<int>(MODE->pixelSize.y),
         .ip_freq_rqd   = MODE->refreshRate ? MODE->refreshRate / 1000.0 : 60.0,
     };
     di_cvt_timing timing;
@@ -3555,19 +3554,19 @@ void Aquamarine::SDRMConnectorCommitData::calculateMode(Hyprutils::Memory::CShar
     uint16_t vsync_end   = vsync_start + timing.v_sync;
 
     modeInfo = drmModeModeInfo{
-        .clock       = (uint32_t)std::round(timing.act_pixel_freq * 1000),
-        .hdisplay    = (uint16_t)MODE->pixelSize.x,
+        .clock       = static_cast<uint32_t>(std::round(timing.act_pixel_freq * 1000)),
+        .hdisplay    = static_cast<uint16_t>(MODE->pixelSize.x),
         .hsync_start = hsync_start,
         .hsync_end   = hsync_end,
-        .htotal      = (uint16_t)(hsync_end + timing.h_back_porch),
-        .vdisplay    = (uint16_t)timing.v_lines_rnd,
+        .htotal      = static_cast<uint16_t>(hsync_end + timing.h_back_porch),
+        .vdisplay    = static_cast<uint16_t>(timing.v_lines_rnd),
         .vsync_start = vsync_start,
         .vsync_end   = vsync_end,
-        .vtotal      = (uint16_t)(vsync_end + timing.v_back_porch),
-        .vrefresh    = (uint32_t)std::round(timing.act_frame_rate),
+        .vtotal      = static_cast<uint16_t>(vsync_end + timing.v_back_porch),
+        .vrefresh    = static_cast<uint32_t>(std::round(timing.act_frame_rate)),
         .flags       = DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_PVSYNC,
     };
-    snprintf(modeInfo.name, sizeof(modeInfo.name), "%dx%d", (int)MODE->pixelSize.x, (int)MODE->pixelSize.y);
+    snprintf(modeInfo.name, sizeof(modeInfo.name), "%dx%d", static_cast<int>(MODE->pixelSize.x), static_cast<int>(MODE->pixelSize.y));
 
     TRACE(connector->backend->log(AQ_LOG_TRACE,
                                   std::format("drm: calculateMode: modeline dump: {} {} {} {} {} {} {} {} {} {} {}", modeInfo.clock, modeInfo.hdisplay, modeInfo.hsync_start,
