@@ -630,7 +630,6 @@ void Aquamarine::CDRMBackend::restoreAfterVT() {
             .test          = false,
             .enabled       = STATE.enabled,
             .committed     = COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE | COutputState::AQ_OUTPUT_STATE_CURSOR_POS,
-            .hdrMetadata   = STATE.hdrMetadata,
         };
 
         auto& MODE = STATE.customMode ? STATE.customMode : STATE.mode;
@@ -2811,9 +2810,6 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
             data.cursorFB = nullptr;
         }
     }
-
-    if (COMMITTED & COutputState::eOutputStateProperties::AQ_OUTPUT_STATE_HDR)
-        data.hdrMetadata = STATE.hdrMetadata;
 
     data.blocking  = BLOCKING || formatMismatch;
     data.modeset   = NEEDS_RECONFIG || lastCommitNoBuffer || formatMismatch;

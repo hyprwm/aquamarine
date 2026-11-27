@@ -308,7 +308,6 @@ namespace Aquamarine {
         DRMFBList                                 retiredFBs;
         Hyprutils::Math::CRegion                  damage;
         drmModeModeInfo                           modeInfo;
-        std::optional<hdr_output_metadata>        hdrMetadata;
 
         struct {
             uint32_t gammaLut   = 0;

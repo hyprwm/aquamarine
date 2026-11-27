@@ -554,15 +554,15 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
         }
     }
 
-    if ((data.modeset || (data.committed & COutputState::AQ_OUTPUT_STATE_HDR)) && data.hdrMetadata.has_value()) {
+    if ((data.modeset && connector->props.values.hdr_output_metadata) || (data.committed & COutputState::AQ_OUTPUT_STATE_HDR)) {
         if (!connector->props.values.hdr_output_metadata)
             connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to commit hdr metadata: no HDR_OUTPUT_METADATA prop support");
         else {
-            const bool validHDR = data.hdrMetadata->hdmi_metadata_type1.eotf != 0 || data.hdrMetadata->hdmi_metadata_type1.max_display_mastering_luminance != 0;
+            const bool validHDR = STATE.hdrMetadata.hdmi_metadata_type1.eotf != 0 || STATE.hdrMetadata.hdmi_metadata_type1.max_display_mastering_luminance != 0;
             if (!validHDR) {
                 data.atomic.hdrBlob = 0;
                 data.atomic.hdrd    = true;
-            } else if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
+            } else if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &STATE.hdrMetadata, sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a hdr metadata blob");
                 data.atomic.hdrBlob = 0;
                 return false;
@@ -571,13 +571,13 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                 TRACE(connector->backend->backend->log(
                     AQ_LOG_TRACE,
                     std::format("atomic drm: setting hdr min {}, max {}, avg {}, content {}, primaries {},{} {},{} {},{} {},{}",
-                                data.hdrMetadata->hdmi_metadata_type1.min_display_mastering_luminance, data.hdrMetadata->hdmi_metadata_type1.max_display_mastering_luminance,
-                                data.hdrMetadata->hdmi_metadata_type1.max_fall, data.hdrMetadata->hdmi_metadata_type1.max_cll,
-                                data.hdrMetadata->hdmi_metadata_type1.display_primaries[0].x, data.hdrMetadata->hdmi_metadata_type1.display_primaries[0].y,
-                                data.hdrMetadata->hdmi_metadata_type1.display_primaries[1].x, data.hdrMetadata->hdmi_metadata_type1.display_primaries[1].y,
-                                data.hdrMetadata->hdmi_metadata_type1.display_primaries[2].x, data.hdrMetadata->hdmi_metadata_type1.display_primaries[2].y,
-                                data.hdrMetadata->hdmi_metadata_type1.display_primaries[0].x, data.hdrMetadata->hdmi_metadata_type1.white_point.x,
-                                data.hdrMetadata->hdmi_metadata_type1.white_point.y)));
+                                STATE.hdrMetadata.hdmi_metadata_type1.min_display_mastering_luminance, STATE.hdrMetadata.hdmi_metadata_type1.max_display_mastering_luminance,
+                                STATE.hdrMetadata.hdmi_metadata_type1.max_fall, STATE.hdrMetadata.hdmi_metadata_type1.max_cll,
+                                STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[0].x, STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[0].y,
+                                STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[1].x, STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[1].y,
+                                STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[2].x, STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[2].y,
+                                STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[0].x, STATE.hdrMetadata.hdmi_metadata_type1.white_point.x,
+                                STATE.hdrMetadata.hdmi_metadata_type1.white_point.y)));
             }
         }
     }
