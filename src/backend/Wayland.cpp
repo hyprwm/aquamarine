@@ -433,6 +433,7 @@ bool Aquamarine::CWaylandBackend::initDmabuf() {
         static_assert(sizeof(wlDrmFormatMarshalled) == 16);
 
         auto formatTable = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        close(fd);
         if (formatTable == MAP_FAILED) {
             backend->log(AQ_LOG_ERROR, std::format("zwp_linux_dmabuf_v1: Failed to mmap the format table"));
             return;
