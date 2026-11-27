@@ -511,14 +511,15 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
 
     // re-send gamma/degamma on modeset so a previous compositor's lut does not
     // bleed into our session. an empty STATE.gammaLut produces a zero blob, which
-    // clears the kernel state. only ride the modeset path when the prop actually
-    // exists, otherwise we'd log a spurious "no gamma_lut prop" error per modeset.
+    // clears the kernel state. a missing LUT property already satisfies an empty table.
     // (see #127)
-    if ((data.modeset && connector->crtc->props.values.gamma_lut) || (data.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT))
-        data.atomic.gammad = prepareGammaBlob(connector->crtc->props.values.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut);
+    if ((data.modeset || (data.committed & COutputState::AQ_OUTPUT_STATE_GAMMA_LUT)) && (connector->crtc->props.values.gamma_lut || !STATE.gammaLut.empty()))
+        if (!(data.atomic.gammad = prepareGammaBlob(connector->crtc->props.values.gamma_lut, STATE.gammaLut, &data.atomic.gammaLut)))
+            return false;
 
-    if ((data.modeset && connector->crtc->props.values.degamma_lut) || (data.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT))
-        data.atomic.degammad = prepareGammaBlob(connector->crtc->props.values.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut);
+    if ((data.modeset || (data.committed & COutputState::AQ_OUTPUT_STATE_DEGAMMA_LUT)) && (connector->crtc->props.values.degamma_lut || !STATE.degammaLut.empty()))
+        if (!(data.atomic.degammad = prepareGammaBlob(connector->crtc->props.values.degamma_lut, STATE.degammaLut, &data.atomic.degammaLut)))
+            return false;
 
     if (data.ctm.has_value()) {
         if (!connector->crtc->props.values.ctm)
@@ -539,6 +540,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
             if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &ctm, sizeof(drm_color_ctm), &data.atomic.ctmBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a ctm blob");
                 data.atomic.ctmBlob = 0;
+                return false;
             } else
                 data.atomic.ctmd = true;
         }
@@ -555,7 +557,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
             } else if (drmModeCreatePropertyBlob(connector->backend->gpu->fd, &data.hdrMetadata.value(), sizeof(hdr_output_metadata), &data.atomic.hdrBlob)) {
                 connector->backend->backend->log(AQ_LOG_ERROR, "atomic drm: failed to create a hdr metadata blob");
                 data.atomic.hdrBlob = 0;
-                data.atomic.hdrd    = false;
+                return false;
             } else {
                 data.atomic.hdrd = true;
                 TRACE(connector->backend->backend->log(
