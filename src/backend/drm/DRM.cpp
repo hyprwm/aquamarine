@@ -2030,6 +2030,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     output            = SP<CDRMOutput>(new CDRMOutput(szName, backend, self.lock()));
     output->self      = output;
     output->connector = self.lock();
+    output->supportsHDRMetadata = backend->atomic && props.values.hdr_output_metadata;
 
     backend->backend->log(AQ_LOG_DEBUG, "drm: Dumping detected modes:");
 

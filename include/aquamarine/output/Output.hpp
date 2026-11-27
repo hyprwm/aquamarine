@@ -273,6 +273,7 @@ namespace Aquamarine {
         bool                                                              vrrCapable = false, vrrActive = false;
         bool                                                              needsFrame       = false;
         bool                                                              supportsExplicit = false;
+        bool                                                              supportsHDRMetadata = false;
 
         //
         std::vector<Hyprutils::Memory::CSharedPointer<SOutputMode>> modes;

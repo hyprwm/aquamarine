@@ -143,7 +143,8 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
 }
 
 bool Aquamarine::CDRMLegacyImpl::testInternal(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
-    return true; // TODO: lol
+    const auto& hdr = data.outputState.hdrMetadata.hdmi_metadata_type1;
+    return !data.enabled || (!hdr.eotf && !hdr.max_display_mastering_luminance);
 }
 
 bool Aquamarine::CDRMLegacyImpl::commit(Hyprutils::Memory::CSharedPointer<SDRMConnector> connector, SDRMConnectorCommitData& data) {
