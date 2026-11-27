@@ -2849,7 +2849,8 @@ bool Aquamarine::CDRMOutput::commitState(bool onlyTest) {
     // making larger modes unreachable.
     // If the consumer already reconfigured the swapchain to the new size, attach a fresh buffer from it.
     bool acquiredModesetBuffer = false;
-    if (data.modeset && data.mainFB && swapchain && data.mainFB->buffer->size != MODE->pixelSize && swapchain->currentOptions().size == MODE->pixelSize) {
+    const bool fenced = (data.committed & COutputState::AQ_OUTPUT_STATE_EXPLICIT_IN_FENCE) && data.outputState.explicitInFence >= 0;
+    if (!fenced && data.modeset && data.mainFB && swapchain && data.mainFB->buffer->size != MODE->pixelSize && swapchain->currentOptions().size == MODE->pixelSize) {
         if (auto newBuf = swapchain->next(nullptr); newBuf) {
             if (auto newFB = CDRMFB::create(newBuf, backend, nullptr); newFB && !newFB->dead) {
                 data.mainFB           = newFB;
