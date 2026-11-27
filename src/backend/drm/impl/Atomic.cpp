@@ -578,8 +578,7 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
                                 STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[0].x, STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[0].y,
                                 STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[1].x, STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[1].y,
                                 STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[2].x, STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[2].y,
-                                STATE.hdrMetadata.hdmi_metadata_type1.display_primaries[0].x, STATE.hdrMetadata.hdmi_metadata_type1.white_point.x,
-                                STATE.hdrMetadata.hdmi_metadata_type1.white_point.y)));
+                                STATE.hdrMetadata.hdmi_metadata_type1.white_point.x, STATE.hdrMetadata.hdmi_metadata_type1.white_point.y)));
             }
         }
     }
