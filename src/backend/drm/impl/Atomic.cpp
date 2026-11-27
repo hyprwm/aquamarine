@@ -9,6 +9,7 @@
 #include <sstream>
 #include <optional>
 #include "Shared.hpp"
+#include "../Props.hpp"
 #include "aquamarine/output/Output.hpp"
 
 using namespace Aquamarine;
@@ -465,6 +466,10 @@ bool Aquamarine::CDRMAtomicImpl::prepareConnector(Hyprutils::Memory::CSharedPoin
             if (auto current = connector->getCurrentMode()) {
                 data.atomic.blobbed = std::memcmp(current, &data.modeInfo, sizeof(data.modeInfo)) != 0;
                 free(current);
+            }
+            if (!data.atomic.blobbed && connector->props.values.link_status) {
+                uint64_t status = 0;
+                data.atomic.blobbed = getDRMProp(connector->backend->gpu->fd, connector->id, connector->props.values.link_status, &status) && status == DRM_MODE_LINK_STATUS_BAD;
             }
         }
         if (enable && data.atomic.blobbed) {
