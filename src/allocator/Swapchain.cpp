@@ -108,11 +108,13 @@ bool Aquamarine::CSwapchain::resize(size_t newSize) {
             buffers.pop_back();
         }
     } else {
+        const auto oldSize = buffers.size();
         while (buffers.size() < newSize) {
             auto buf = allocator->acquire(
                 SAllocatorBufferParams{.size = options.size, .format = options.format, .scanout = options.scanout, .cursor = options.cursor, .multigpu = options.multigpu},
                 self.lock());
             if (!buf) {
+                buffers.resize(oldSize);
                 allocator->getBackend()->log(AQ_LOG_ERROR, "Swapchain: Failed acquiring a buffer");
                 return false;
             }
