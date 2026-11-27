@@ -85,8 +85,8 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
 
     // TODO: gamma
 
-    const bool updateCursor = data.committed & (COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE | COutputState::AQ_OUTPUT_STATE_CURSOR_POS);
-    if (data.cursorFB && connector->crtc->cursor && data.cursorVisible && enable && updateCursor) {
+    const bool updateCursor = connector->crtc->cursor && (data.committed & (COutputState::AQ_OUTPUT_STATE_CURSOR_SHAPE | COutputState::AQ_OUTPUT_STATE_CURSOR_POS));
+    if (data.cursorFB && data.cursorVisible && enable && updateCursor) {
         uint32_t boHandle = 0;
         auto     attrs    = data.cursorFB->buffer->dmabuf();
 
@@ -120,8 +120,10 @@ bool Aquamarine::CDRMLegacyImpl::commitInternal(Hyprutils::Memory::CSharedPointe
             connector->backend->backend->log(AQ_LOG_ERROR, std::format("legacy drm: cursor drmIoctl failed: {}", strerror(errno)));
             return false;
         }
-    } else if (updateCursor && drmModeSetCursor(connector->backend->gpu->fd, connector->crtc->id, 0, 0, 0))
+    } else if (updateCursor && drmModeSetCursor(connector->backend->gpu->fd, connector->crtc->id, 0, 0, 0)) {
         connector->backend->backend->log(AQ_LOG_ERROR, "legacy drm: cursor null failed");
+        return false;
+    }
 
     if (!enable)
         return true;
