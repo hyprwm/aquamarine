@@ -1,0 +1,14 @@
+name: Nix (Update Inputs)
+
+on:
+  schedule:
+    - cron: "12 3 1/14 * *"
+  workflow_dispatch:
+
+jobs:
+  update:
+    if: github.repository == 'hyprwm/aquamarine'
+    uses: hyprwm/actions/.github/workflows/nix-update-inputs.yml@main
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
