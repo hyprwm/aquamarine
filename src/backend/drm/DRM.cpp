@@ -2031,6 +2031,7 @@ void Aquamarine::SDRMConnector::connect(drmModeConnector* connector) {
     output->self      = output;
     output->connector = self.lock();
     output->supportsHDRMetadata = backend->atomic && props.values.hdr_output_metadata;
+    output->supportsBT2020RGB = backend->atomic && props.values.Colorspace && colorspace.values.BT2020_RGB;
 
     backend->backend->log(AQ_LOG_DEBUG, "drm: Dumping detected modes:");
 

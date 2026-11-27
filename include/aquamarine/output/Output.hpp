@@ -274,6 +274,7 @@ namespace Aquamarine {
         bool                                                              needsFrame       = false;
         bool                                                              supportsExplicit = false;
         bool                                                              supportsHDRMetadata = false;
+        bool                                                              supportsBT2020RGB = false;
 
         //
         std::vector<Hyprutils::Memory::CSharedPointer<SOutputMode>> modes;
